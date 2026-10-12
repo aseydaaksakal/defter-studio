@@ -88,6 +88,7 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 | Soru bankası: istatistik, seçim, aralıklı tekrar, arka planda doldurma | `js/bank.js`, arayüz `js/bank-ui.js` |
 | Puan, rozet, seviye, hata defteri, bilim sayfası, yöntemler kütüphanesi | `js/learn.js` (`METHODS`, `methodsLibrary`) |
 | Pomodoro | `js/pomodoro.js` |
+| Çoklu sekme güvenliği (iş sahibi sekme) | `js/tabs.js` (`TAB`, `ownedElsewhere`) |
 | 10 parmak klavye | `js/typing.js` |
 | Örnek defter | `js/demo.js` |
 

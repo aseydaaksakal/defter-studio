@@ -1,5 +1,8 @@
 # Değişiklikler
 
+## 2026-10-12 — teslim
+- 0.3.0 son tur: çoklu sekme güvenliği (iş sahibi sekme), sınav tarihi düzeltmesi, gerçek model denemesi (10/10 doğrulandı), DEVIR_TESLIM.md, önizleme betiği
+
 ## 2026-10-12 — 0.3.0
 - Ses sistemi v3: ElevenLabs v4, Gemini 3.8 Flash TTS, **MiniMax** (Türkçe kadın/erkek hazır sesler, **ses klonlama** ve metinle
   ses tasarımı), Google Cloud TTS (Chirp 3 HD), Azure Speech (Emel/Ahmet), OpenAI, lokal sunucu, Piper. Otomatik modda bir motor

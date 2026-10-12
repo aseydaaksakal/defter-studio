@@ -6,6 +6,7 @@ import { sliceContexts } from './sources.js';
 import { oneBatch } from './studio/batch.js';
 import { questionSpec, shuffleOpts } from './studio/gen.js';
 import { norm, summarize } from './verify.js';
+import { TAB, ownedElsewhere } from './tabs.js';
 
 const DAY = 864e5;
 const INTERVALS = [1, 3, 7, 16, 35, 80]; // doğru üst üste cevaplandıkça büyüyen aralıklar (gün)
@@ -87,7 +88,7 @@ export const isFilling = (nb) => !!running[nb];
 
 export async function startBankFill(nb, { target = 200, preset = 'genel', level = 'mid', lang = 'Türkçe', focus = '' } = {}) {
   const old = await bankJob(nb);
-  const st = { target, preset, level, lang, focus, status: 'running', cursor: old?.focus === focus ? old.cursor || 0 : 0, pass: old?.pass || 0, startedAt: now(), error: null };
+  const st = { target, preset, level, lang, focus, status: 'running', owner: TAB, cursor: old?.focus === focus ? old.cursor || 0 : 0, pass: old?.pass || 0, startedAt: now(), error: null };
   await setSetting('bank:' + nb, st);
   runFill(nb);
 }
@@ -96,7 +97,12 @@ export async function pauseBankFill(nb) {
   running[nb]?.abort();
 }
 export async function resumeBankFills() {
-  for (const row of await db.settings.where('key').startsWith('bank:').toArray()) if (row.value?.status === 'running') runFill(+row.key.slice(5));
+  for (const row of await db.settings.where('key').startsWith('bank:').toArray()) {
+    const st = row.value;
+    if (st?.status !== 'running' || ownedElsewhere(st.owner)) continue; // başka sekme zaten dolduruyor
+    await setSetting(row.key, { ...st, owner: TAB });
+    runFill(+row.key.slice(5));
+  }
 }
 
 async function runFill(nb) {
@@ -108,7 +114,7 @@ async function runFill(nb) {
     const slices = await sliceContexts(nb, st0?.focus || '');
     for (;;) {
       const st = await bankJob(nb);
-      if (!st || st.status !== 'running') break;
+      if (!st || st.status !== 'running' || (st.owner && st.owner !== TAB && ownedElsewhere(st.owner))) break;
       const have = await db.questions.where('notebookId').equals(nb).count();
       if (have >= st.target) { st.status = 'done'; st.doneAt = now(); await setSetting('bank:' + nb, st); emit(nb, { ...st, have }); break; }
       const si = (st.cursor || 0) % slices.length;

@@ -14,9 +14,15 @@ export function bankCard(nb, { open }) {
   const line = h('div', { class: 'muted small', role: 'status' });
   async function paint(msg) {
     const [s, st, exam] = await Promise.all([bankStats(nb), bankJob(nb), getSetting('examDate:' + nb, '')]);
-    const days = exam ? Math.ceil((new Date(exam + 'T09:00') - Date.now()) / 864e5) : null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days = exam ? Math.round((new Date(exam + 'T00:00') - today) / 864e5) : null; // takvim günü farkı
+    const examTR = exam ? new Date(exam + 'T00:00').toLocaleDateString('tr', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
     const dateIn = h('input', { class: 'input small-in', type: 'date', value: exam || '', 'aria-label': 'Sınav tarihi', onchange: async (e) => { await setSetting('examDate:' + nb, e.target.value); paint(); } });
-    const plan = days > 0 && s.total ? `Sınava ${days} gün: her gün ${Math.max(1, Math.ceil(s.unseen / Math.max(1, days - 2)))} yeni soru + tekrar zamanı gelenler (${s.due}). Son 2 gün yalnız tekrar ve deneme sınavı.` : days !== null && days <= 0 ? 'Sınav tarihi geçti; yeni bir tarih seçin.' : 'Sınav tarihini girin, günlük plan çıkarayım.';
+    const plan = days === null ? 'Sınav tarihini girin, günlük plan çıkarayım.'
+      : days < 0 ? `${examTR} geçti; yeni bir tarih seçin.`
+      : days === 0 ? `Sınav bugün (${examTR}): yeni soru yok; yalnız zayıf sorular (${s.weak}) ve kısa bir deneme.`
+      : !s.total ? `${examTR}: ${days} gün kaldı. Önce bankayı doldurun.`
+      : `${examTR}: ${days} gün kaldı. Her gün ${Math.max(1, Math.ceil(s.unseen / Math.max(1, days - 2)))} yeni soru + tekrar zamanı gelenler (${s.due}). Son 2 gün yalnız tekrar ve deneme sınavı.`;
     const filling = isFilling(nb) || st?.status === 'running';
     const bar = s.total ? h('div', { class: 'meter thin', title: `${s.solved} çözüldü / ${s.total}` }, h('div', { style: { width: Math.round((s.solved / s.total) * 100) + '%' } })) : null;
     line.textContent = msg || (filling ? `Arka planda üretiliyor ${s.total}/${st.target}…` : st?.error ? '⚠ ' + st.error : st?.status === 'done' ? `Hedef ${st.target} soruya ulaşıldı.` : '');
@@ -53,7 +59,7 @@ export function bankCard(nb, { open }) {
     const lang = await getSetting('lang', 'Türkçe');
     const num = h('input', { class: 'input count-in', type: 'number', min: s.total + 1, max: 5000, value: target, oninput: (e) => (target = +e.target.value || target) });
     const body = h('div', { class: 'cust' },
-      h('p', { class: local ? 'ok-t small' : 'muted small' }, local ? `✓ Lokal model (${cfg.model}) kullanılacak: ücretsiz, token harcamaz. Saatte yaklaşık 60–120 soru.` : `Uyarı: şu an bulut modeli (${cfg.provider}) seçili; her soru token harcar. Ücretsiz doldurmak için Ayarlar’dan Ollama seçin.`),
+      h('p', { class: local ? 'ok-t small' : 'muted small' }, local ? `✓ Lokal model (${cfg.model}) kullanılacak: ücretsiz, token harcamaz. Bu bilgisayarda 10 doğrulanmış soru yaklaşık 40 saniyede üretildi (saatte yüzlerce soru).` : `Uyarı: şu an bulut modeli (${cfg.provider}) seçili; her soru token harcar. Ücretsiz doldurmak için Ayarlar’dan Ollama seçin.`),
       h('div', { class: 'field inline' }, h('label', {}, 'Hedef soru sayısı'), h('div', { class: 'row gap wrap' }, h('div', { class: 'seg' }, [100, 200, 500, 1000].map((n) => h('button', { onclick: () => { target = Math.max(n, s.total + 1); num.value = target; } }, String(n)))), num)),
       h('div', { class: 'field inline' }, h('label', {}, 'Sınav türü'), h('select', { class: 'input', onchange: (e) => (preset = e.target.value) }, EXAMS.map((e) => h('option', { value: e.v, selected: e.v === preset ? true : null }, e.t)))),
       h('div', { class: 'field inline' }, h('label', {}, 'Zorluk'), h('select', { class: 'input', onchange: (e) => (level = e.target.value) }, [['easy', 'Kolay'], ['mid', 'Orta (ikinci turda zor)'], ['hard', 'Zor']].map(([v, t]) => h('option', { value: v, selected: v === level ? true : null }, t)))),

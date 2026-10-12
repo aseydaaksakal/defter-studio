@@ -10,13 +10,16 @@ Uygulamada:  sağlayıcı "Özel OpenAI uyumlu", adres http://localhost:8098/v1,
 import io
 import json
 import math
+import os
 import re
 import struct
 import sys
+import time
 import wave
 import http.server
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8098
+DELAY = float(os.getenv("MOCK_DELAY", "0"))  # yavaş model benzetimi (sn/yanıt)
 CTX = re.compile(r"\[(\d+)\] \(([^)]*)\)\n(.*?)(?=\n\n\[\d+\] \(|\n\nSORU:|\n\nODAK|\n(?:Tam |TAM |Şu |Sunu:|Aşağıdaki|Mevcut|Kaynağın)|\Z)", re.S)
 
 
@@ -143,6 +146,8 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/tts"):
             return self.send(200, tone_wav(body.get("text", ""), body.get("gender", "f")), "audio/wav")
         txt = "\n".join(m.get("content", "") for m in body.get("messages", []) if m.get("role") != "assistant")
+        if DELAY:
+            time.sleep(DELAY)
         r = make(txt)
         out = ("<think>düşünüyorum</think>" + json.dumps(r, ensure_ascii=False)) if isinstance(r, dict) else r
         data = b"".join(("data: " + json.dumps({"choices": [{"delta": {"content": out[i:i + 40]}}]}) + "\n\n").encode() for i in range(0, len(out), 40)) + b"data: [DONE]\n\n"

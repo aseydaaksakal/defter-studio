@@ -1,5 +1,6 @@
 // Taranmış PDF'ler için metin tanıma (OCR): Tesseract.js + Türkçe dil verisi, tamamen tarayıcıda ve arka plan iş parçacığında.
 // Uzun kitaplar sayfa sayfa işlenir; ilerleme kaydedilir, sayfa kapansa da kaldığı yerden devam eder.
+import { TAB } from './tabs.js';
 import { db } from './db.js';
 import * as pdfjs from './vendor/pdf.min.mjs';
 
@@ -35,7 +36,7 @@ export async function runOcr(sid, { from = 1, to = null, onPages } = {}) {
   if (!src || !rec) throw new Error('Kaynağın PDF dosyası bulunamadı; dosyayı yeniden yükleyin.');
   let stopped = false;
   jobs[sid] = { stop: () => (stopped = true) };
-  const st = { ...(src.ocr || {}), status: 'running' };
+  const st = { ...(src.ocr || {}), status: 'running', owner: TAB };
   try {
     const doc = await pdfjs.getDocument({ data: await rec.blob.arrayBuffer() }).promise;
     const total = Math.min(to || doc.numPages, doc.numPages);

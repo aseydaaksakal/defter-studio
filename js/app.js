@@ -13,6 +13,7 @@ import { loadTTS, saveTTS, synthesize } from './tts.js';
 import { voiceSettings } from './voice-settings.js';
 import { bankCard } from './bank-ui.js';
 import { pomodoroButton } from './pomodoro.js';
+import { TAB, ownedElsewhere } from './tabs.js';
 import { resumeBankFills } from './bank.js';
 import * as vMemory from './studio/views/memory.js';
 import * as vTeach from './studio/views/teach.js';
@@ -42,7 +43,8 @@ let state = { nb: null, pane: 'chat', viewer: null, cleanup: null };
 async function boot() {
   applyTheme(await getSetting('theme', 'auto'));
   // Sayfa kapanırken yarıda kalan üretimleri işaretle
-  await db.artifacts.where('status').anyOf('running', 'queued').modify({ status: 'error', error: 'Sayfa kapandığı için yarıda kaldı.' });
+  // (başka bir açık sekmede çalışan işlere dokunma)
+  await db.artifacts.where('status').anyOf('running', 'queued').filter((a) => !ownedElsewhere(a.owner)).modify({ status: 'error', error: 'Sayfa kapandığı için yarıda kaldı.' });
   if (!(await db.notebooks.count()) && !(await getSetting('demoSeeded'))) { await seedDemo(); await setSetting('demoSeeded', true); }
   window.addEventListener('hashchange', route);
   route();
@@ -249,7 +251,7 @@ onOcrProgress((sid, st) => {
 // Sayfa yenilenince yarım kalan OCR'ları sürdür
 async function resumeOcrs(nbId) {
   const srcs = await db.sources.where('notebookId').equals(nbId).toArray();
-  for (const s of srcs) if (s.ocr && ['running', 'queued'].includes(s.ocr.status) && !ocrRunning(s.id)) startOcr(s.id);
+  for (const s of srcs) if (s.ocr && ['running', 'queued'].includes(s.ocr.status) && !ocrRunning(s.id) && !ownedElsewhere(s.ocr.owner)) startOcr(s.id);
 }
 
 function viewSource(s) {
@@ -599,7 +601,7 @@ function openCustomize(type, preset = {}) {
         c();
         const { focus, ...keep } = vals; await setSetting('lastOpts:' + type, keep);
         if (vals.lang) await setSetting('lang', vals.lang);
-        const id = await db.artifacts.add({ notebookId: state.nb.id, type, title: t.label, status: 'queued', options: { ...vals }, sourceIds: srcs.map((s) => s.id), sourceTitles: srcs.map((s) => s.title), createdAt: now(), updatedAt: now() });
+        const id = await db.artifacts.add({ notebookId: state.nb.id, type, title: t.label, status: 'queued', owner: TAB, options: { ...vals }, sourceIds: srcs.map((s) => s.id), sourceTitles: srcs.map((s) => s.title), createdAt: now(), updatedAt: now() });
         renderStudio(); runJob(id);
       } }] });
   });
@@ -609,13 +611,13 @@ function openCustomize(type, preset = {}) {
 let queue = Promise.resolve();
 const aborts = {};
 function runJob(id) {
-  db.artifacts.update(id, { status: 'queued', error: null }).then(renderStudio);
+  db.artifacts.update(id, { status: 'queued', error: null, owner: TAB }).then(renderStudio);
   queue = queue.then(() => doJob(id)).catch(() => {});
   return queue;
 }
 async function doJob(id) {
   const a = await db.artifacts.get(id);
-  if (!a || a.status !== 'queued') return;
+  if (!a || a.status !== 'queued' || ownedElsewhere(a.owner)) return;
   aborts[id] = new AbortController();
   await db.artifacts.update(id, { status: 'running', progress: 'Kaynaklar okunuyor…' }); renderStudio();
   let lastPaint = 0;

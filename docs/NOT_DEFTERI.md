@@ -7,6 +7,31 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 
 ## 2026-10-12 — 0.3.0 — ses v3, tam sayılar, doğrulama, soru bankası, lokal sunucu v2
 
+### Gerçek model denemesi (kullanıcının Chrome'u, canlı site, Ollama qwen3.8:27b)
+- **Deneme:** `makeQuestions` ile 10 soru, UAB GOC türü, kısa bir GMDSS metni.
+- **Sonuç:** 41 saniyede 10/10 soru üretildi. Hepsi **birebir alıntıyla** doğrulandı, 0 soru elendi; sorular ve cevaplar kaynağa uygun.
+- **Temizlik:** Deneme için açılan geçici defter silindi.
+- **Çıkarım:** Lokal modelle saatte yüzlerce doğrulanmış soru üretilebilir. Banka penceresindeki tahmin buna göre güncellendi.
+
+### Hata: ikinci sekme açılınca ilk sekmenin işleri "yarıda kaldı" oluyordu
+- **Belirti:** Uygulama iki sekmede açıkken yeni sekmenin açılışı, diğer sekmede çalışan ya da sırada bekleyen üretimleri hata olarak işaretliyordu. Sıradakiler hiç çalışmıyordu.
+- **Neden:** `boot()` tarayıcı veritabanındaki bütün `running/queued` kayıtları sahipsiz sayıyordu.
+- **Çözüm:**
+  - `js/tabs.js`: her sekme 10 sn'de bir `localStorage`'a sinyal yazar.
+  - İşler, OCR ve soru bankası doldurma `owner` alanı taşır.
+  - Sahibi açık başka bir sekmede olan işe dokunulmaz ve iş iki kez çalıştırılmaz.
+  - Yavaş sahte modelle (`MOCK_DELAY=1.5`) denendi: ikinci sekmeden sonra işler `running/queued` kaldı ve sonunda `done` oldu.
+
+### Hata: sınav tarihi bugünse "geçti" yazıyordu; tarih biçimi karışıklığı
+- **Belirti:** Kullanıcının seçtiği 10/12/2026 için "Sınav tarihi geçti" yazıyordu.
+- **Neden:**
+  - Gün farkı saat 09:00'a göre hesaplanıyordu; akşam saatlerinde bugün eksi çıkıyordu.
+  - Chrome tarih kutusu tarayıcı diline göre (en-US: ay/gün/yıl) gösteriliyor. Türkçe okuyan biri 10/12'yi 10 Aralık sanabilir; tarayıcı bunu 12 Ekim olarak alıyor.
+- **Çözüm:**
+  - Takvim günü farkı kullanılıyor.
+  - "Sınav bugün" durumu eklendi.
+  - Seçilen tarih yanında Türkçe yazılıyor ("12 Ekim 2026") ki yanlış anlaşılma hemen görülsün.
+
 ### Kullanıcının istediği
 - **Ses ve klonlama**
   - AA ses sıralamaları ve MiniMax dokümanlarının analizi: en iyi ücretsiz/lokal ve en iyi ücretli ses.
