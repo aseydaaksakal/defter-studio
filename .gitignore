@@ -1,4 +1,5 @@
 server/.venv/
-server/voices/*.onnx*
+server/voices/
 __pycache__/
 .DS_Store
+

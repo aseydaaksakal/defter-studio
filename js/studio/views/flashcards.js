@@ -3,6 +3,7 @@ import { h, icon, download, slug, toast } from '../../ui.js';
 import { award, correctFx, wrongFx } from '../../learn.js';
 
 export function render(root, art, api) {
+  const srcOf = (cd) => { const r = (art.content.refs || []).find((x) => x.n === +cd.ref); return r ? ` — ${r.title}${r.page ? ', s. ' + r.page : ''}` : ''; };
   const c = art.content;
   const all = c.cards || [];
   const prog = c.progress || {}; // { index: { box: 1..5, due: zaman } }
@@ -28,7 +29,8 @@ export function render(root, art, api) {
       flipped
         ? h('button', { class: 'btn ghost small', onclick: (e) => { e.stopPropagation(); api.ask(`Bu bilgi kartını kaynaklara dayanarak ayrıntılı açıkla:\nSoru: ${cd.front}\nCevap: ${cd.back}`); } }, icon('note', 16), ' Açıkla')
         : h('div', { class: 'fc-hint muted' }, 'Yanıtı görüntüleyin'),
-      flipped && cd.explain ? h('div', { class: 'fc-explain muted' }, cd.explain) : null);
+      flipped && cd.explain ? h('div', { class: 'fc-explain muted' }, cd.explain) : null,
+      flipped && cd.evidence ? h('div', { class: 'fc-src small muted', title: 'Kaynaktaki dayanak' }, '📖 «', cd.evidence, '»', srcOf(cd)) : null);
     rBtn.replaceChildren(String(right), ' ', icon('check', 18));
     wBtn.replaceChildren(icon('x', 18), ' ', String(wrong));
     counter.textContent = `${Object.values(prog).filter((p) => p.box >= 4).length} kart öğrenildi`;

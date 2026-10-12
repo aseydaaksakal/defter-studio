@@ -2,6 +2,8 @@
 // Yanlışlar hata defterine düşer; doğru cevapta kutlama, puan ve rozetler.
 import { h, icon, toast } from '../../ui.js';
 import { award, correctFx, wrongFx, celebrate, addMistakes, resolveMistake } from '../../learn.js';
+import { recordAnswer } from '../../bank.js';
+import { badgeText } from '../../verify.js';
 
 const L = 'ABCDEFGH';
 
@@ -12,6 +14,7 @@ export function render(root, art, api) {
   const target = c.target || 70;
   let set = all.map((_, i) => i), pos = 0, answers = {}, showHint = false, review = false, timer = 0, left = (c.minutes || 0) * 60, combo = 0;
   const box = h('div', { class: 'quiz' });
+  const srcOf = (q) => { const r = (c.refs || []).find((x) => x.n === +q.ref); return r ? ` · ${r.title}${r.page ? ', s. ' + r.page : ''}` : ''; };
   const clock = h('span', { class: 'chip' + (exam ? '' : ' ghosty') });
   root.append(box);
 
@@ -30,7 +33,9 @@ export function render(root, art, api) {
       h('div', { class: 'q-top' }, h('span', { class: 'muted' }, `${pos + 1}/${set.length}`), q.topic ? h('span', { class: 'chip ghosty' }, q.topic) : null,
         h('span', { class: 'grow' }), exam && !review ? clock : null,
         combo >= 3 && !exam ? h('span', { class: 'chip combo' }, `🔥 ${combo} seri`) : null,
+        c.verify?.checked ? h('span', { class: 'chip ok-chip', title: badgeText(c.verify) }, icon('check', 14), ' doğrulandı') : null,
         !exam || review ? h('button', { class: 'btn ghost small', onclick: () => api.ask(`Şu test sorusunu kaynaklara dayanarak açıkla: ${q.q}`) }, 'Sohbette sor') : null),
+      pos === 0 && c.note ? h('p', { class: 'muted small' }, c.note) : null,
       h('h3', { class: 'q-text' }, q.q),
       h('div', { class: 'q-opts', role: 'radiogroup' }, q.options.map((o, k) => {
         let cls = 'q-opt';
@@ -42,7 +47,8 @@ export function render(root, art, api) {
           reveal && k === chosen && k !== q.answer ? h('span', { class: 'q-mark' }, icon('x', 18)) : null);
       })),
       reveal ? h('div', { class: 'q-explain card ' + (chosen === q.answer ? 'ok' : 'no') },
-        h('b', {}, chosen === q.answer ? 'Doğru cevap! ' : 'Tam değil. '), q.explanation || '') : null,
+        h('b', {}, chosen === q.answer ? 'Doğru cevap! ' : 'Tam değil. '), q.explanation || '',
+        q.evidence ? h('div', { class: 'q-src' }, h('div', { class: 'muted small' }, '📖 Kaynaktaki dayanak' + srcOf(q) + (q.verified === 'partial' ? ' · kısmi eşleşme' : '')), h('blockquote', {}, q.evidence)) : null) : null,
       h('div', { class: 'q-bottom' },
         q.hint && !exam ? h('button', { class: 'btn chip', onclick: () => { showHint = !showHint; question(); } }, 'İpucu ', showHint ? '▴' : '▾') : h('span'),
         h('span', { class: 'grow' }),
@@ -59,6 +65,7 @@ export function render(root, art, api) {
     if (!exam) {
       if (ok) { combo++; correctFx(el); } else { combo = 0; wrongFx(el); }
       api.onAnswer?.(all[qi], ok);
+      if (all[qi].bankId) recordAnswer(all[qi].bankId, ok);
       resolveMistake(all[qi].q, ok);
     }
     question();
@@ -75,7 +82,7 @@ export function render(root, art, api) {
       c.attempts = [...(c.attempts || []), { at: Date.now(), score: ok.length, total: set.length, mode: c.mode || 'practice' }];
       await api.save({ ...c }, null);
       await addMistakes([...bad, ...skip].map((i) => ({ q: all[i], notebookId: art.notebookId, artifactId: art.id })));
-      if (exam) for (const i of set) resolveMistake(all[i].q, answers[i] === all[i].answer);
+      if (exam) for (const i of set) { resolveMistake(all[i].q, answers[i] === all[i].answer); if (all[i].bankId && answers[i] !== undefined) recordAnswer(all[i].bankId, answers[i] === all[i].answer); }
       const first = (c.attempts || []).length === 1;
       await award(ok.length * 5 + (pct >= target ? 20 : 0), exam ? 'deneme sınavı' : 'test', pct === 100 ? 'perfect' : pct >= target ? 'target' : first ? 'first_quiz' : null);
       if (pct >= target) celebrate();

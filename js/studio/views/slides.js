@@ -1,5 +1,6 @@
 // Slayt Sunusu: temalı slaytlar, küçük resimler, konuşmacı notları, tam ekran, PDF (yazdır), yerinde düzenleme
 import { h, icon, toast, download, slug } from '../../ui.js';
+import { synthesize, loadTTS, ENGINE_SHORT } from '../../tts.js';
 
 export function slideEl(s, i, deck) {
   const L = s.layout || (i === 0 ? 'title' : 'bullets');
@@ -14,6 +15,19 @@ export function slideEl(s, i, deck) {
     inner = [h('h2', { 'data-f': 'title' }, s.title), h('div', { class: 's-cols' }, col(s.left), col(s.right))];
   } else if (L === 'quote' && s.quote) {
     inner = [h('blockquote', {}, s.quote), h('p', { class: 's-sub' }, s.title)];
+  } else if ((L === 'timeline' || L === 'process') && s.items?.length) {
+    const tag = L === 'process' ? 'ol' : 'div';
+    inner = [h('h2', { 'data-f': 'title' }, s.title), h(tag, { class: L === 'process' ? 's-proc' : 's-tl' }, s.items.slice(0, 7).map((it, k) => h(L === 'process' ? 'li' : 'div', { class: 's-step' }, h('b', {}, it.label || (L === 'process' ? `${k + 1}` : '')), h('span', {}, it.text || ''))))];
+  } else if (L === 'chart' && s.chart?.values?.length) {
+    const vals = s.chart.values.map((v) => parseFloat(String(v).replace(',', '.')) || 0);
+    const max = Math.max(...vals.map(Math.abs), 1e-9);
+    inner = [h('h2', { 'data-f': 'title' }, s.title), h('div', { class: 's-chart' }, (s.chart.labels || []).slice(0, 8).map((lb, k) => h('div', { class: 's-bar' },
+      h('span', { class: 's-bar-l' }, lb), h('span', { class: 's-bar-t' }, h('span', { class: 's-bar-f', style: { width: Math.round((Math.abs(vals[k]) / max) * 100) + '%' } })),
+      h('span', { class: 's-bar-v' }, `${s.chart.values[k]}${s.chart.unit ? ' ' + s.chart.unit : ''}`)))), ul(s.bullets)];
+  } else if (L === 'table' && s.table?.rows?.length) {
+    inner = [h('h2', { 'data-f': 'title' }, s.title), h('table', { class: 's-table' },
+      s.table.columns?.length ? h('thead', {}, h('tr', {}, s.table.columns.map((c) => h('th', {}, String(c))))) : null,
+      h('tbody', {}, s.table.rows.slice(0, 7).map((r) => h('tr', {}, (Array.isArray(r) ? r : [r]).map((c) => h('td', {}, String(c)))))))];
   } else {
     inner = [h('h2', { 'data-f': 'title' }, h('span', { class: 's-ic' }, s.icon || ''), s.title), s.body ? h('p', { class: 's-body', 'data-f': 'body' }, s.body) : null, ul(s.bullets)];
   }
@@ -59,6 +73,27 @@ export function render(root, art, api) {
     toast('Slayt kaydedildi');
   }
 
+  // Anlatımlı sunum: konuşmacı notları erkek (ya da seçilen) anlatıcıyla seslendirilir, slaytlar sesle birlikte ilerler
+  let narr = null;
+  const narrBtn = h('button', { class: 'btn ghost small', title: 'Konuşmacı notlarını seslendirip slaytları otomatik ilerletir' }, icon('play', 16), ' Anlatımlı oynat');
+  narrBtn.onclick = async () => {
+    if (narr) { narr.pause(); narr = null; narrBtn.replaceChildren(icon('play', 16), ' Anlatımlı oynat'); return; }
+    narrBtn.disabled = true;
+    try {
+      const cfg = await loadTTS();
+      const sp = { id: 'A', name: 'Anlatıcı', gender: cfg.narrator === 'f' ? 'f' : 'm', role: 'anlatıcı' };
+      const lines = slides.map((x) => ({ speaker: 'A', text: x.notes || [x.title, x.body, ...(x.bullets || [])].filter(Boolean).join('. ') || x.title || '…' }));
+      const r = await synthesize(art.id + ':narr', lines, [sp], d.lang || 'Türkçe', { format: 'narration', onProgress: (m) => { count.textContent = m; } });
+      narr = new Audio(URL.createObjectURL(r.blob));
+      narr.ontimeupdate = () => { const i = r.timings.findLastIndex((t) => narr.currentTime >= t.start - 0.05); if (i >= 0 && i !== cur) show(i); };
+      narr.onended = () => { narr = null; narrBtn.replaceChildren(icon('play', 16), ' Anlatımlı oynat'); };
+      narr.currentTime = r.timings[cur]?.start || 0;
+      await narr.play();
+      narrBtn.replaceChildren(icon('pause', 16), ' Durdur');
+      toast(`${ENGINE_SHORT[r.engine]} · ${sp.gender === 'm' ? 'erkek' : 'kadın'} anlatıcı`);
+    } catch (e) { toast('Anlatım üretilemedi: ' + e.message, 'error', 7000); } finally { narrBtn.disabled = false; show(cur); }
+  };
+
   const editBtn = h('button', { class: 'btn ghost small' }, icon('edit', 16), ' Düzenle');
   editBtn.onclick = async () => { if (editing) await saveEdit(); editing = !editing; setEditable(editing); editBtn.replaceChildren(icon(editing ? 'check' : 'edit', 16), editing ? ' Kaydet' : ' Düzenle'); };
 
@@ -74,16 +109,17 @@ export function render(root, art, api) {
       h('button', { class: 'icon-btn', 'aria-label': 'Önceki', onclick: () => show(cur - 1) }, icon('back')), count,
       h('button', { class: 'icon-btn', 'aria-label': 'Sonraki', onclick: () => show(cur + 1) }, icon('next')),
       h('span', { class: 'grow' }),
-      editBtn,
+      narrBtn, editBtn,
       h('button', { class: 'btn ghost small', onclick: () => { notes = !notes; noteBox.hidden = !notes; } }, icon('note', 16), ' Notlar'),
       h('button', { class: 'btn ghost small', onclick: () => stage.requestFullscreen?.() }, icon('expand', 16), ' Sun'),
       h('button', { class: 'btn ghost small', onclick: () => printDeck(d) }, icon('download', 16), ' PDF'),
       h('button', { class: 'btn ghost small', onclick: () => download(slug(art.title) + '.html', standaloneHTML(art), 'text/html') }, icon('download', 16), ' HTML')),
+    d.note ? h('p', { class: 'muted small' }, d.note) : null,
     h('div', { class: 'stage-wrap' }, stage),
     noteBox, thumbs));
   stage.addEventListener('click', (e) => { if (!editing && !e.target.closest('[contenteditable]')) show(cur + (e.offsetX > stage.clientWidth / 3 ? 1 : -1)); });
   show(0);
-  return () => document.removeEventListener('keydown', key);
+  return () => { document.removeEventListener('keydown', key); narr?.pause(); };
 }
 
 // Yazdırma: tüm slaytları sayfa sayfa basar → tarayıcıdan "PDF olarak kaydet"

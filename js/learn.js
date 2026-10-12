@@ -155,8 +155,63 @@ export function sciencePage() {
       item('🗣️', 'Tartışma ve açıklama', '"Neden?" ve "Nasıl?" sorularıyla bilgiyi kendi cümlelerinle bağlamak anlamayı kalıcılaştırır.', 'İstişare, münazara ve tartışma podcast biçimleri; sohbette "Bunu bana açıkla".'),
       item('😴', 'Uyku ve mola', 'Öğrenilenler uykuda pekişir. 25-50 dakikalık oturumlar ve kısa molalar dikkati korur.', 'Günlük hedef ve seri sistemi her gün az ama düzenli çalışmayı teşvik eder.')
     ),
+    methodsLibrary(),
     h('div', { class: 'card note-myth' }, h('h3', {}, 'Öğrenme piramidi yüzdeleri hakkında'),
       h('p', {}, '"Okuduğumuzun %10’unu, öğrettiğimizin %90’ını hatırlarız" gibi yüzdeler Edgar Dale’in Yaşantı Konisi’ne sonradan eklenmiştir; Dale’in kendisi yüzde vermemiştir ve bu rakamlar kontrollü araştırmalarla desteklenmez. Yine de ana fikir doğru yöndedir: aktif katılım, kendini test etme ve başkasına öğretme pasif okumadan daha kalıcıdır. Uygulama bu yüzden yüzdelere değil, kanıtlanmış tekniklere dayanır.')),
     h('div', { class: 'card' }, h('h3', {}, 'Sınav hedefi'),
       h('p', {}, 'Hiçbir araç belirli bir puanı garanti edemez; sonucu çalışma süresi ve düzen belirler. Defter Studio şunu sağlar: hedef puanını (ör. 70) seçersin, deneme sınavlarıyla nerede olduğunu görürsün, yanlışların hata defterine düşer ve ustalaşana kadar geri gelir. Hazırlık göstergesi hedefi geçtiğinde sınava hazır olduğunu anlarsın.')));
+}
+
+// ---------------- Yöntemler kütüphanesi: kanıt düzeyiyle ----------------
+const EV = { y: ['Yüksek kanıt', 'ev-y'], o: ['Orta kanıt', 'ev-o'], d: ['Düşük (tek başına)', 'ev-d'], m: ['Bilimsel değil', 'ev-m'] };
+const METHODS = [
+  ['Kanıtı en güçlü teknikler (Dunlosky ve ark., 2013)', [
+    ['y', 'Kendini test etme (geri çağırma)', 'Okumak yerine hatırlamaya çalışmak, uzun süreli hatırlamayı en çok artıran tekniktir (test etkisi).', 'Test, bilgi kartları, soru bankası, sözlü sınav provası.'],
+    ['y', 'Aralıklı tekrar', 'Aynı süreyi günlere yaymak tek oturumdan çok daha kalıcıdır. Unutmaya başladığınız anda tekrar etmek en verimlisidir.', 'Soru bankası 1-3-7-16-35-80 gün aralıklarla soruları geri getirir; kartlar ve hata defteri de böyle çalışır.'],
+    ['o', 'Karışık çalışma (interleaving)', 'Konuları karıştırmak hangi bilginin ne zaman kullanılacağını ayırt etmeyi öğretir; özellikle problem türlerinde güçlü.', 'Deneme sınavı ve bankadan “Tümünden karışık” test.'],
+    ['o', 'Neden-nasıl sorgulama', '“Bu neden doğru?” sorusunu sormak bilgiyi bildiklerinize bağlar.', 'Sohbette “neden?” diye sorun; münazara ve istişare podcastleri.'],
+    ['o', 'Kendine açıklama', 'Bir adımı ya da örneği kendi cümlelerinizle açıklamak anlamayı derinleştirir.', 'Öğreterek Öğren aracı (Feynman tekniği) ve puanlı geri bildirim.'],
+    ['d', 'Özet çıkarma, altını çizme, tekrar okuma', 'Tek başına zayıftır: tanıdıklık hissi verir ama hatırlamayı az artırır. Testle birleştirince işe yarar.', 'Rapor ve notları okuduktan sonra mutlaka kısa bir test çözün.']]],
+  ['Yapılandırılmış yöntemler', [
+    ['o', 'Feynman tekniği', 'Konuyu hiç bilmeyen birine basitçe anlatın; tıkandığınız yer eksiğinizdir. Kaynağa dönün, yeniden anlatın.', 'Öğreterek Öğren aracı.'],
+    ['o', 'Hatırla ve yaz (blurting)', 'Kitabı kapatıp konu hakkında hatırladığınız her şeyi yazın, sonra kaynakla karşılaştırıp eksikleri işaretleyin.', 'Öğreterek Öğren aracında “yazılı anlat” seçeneği eksik noktaları listeler.'],
+    ['o', 'Cornell not alma ve SQ3R', 'Göz at → soru çıkar → oku → kendin anlat → tekrar et. Notları soru-cevap biçiminde tutmak testi kolaylaştırır.', 'Notlar + bilgi kartları (soru–cevap / boşluk doldurma).'],
+    ['o', 'Pomodoro', '25 dakika kesintisiz odak + 5 dakika mola. Dikkati korur ve başlamayı kolaylaştırır; kanıtı dikkat ve mola araştırmalarına dayanır.', 'Üst çubuktaki ⏱ düğmesi.'],
+    ['y', 'Çözümlü örnek ve ön test', 'Yeni konuda önce çözümlü örnek incelemek, öğrenmeden önce kısa bir ön test çözmek sonraki öğrenmeyi güçlendirir.', 'Konuya başlamadan bankadan 10 soruluk test çözün; yanlışlar hata defterine düşer.'],
+    ['o', 'İkili kodlama', 'Söz ve görüntüyü birlikte kullanmak hatırlamayı kolaylaştırır.', 'İnfografik, zihin haritası, video özet, slaytlardaki grafik ve tablolar.']]],
+  ['Hafıza şampiyonlarının yöntemleri', [
+    ['y', 'Hafıza sarayı (loci)', 'Bilgileri iyi bildiğiniz bir mekânda sırayla yerleştirip zihinde yürürsünüz. 40 günlük loci eğitimi, hiç deneyimi olmayanların hatırlamasını belirgin artırmıştır (Dresler ve ark., 2017).', 'Hafıza Teknikleri aracı.'],
+    ['o', 'Major sistemi ve PAO', 'Rakamları ünsüzlere çevirip kelime yapma (Major) ve her iki haneyi Kişi-Eylem-Nesne imgesine dönüştürme (PAO): sayı, tarih, frekans ezberinin temeli.', 'Hafıza Teknikleri aracında sayı ve frekanslar için imge önerileri.'],
+    ['o', 'Parçalama (chunking)', 'Uzun diziyi anlamlı küçük gruplara bölmek çalışma belleğinin sınırını aşmanızı sağlar (ör. 0532 412 76 89).', 'Kartlarda uzun listeleri parçalara bölün.'],
+    ['m', '“Fotoğrafik hafıza”', 'Yetişkinlerde bir sayfayı fotoğraf gibi saklayıp okuyabilme (eidetik hafıza) bilimsel olarak gösterilememiştir. Şampiyonlar bunu doğuştan değil, yukarıdaki tekniklerle ve çok çalışarak yapar.', 'Hedefi “fotoğraf çekmek” değil, loci + aralıklı tekrar olarak koyun.']]],
+  ['Çok sayıda kitap ve uzun metin ezberleme', [
+    ['o', 'Hafızlık usulü: yeni + yakın + eski', 'Her gün az miktarda yeni metin, son günlerin tekrarı ve eskilerin dönüşümlü tekrarı. Bu, aralıklı tekrarın geleneksel ve çok etkili bir biçimidir.', 'Soru bankasının “Akıllı tekrar” modu: önce vadesi gelenler, sonra yeniler.'],
+    ['o', 'Anlam önce, ezber sonra', 'Ezberlemeden önce bölümü anlamak, yapısını (başlıklar, ana fikirler) çıkarmak ezberi kolaylaştırır.', 'Zihin haritası ve rapor → sonra kartlar ve test.'],
+    ['d', 'Hızlı okuma ile ezber', 'Dakikada ~400 kelimenin çok üstündeki hızlarda anlama düşer (Rayner ve ark., 2016). Hızlı okuma göz gezdirme için yararlıdır, ezber için değil.', 'Hızlı Okuma aracı her metinden sonra anlama testi yapar.']]],
+  ['Dil öğrenme: bebek gibi mi, yetişkin gibi mi?', [
+    ['y', 'Anlaşılır girdi (bebek yolu)', 'Bebekler binlerce saat, bağlam içinde anladıkları konuşmayı dinleyerek ve etkileşerek öğrenir; ses dizilerindeki örüntüleri istatistiksel olarak yakalarlar (Saffran ve ark., 1996).', 'Dinleyerek Öğren › Dinleme banyosu: metne bakmadan dinleyin, sonra metni açın.'],
+    ['y', 'Açık öğretim + bol girdi (yetişkin yolu)', 'Yetişkinler kural ve kelimeyi açıkça öğrenince başta çocuklardan hızlı ilerler; açık öğretimin etkisi meta-analizlerle gösterilmiştir (Norris ve Ortega, 2000). En iyisi ikisini birleştirmektir.', 'Rapor/kartlarla kuralı öğrenin, dikte ve gölgelemeyle pekiştirin.'],
+    ['o', 'Gölgeleme (shadowing) ve dikte', 'Dinlediğini hemen tekrar etmek telaffuz ve akıcılığı, duyduğunu yazmak dinlediğini anlamayı geliştirir.', 'Dinleyerek Öğren › Gölgeleme ve Dikte; hızı 0,6×’ten 1,25×’e çıkarın.'],
+    ['o', 'Yaşın etkisi', 'Doğal aksan için erken yaş avantajlıdır; dilbilgisini anadil düzeyinde öğrenme yeteneği geç ergenliğe kadar yüksek kalır (Hartshorne ve ark., 2018). Yetişkinler yine de çok iyi düzeye ulaşabilir.', 'Her gün az ama düzenli dinleme + aralıklı tekrar.']]],
+  ['Yaygın mitler', [
+    ['m', 'Öğrenme stilleri (görsel/işitsel/kinestetik)', 'Öğretimi kişinin “stiline” uydurmanın öğrenmeyi artırdığına dair güvenilir kanıt yoktur (Pashler ve ark., 2008). İçeriğe uygun biçim (ör. harita için görsel) önemlidir.', 'Her konuda birkaç biçimi birlikte kullanın.'],
+    ['m', 'Öğrenme piramidi yüzdeleri', '“Okuduğumuzun %10’u, öğrettiğimizin %90’ı” rakamları araştırmaya dayanmaz. Ana fikir (aktif > pasif) ise doğrudur.', 'Okuduktan sonra test edin ve anlatın.'],
+    ['m', '“Beynimizin %10’unu kullanırız”', 'Beyin görüntüleme çalışmaları beynin neredeyse tamamının etkin olduğunu gösterir.', '—']]]
+];
+export function methodsLibrary() {
+  return h('div', { class: 'methods' },
+    h('h2', {}, 'Yöntemler kütüphanesi'),
+    h('p', { class: 'muted' }, 'Dünyada en çok kullanılan öğrenme ve ezber yöntemleri, kanıt düzeyleriyle. Etiketler: ', ...Object.values(EV).map(([t, c]) => h('span', { class: 'ev ' + c }, t))),
+    ...METHODS.map(([title, items]) => h('section', {}, h('h3', {}, title), h('div', { class: 'm-grid' }, items.map(([ev, t, d, how]) =>
+      h('div', { class: 'card m-item' }, h('div', { class: 'row gap' }, h('b', { class: 'grow' }, t), h('span', { class: 'ev ' + EV[ev][1] }, EV[ev][0])), h('p', {}, d), h('p', { class: 'muted small' }, h('b', {}, 'Uygulamada: '), how)))))),
+    h('details', { class: 'card' }, h('summary', {}, 'Kaynaklar'),
+      h('ul', { class: 'small' },
+        h('li', {}, 'Dunlosky, J. ve ark. (2013). Improving students’ learning with effective learning techniques. Psychological Science in the Public Interest, 14(1).'),
+        h('li', {}, 'Roediger, H. L. ve Karpicke, J. D. (2006). Test-enhanced learning. Psychological Science, 17(3).'),
+        h('li', {}, 'Dresler, M. ve ark. (2017). Mnemonic training reshapes brain networks to support superior memory. Neuron, 93(5).'),
+        h('li', {}, 'Rayner, K. ve ark. (2016). So much to read, so little time. Psychological Science in the Public Interest, 17(1).'),
+        h('li', {}, 'Saffran, J. R., Aslin, R. N. ve Newport, E. L. (1996). Statistical learning by 8-month-old infants. Science, 274.'),
+        h('li', {}, 'Norris, J. M. ve Ortega, L. (2000). Effectiveness of L2 instruction: A research synthesis. Language Learning, 50(3).'),
+        h('li', {}, 'Hartshorne, J. K., Tenenbaum, J. B. ve Pinker, S. (2018). A critical period for second language acquisition. Cognition, 177.'),
+        h('li', {}, 'Pashler, H. ve ark. (2008). Learning styles: Concepts and evidence. Psychological Science in the Public Interest, 9(3).'))));
 }

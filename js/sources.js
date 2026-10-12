@@ -231,3 +231,30 @@ export async function buildContext(notebookId, focus = '', { budgetChars } = {})
   const text = refs.map((r) => `[${r.n}] (${r.title}${r.page ? ', s.' + r.page : ''})\n${r.text}`).join('\n\n');
   return { text, refs, sources };
 }
+
+// Kaynağın tamamını kapsayan ardışık bağlam dilimleri (toplu üretim ve soru bankası için).
+// Her dilim kendi [1..n] numaralarını taşır; odak verilirse yalnız ilgili parçalar kullanılır.
+export async function sliceContexts(notebookId, focus = '', { budgetChars } = {}) {
+  const cfg = await loadConfig();
+  budgetChars = budgetChars || Math.max(6000, Math.min(Math.floor((cfg.numCtx || 32768) * 2.6 * 0.45), 26000));
+  const sources = await enabledSources(notebookId);
+  if (!sources.length) throw new Error('Önce en az bir kaynak ekleyin ve seçili olduğundan emin olun.');
+  const titles = Object.fromEntries(sources.map((s) => [s.id, s.title]));
+  let pool = [];
+  for (const s of sources) pool.push(...await db.chunks.where('sourceId').equals(s.id).sortBy('ord'));
+  if (focus && pool.length * 1400 > budgetChars * 2) {
+    const rel = await search(notebookId, focus, Math.max(30, Math.ceil(pool.length / 3)));
+    const keep = new Set(rel.map((c) => c.id));
+    pool = pool.filter((c) => keep.has(c.id));
+  }
+  const slices = []; let cur = [], used = 0;
+  for (const c of pool) {
+    if (cur.length && used + c.text.length > budgetChars) { slices.push(cur); cur = []; used = 0; }
+    cur.push(c); used += c.text.length;
+  }
+  if (cur.length) slices.push(cur);
+  return slices.map((cs, k) => {
+    const refs = cs.map((c, i) => ({ n: i + 1, chunkId: c.id, sourceId: c.sourceId, title: titles[c.sourceId], page: c.page, text: c.text }));
+    return { slice: k, of: slices.length, refs, sources, text: refs.map((r) => `[${r.n}] (${r.title}${r.page ? ', s.' + r.page : ''})\n${r.text}`).join('\n\n') };
+  });
+}

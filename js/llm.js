@@ -8,7 +8,7 @@ export const PROVIDERS = {
   ollama: {
     label: 'Ollama (lokal, ücretsiz)', baseUrl: 'http://localhost:11434', needsKey: false,
     model: 'qwen3.8:27b', embedModel: '',
-    hint: 'Bilgisayarınızda çalışır. OLLAMA_ORIGINS ortam değişkenine bu sitenin adresini ekleyin (KURULUM.md).'
+    hint: 'Bilgisayarınızda çalışır. GitHub Pages’ten kullanırken OLLAMA_ORIGINS ayarı gerekir; uygulamayı lokal sunucudan (http://localhost:8765) açarsanız gerekmez (KURULUM.md).'
   },
   lmstudio: {
     label: 'LM Studio / llama.cpp / vLLM (lokal)', baseUrl: 'http://localhost:1234/v1', needsKey: false, kind: 'openai',
@@ -33,6 +33,34 @@ export const PROVIDERS = {
   anthropic: {
     label: 'Anthropic Claude', baseUrl: 'https://api.anthropic.com/v1', needsKey: true,
     model: 'claude-sonnet-5-5', embedModel: '', hint: 'Anahtar yalnız bu tarayıcıda saklanır.'
+  },
+  xai: {
+    label: 'xAI Grok', baseUrl: 'https://api.x.ai/v1', needsKey: true, kind: 'openai',
+    model: '', embedModel: '', hint: 'console.x.ai — “Listele” ile güncel Grok modellerini seçin.'
+  },
+  deepseek: {
+    label: 'DeepSeek (ucuz)', baseUrl: 'https://api.deepseek.com', needsKey: true, kind: 'openai',
+    model: 'deepseek-chat', embedModel: '', hint: 'platform.deepseek.com — deepseek-chat (hızlı) veya deepseek-reasoner (düşünen).'
+  },
+  qwen: {
+    label: 'Alibaba Qwen (DashScope)', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', needsKey: true, kind: 'openai',
+    model: 'qwen-plus', embedModel: '', hint: 'Model Studio (uluslararası) anahtarı. qwen-plus / qwen-max / qwen-flash.'
+  },
+  mistral: {
+    label: 'Mistral', baseUrl: 'https://api.mistral.ai/v1', needsKey: true, kind: 'openai',
+    model: 'mistral-large-latest', embedModel: 'mistral-embed', hint: 'console.mistral.ai'
+  },
+  together: {
+    label: 'Together AI (açık modeller)', baseUrl: 'https://api.together.xyz/v1', needsKey: true, kind: 'openai',
+    model: '', embedModel: '', hint: 'api.together.ai — açık ağırlıklı modelleri bulutta çalıştırır.'
+  },
+  moonshot: {
+    label: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.ai/v1', needsKey: true, kind: 'openai',
+    model: '', embedModel: '', hint: 'platform.moonshot.ai — “Listele” ile model seçin.'
+  },
+  minimax: {
+    label: 'MiniMax (metin)', baseUrl: 'https://api.minimax.io/v1', needsKey: true, kind: 'openai',
+    model: '', embedModel: '', hint: 'platform.minimax.io — aynı anahtar seslendirmede de kullanılabilir.'
   },
   custom: {
     label: 'Özel OpenAI uyumlu uç nokta', baseUrl: '', needsKey: false, kind: 'openai', model: '', embedModel: '', hint: ''
@@ -79,8 +107,9 @@ async function check(res) {
   throw new Error(msg);
 }
 
-export async function chat({ system = '', messages, json = false, onToken, signal, cfg, role }) {
+export async function chat({ system = '', messages, json = false, onToken, signal, cfg, role, temperature }) {
   cfg = cfg || await loadConfig();
+  const temp = temperature ?? cfg.temperature ?? 0.6;
   // Model rolleri: 'fast' görevleri (özet, öneri, plan) ayarlıysa küçük/hızlı modele gider
   if (role === 'fast' && cfg.fastModel) cfg = { ...cfg, model: cfg.fastModel };
   const kind = kindOf(cfg.provider);
@@ -92,14 +121,16 @@ export async function chat({ system = '', messages, json = false, onToken, signa
     const body = {
       model: cfg.model, stream: true,
       messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages],
-      options: { num_ctx: cfg.numCtx || 32768, temperature: cfg.temperature ?? 0.6 }
+      options: { num_ctx: cfg.numCtx || 32768, temperature: temp }, keep_alive: '30m'
     };
-    if (json) body.format = 'json';
-    const res = await check(await fetch(base + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal }));
+    if (json) { body.format = 'json'; body.think = false; } // JSON görevlerinde düşünme çıktısı yalnız süre harcar
+    let res = await fetch(base + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal });
+    if (!res.ok && res.status === 400 && 'think' in body) { delete body.think; res = await fetch(base + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal }); }
+    await check(res);
     await readSSE(res, (line) => { try { const j = JSON.parse(line); push(j.message?.content); } catch {} });
   } else if (kind === 'openai') {
     const body = {
-      model: cfg.model, stream: true, temperature: cfg.temperature ?? 0.6,
+      model: cfg.model, stream: true, temperature: temp,
       messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages]
     };
     if (json) body.response_format = { type: 'json_object' };
@@ -120,17 +151,17 @@ export async function chat({ system = '', messages, json = false, onToken, signa
     });
   } else if (kind === 'gemini') {
     const contents = messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-    const body = { contents, generationConfig: { temperature: cfg.temperature ?? 0.6 } };
+    const body = { contents, generationConfig: { temperature: temp } };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     if (json) body.generationConfig.responseMimeType = 'application/json';
-    const url = `${base}/models/${encodeURIComponent(cfg.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(cfg.apiKey)}`;
-    const res = await check(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }));
+    const url = `${base}/models/${encodeURIComponent(cfg.model)}:streamGenerateContent?alt=sse`;
+    const res = await check(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey }, body: JSON.stringify(body), signal }));
     await readSSE(res, (line) => {
       if (!line.startsWith('data:')) return;
       try { const j = JSON.parse(line.slice(5)); push((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')); } catch {}
     });
   } else if (kind === 'anthropic') {
-    const body = { model: cfg.model, max_tokens: 16000, stream: true, temperature: cfg.temperature ?? 0.6, messages };
+    const body = { model: cfg.model, max_tokens: 16000, stream: true, temperature: Math.min(1, temp), messages };
     if (system) body.system = system;
     const res = await check(await fetch(base + '/messages', {
       method: 'POST', signal, body: JSON.stringify(body),
@@ -170,7 +201,7 @@ export async function chatJSON(opts) {
   try { return extractJSON(text); } catch (e) {
     // Modelden bozuk JSON'u düzeltmesini iste
     const fixed = await chat({
-      cfg: opts.cfg, role: opts.role, signal: opts.signal, json: true,
+      cfg: opts.cfg, role: opts.role, signal: opts.signal, json: true, temperature: 0,
       system: 'Yalnızca geçerli JSON döndür. Açıklama yazma.',
       messages: [{ role: 'user', content: 'Aşağıdaki metni geçerli JSON nesnesine dönüştür, içeriği değiştirme:\n\n' + text.slice(0, 60000) }]
     });
@@ -194,9 +225,9 @@ export async function embed(texts, cfg) {
     return (await res.json()).data.map((d) => d.embedding);
   }
   if (kind === 'gemini') {
-    const url = `${base}/models/${cfg.embedModel}:batchEmbedContents?key=${encodeURIComponent(cfg.apiKey)}`;
+    const url = `${base}/models/${cfg.embedModel}:batchEmbedContents`;
     const res = await check(await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey },
       body: JSON.stringify({ requests: texts.map((t) => ({ model: 'models/' + cfg.embedModel, content: { parts: [{ text: t }] } })) })
     }));
     return (await res.json()).embeddings.map((e) => e.values);
@@ -218,7 +249,7 @@ export async function listModels(cfg) {
     return (j.data || []).map((m) => m.id).sort();
   }
   if (kind === 'gemini') {
-    const j = await (await check(await fetch(`${base}/models?key=${encodeURIComponent(cfg.apiKey)}&pageSize=200`))).json();
+    const j = await (await check(await fetch(`${base}/models?pageSize=200`, { headers: { 'x-goog-api-key': cfg.apiKey } }))).json();
     return j.models.map((m) => m.name.replace('models/', ''));
   }
   if (kind === 'anthropic') {

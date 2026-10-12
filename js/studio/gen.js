@@ -1,7 +1,9 @@
 // Defter Studio — Studio üreticileri (istemler + JSON şemaları)
 // Her üretici kaynak bağlamını alır, modelden yapılandırılmış JSON ister ve artifact içeriğini döndürür.
 import { chat, chatJSON } from '../llm.js';
-import { buildContext } from '../sources.js';
+import { buildContext, sliceContexts } from '../sources.js';
+import { generateExact, shortNote } from './batch.js';
+import { summarize } from '../verify.js';
 
 export const LANGS = ['Türkçe', 'English', 'Deutsch', 'Français', 'Español', 'العربية', 'Русский', 'Italiano', 'Nederlands', '日本語'];
 
@@ -54,6 +56,41 @@ export const EXAMS = [
   { v: 'colreg', t: 'COLREG (Denizde çatışmayı önleme)', opts: 4, minPerQ: 1.2, style: 'COLREG kuralları, fenerler, işaretler, manevra senaryoları' },
   { v: 'ehliyet', t: 'Sürücü belgesi', opts: 4, minPerQ: 1.0, style: 'MEB sürücü sınavı tarzı' }
 ];
+
+
+// Tam sayı seçeneği (eski 'few/std/more' kayıtlarıyla uyumlu)
+export const toCount = (v, old, def) => { const n = parseInt(v, 10); if (n > 0) return n; return old?.[v] || def; };
+const EVIDENCE_RULE = `- Her öğe için "evidence" alanına, cevabı kanıtlayan cümleyi KAYNAK PARÇASINDAN KELİMESİ KELİMESİNE kopyala (kaynağın kendi dilinde, en fazla 35 kelime) ve "ref" alanına o parçanın numarasını yaz.
+- Kaynakta kanıtı olmayan hiçbir öğeyi yazma. Uydurma alıntı yazma; alıntılar program tarafından kaynakla karşılaştırılır.`;
+const shuffleOpts = (q) => {
+  const idx = q.options.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  return { ...q, options: idx.map((i) => q.options[i]), answer: idx.indexOf(q.answer) };
+};
+const cleanQ = (q) => (q && Array.isArray(q.options) && q.options.length >= 2 && q.q ? { ...q, options: q.options.map(String), answer: Math.max(0, Math.min(q.options.length - 1, +q.answer || 0)) } : null);
+
+// Çoktan seçmeli soru tanımı (Test aracı ve soru bankası ortak kullanır)
+export function questionSpec(o) {
+  const ex = EXAMS.find((e) => e.v === o.preset) || EXAMS[0];
+  const L = 'ABCDE'.slice(0, ex.opts).split('').join(', ');
+  const lvl = { easy: 'kolay', mid: 'orta', hard: 'zor' }[o.level] || 'orta';
+  return {
+    ex,
+    system: `Sınav hazırlayan titiz bir uzmansın. ${BASE_RULES(o.lang || 'Türkçe')}\n- Her sorunun yalnızca bir doğru cevabı olsun ve bu cevap kaynakla birebir doğrulanabilsin.\n- Çeldiriciler makul ama kesinlikle yanlış olsun; tipik öğrenci hatalarını yansıtsın.\n- Açıklamada şık harfi (A, B…) kullanma; şıklar karıştırılacak.\n${EVIDENCE_RULE}`,
+    prompt: (ctx, need, avoid) => `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nTam ${need} adet ${ex.opts} şıklı (${L}) çoktan seçmeli soru hazırla. Sınav tarzı: ${ex.style}. Zorluk: ${lvl}. Soruları bu parçalardaki farklı konulara dağıt. Her soruya kısa bir konu etiketi ver.${avoid ? `\nŞu sorulardan FARKLI sorular yaz: ${avoid}` : ''}\nJSON: {"questions": [{"topic": "konu etiketi", "q": "...", "options": ["...", "..."], "answer": 0, "hint": "cevabı vermeyen ipucu", "explanation": "doğru cevabın gerekçesi ve neden diğerleri yanlış", "evidence": "kaynaktan birebir alıntı", "ref": 1}]}`,
+    pick: (j) => (j.questions || j.items || (Array.isArray(j) ? j : [])).map(cleanQ),
+    key: (q) => q.q,
+    answerOf: (q) => q.options[q.answer]
+  };
+}
+export { shuffleOpts };
+
+// Tam sayıda, doğrulanmış, kaynağın tamamına yayılmış soru üret
+export async function makeQuestions(nb, o, { count, signal, progress, onItems }) {
+  const spec = questionSpec(o);
+  const r = await generateExact({ ...spec, nb, focus: o.focus, total: count, perBatch: 8, signal, progress, onItems, label: 'Sorular', max: 300 });
+  return { ...r, items: r.items.map(shuffleOpts), ex: spec.ex };
+}
 
 // ---------------- Studio araçlarının tanımı ----------------
 export const TOOLS = {
@@ -109,6 +146,7 @@ export const TOOLS = {
           signal);
         for (const l of part.lines || []) if (l.text) lines.push({ speaker: ids.includes(l.speaker) ? l.speaker : ids[0], tone: l.tone || '', text: String(l.text) });
       }
+      if (!lines.length) throw new Error('Senaryo üretilemedi: model boş ya da geçersiz yanıt verdi. Yeniden deneyin.');
       return { title: plan.title || 'Sesli Özet', content: { format: o.format, lang: o.lang, speakers, lines } };
     }
   },
@@ -121,19 +159,58 @@ export const TOOLS = {
         { v: 'presenter', t: 'Sunucu Slaytları', d: 'Konuşurken size destek olacak, önemli konuşma noktalarını içeren net, görsel slaytlar.' }
       ] },
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
-      { key: 'length', label: 'Uzunluk', type: 'seg', default: 'default', choices: [{ v: 'short', t: 'Kısa' }, { v: 'default', t: 'Varsayılan' }] },
+      { key: 'count', label: 'Slayt sayısı', type: 'count', default: 10, min: 1, max: 150, choices: [5, 10, 20, 50, 100] },
       { key: 'theme', label: 'Tema', type: 'seg', default: 'ocean', choices: [{ v: 'ocean', t: 'Okyanus' }, { v: 'paper', t: 'Kâğıt' }, { v: 'night', t: 'Gece' }, { v: 'sunset', t: 'Gün batımı' }] },
       { key: 'focus', label: 'Oluşturmak istediğiniz slayt sunusunu açıklayın', type: 'text', placeholder: 'Üst düzey bir taslak ekleyin veya kitle, stil ve odak noktası hakkında bilgi verin' }
     ],
     async generate(nb, o, { signal, progress }) {
-      const ctx = await buildContext(nb, o.focus);
-      const n = o.length === 'short' ? '6-8' : '10-14';
-      progress('Slaytlar hazırlanıyor…');
-      const r = await json(
-        `Usta bir sunum tasarımcısı ve eğitmensin. ${BASE_RULES(o.lang)}`,
-        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\n${n} slaytlık bir sunu hazırla. Biçim: ${o.format === 'detailed' ? 'Ayrıntılı: her slaytta açıklayıcı tam cümleler, 3-5 madde ve kısa bir paragraf.' : 'Sunucu slaytları: her slaytta en fazla 3 kısa madde, ayrıntılar konuşmacı notlarında.'}\nİlk slayt "title" düzeninde olsun. Uygun yerlerde "stat" (çarpıcı tek sayı), "two-col" (karşılaştırma) ve "quote" düzenlerini kullan. Son slayt özet olsun.\nJSON: {"title": "...", "subtitle": "...", "slides": [{"layout": "title|bullets|two-col|stat|quote", "title": "...", "bullets": ["..."], "body": "kısa paragraf (isteğe bağlı)", "left": {"heading": "...", "bullets": ["..."]}, "right": {"heading": "...", "bullets": ["..."]}, "stat": {"value": "...", "label": "..."}, "quote": "...", "icon": "tek emoji", "notes": "konuşmacı notu", "refs": [1]}]}`,
-        signal);
-      return { title: r.title || 'Slayt Sunusu', content: { ...r, theme: o.theme, format: o.format, refs: refsOf(ctx) } };
+      const N = Math.min(150, toCount(o.count, {}, o.length === 'short' ? 7 : 10));
+      const fmt = o.format === 'presenter' ? 'Sunucu slaytları: her slaytta en fazla 3 kısa madde, ayrıntılar konuşmacı notlarında.' : 'Ayrıntılı: her slaytta açıklayıcı tam cümleler, 3-5 madde ve kısa bir paragraf.';
+      const SCHEMA = `{"layout": "title|bullets|two-col|stat|quote|timeline|process|chart|table", "title": "...", "bullets": ["..."], "body": "kısa paragraf (isteğe bağlı)", "left": {"heading": "...", "bullets": ["..."]}, "right": {"heading": "...", "bullets": ["..."]}, "stat": {"value": "...", "label": "..."}, "quote": "...", "items": [{"label": "tarih/adım", "text": "..."}], "chart": {"labels": ["..."], "values": [1], "unit": ""}, "table": {"columns": ["..."], "rows": [["..."]]}, "icon": "tek emoji", "notes": "konuşmacı notu (2-4 cümle)", "refs": [1]}`;
+      const LAYOUT = 'Düzenleri içeriğe göre çeşitlendir: karşılaştırma için "two-col", çarpıcı tek sayı için "stat", tarihler için "timeline", adımlar için "process", kaynakta sayısal seri varsa "chart", yan yana özellikler için "table", önemli bir ifade için "quote". chart ve table içindeki her değer kaynakta açıkça geçmeli.';
+      const system = `Usta bir sunum tasarımcısı ve eğitmensin. ${BASE_RULES(o.lang)}`;
+      const refs = [], idx = new Map();
+      const remap = (ctx, list) => (list || []).map((n) => { const r = ctx.refs.find((x) => x.n === +n); if (!r) return null; if (!idx.has(r.chunkId)) { idx.set(r.chunkId, refs.length + 1); refs.push({ n: refs.length + 1, sourceId: r.sourceId, title: r.title, page: r.page, text: r.text.slice(0, 600) }); } return idx.get(r.chunkId); }).filter(Boolean);
+      const clean = (x) => x && (x.title || x.quote || x.stat);
+      let title = '', subtitle = '', slides = [];
+      if (N <= 12) {
+        const ctx = await buildContext(nb, o.focus);
+        progress(`${N} slayt hazırlanıyor…`);
+        const r = await json(system, `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nTAM OLARAK ${N} slaytlık bir sunu hazırla (ne eksik ne fazla). Biçim: ${fmt}\n${N > 1 ? 'İlk slayt "title" düzeninde, son slayt özet olsun. ' : ''}${LAYOUT}\nJSON: {"title": "...", "subtitle": "...", "slides": [${SCHEMA}]}`, signal);
+        title = r.title; subtitle = r.subtitle;
+        slides = (r.slides || []).filter(clean).map((x) => ({ ...x, refs: remap(ctx, x.refs) }));
+        if (slides.length < N) { // eksik kaldıysa tamamlat
+          const r2 = await json(system, `${ctxBlock(ctx)}\nŞu slaytlar hazır: ${slides.map((x) => x.title).join(' | ')}.\nSunuyu tamamlamak için ${N - slides.length} slayt daha yaz (sonuncusu özet). ${LAYOUT}\nJSON: {"slides": [${SCHEMA}]}`, signal);
+          const extra = (r2.slides || []).filter(clean).map((x) => ({ ...x, refs: remap(ctx, x.refs) }));
+          const last = slides.length > 1 ? slides.pop() : null;
+          slides.push(...extra.slice(0, N - slides.length - (last ? 1 : 0))); if (last) slides.push(last);
+        }
+      } else {
+        // 1) Ana hat: kaynağın tamamına yayılmış N başlık
+        const ctx0 = await buildContext(nb, o.focus);
+        progress(`${N} slaytlık ana hat çıkarılıyor…`);
+        const ol = await json(system, `${ctxBlock(ctx0)}\n${focusLine(o.focus)}\nTAM OLARAK ${N} slaytlık bir sununun ana hattını çıkar. Kaynağın tüm bölümlerini sırayla kapsa; her slayt farklı bir alt konu olsun. İlk slayt kapak, son slayt özet.\nJSON: {"title": "...", "subtitle": "...", "outline": [{"title": "slayt başlığı", "goal": "bu slaytta anlatılacak tek cümle"}]}`, signal);
+        title = ol.title; subtitle = ol.subtitle;
+        let outline = (ol.outline || []).filter((x) => x?.title);
+        while (outline.length < N) {
+          const more = await json(system, `${ctxBlock(ctx0)}\nMevcut ana hat: ${outline.map((x) => x.title).join(' | ')}\nKaynağın henüz işlenmemiş konularından ${Math.min(40, N - outline.length)} slayt başlığı daha ekle (özet slaytı hariç).\nJSON: {"outline": [{"title": "...", "goal": "..."}]}`, signal);
+          const add = (more.outline || []).filter((x) => x?.title && !outline.some((y) => y.title === x.title));
+          if (!add.length) break;
+          const last = outline.pop(); outline.push(...add.slice(0, N - outline.length - 1), last);
+        }
+        outline = outline.slice(0, N);
+        // 2) İçerik: 6'şar slaytlık partiler, her parti kendi konusuna en uygun kaynak parçalarıyla
+        for (let i = 0; i < outline.length; i += 6) {
+          const part = outline.slice(i, i + 6);
+          progress(`Slaytlar yazılıyor ${i + 1}–${i + part.length} / ${outline.length}`);
+          const ctx = await buildContext(nb, `${o.focus || ''} ${part.map((x) => x.title + ' ' + (x.goal || '')).join(' ; ')}`, { budgetChars: 20000 });
+          const r = await json(system, `${ctxBlock(ctx)}\nSunu: ${title}. Biçim: ${fmt}\nAşağıdaki ${part.length} slaytı (sunudaki sıra ${i + 1}–${i + part.length}) aynı sırayla yaz; başlıkları koru.${i === 0 ? ' İlki "title" düzeninde kapak.' : ''}${i + part.length >= outline.length ? ' Sonuncusu özet.' : ''} ${LAYOUT}\n${part.map((x, k) => `${i + k + 1}. ${x.title} — ${x.goal || ''}`).join('\n')}\nJSON: {"slides": [${SCHEMA}]}`, signal);
+          const got = (r.slides || []).filter(clean);
+          part.forEach((x, k) => { const sl = got[k] || { layout: 'bullets', title: x.title, bullets: [x.goal].filter(Boolean) }; slides.push({ ...sl, title: sl.title || x.title, refs: remap(ctx, sl.refs) }); });
+        }
+      }
+      slides = slides.slice(0, N);
+      return { title: title || 'Slayt Sunusu', content: { title: title || 'Slayt Sunusu', subtitle: subtitle || '', slides, theme: o.theme, format: o.format, lang: o.lang, refs, note: slides.length < N ? `İstenen ${N}, üretilen ${slides.length} slayt.` : '' } };
     }
   },
 
@@ -213,20 +290,23 @@ export const TOOLS = {
   flashcards: {
     label: 'Bilgi kartları', icon: 'cards', title: 'Bilgi kartları',
     options: [
-      { key: 'count', label: 'Kart sayısı', type: 'seg', default: 'std', choices: [{ v: 'few', t: 'Daha az' }, { v: 'std', t: 'Standart' }, { v: 'more', t: 'Daha fazla' }] },
+      { key: 'kind', label: 'Kart türü', type: 'seg', default: 'qa', choices: [{ v: 'qa', t: 'Soru–cevap' }, { v: 'cloze', t: 'Boşluk doldurma' }, { v: 'term', t: 'Terim–tanım' }] },
+      { key: 'count', label: 'Kart sayısı', type: 'count', default: 20, min: 1, max: 300, choices: [10, 20, 40, 100] },
       { key: 'level', label: 'Zorluk Seviyesi', type: 'seg', default: 'mid', choices: [{ v: 'easy', t: 'Kolay' }, { v: 'mid', t: 'Orta' }, { v: 'hard', t: 'Zor' }] },
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
       { key: 'focus', label: 'Konu ne olsun?', type: 'text', placeholder: 'Ön yüzde sinyal adı, arkada tanımı bulunan kartlar oluşturun.' }
     ],
     async generate(nb, o, { signal, progress }) {
-      const ctx = await buildContext(nb, o.focus);
-      const n = { few: 12, std: 25, more: 40 }[o.count];
-      progress(`${n} kart hazırlanıyor…`);
-      const r = await json(
-        `Etkili hafıza kartları hazırlayan bir öğretmensin. ${BASE_RULES(o.lang)}`,
-        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\n${n} adet bilgi kartı hazırla. Zorluk: ${{ easy: 'kolay, temel tanımlar', mid: 'orta', hard: 'zor, ayrıntı ve karşılaştırma' }[o.level]}. Ön yüz kısa bir soru veya terim, arka yüz kısa net cevap (en fazla 2 cümle). Her karta 1 cümlelik "explain" ekle.\nJSON: {"title": "...", "cards": [{"front": "...", "back": "...", "explain": "...", "ref": 1}]}`,
-        signal);
-      return { title: r.title || 'Bilgi Kartları', content: { cards: r.cards || [], refs: refsOf(ctx) } };
+      const n = toCount(o.count, { few: 12, std: 25, more: 40 }, 20);
+      const lvl = { easy: 'kolay, temel tanımlar', mid: 'orta', hard: 'zor, ayrıntı ve karşılaştırma' }[o.level] || 'orta';
+      const r = await generateExact({
+        nb, focus: o.focus, total: n, perBatch: 12, signal, progress, label: 'Kartlar', max: 300,
+        system: `Etkili hafıza kartları hazırlayan bir öğretmensin. ${BASE_RULES(o.lang)}\n${EVIDENCE_RULE}`,
+        prompt: (ctx, need, avoid) => `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nTam ${need} adet bilgi kartı hazırla. Zorluk: ${lvl}. ${{ cloze: 'Boşluk doldurma kartları: ön yüz kaynaktaki önemli bir cümle, kilit kelime/sayı yerine "_____" konmuş; arka yüz yalnız boşluğa gelen ifade.', term: 'Ön yüz bir terim/kısaltma/ad, arka yüz kaynaktaki tanımı (en fazla 2 cümle).' }[o.kind] || 'Ön yüz kısa bir soru, arka yüz kısa net cevap (en fazla 2 cümle).'} Her karta 1 cümlelik "explain" ekle.${avoid ? `\nŞu kartlardan FARKLI olsun: ${avoid}` : ''}\nJSON: {"cards": [{"front": "...", "back": "...", "explain": "...", "evidence": "kaynaktan birebir alıntı", "ref": 1}]}`,
+        pick: (j) => (j.cards || j.items || []).filter((c) => c && c.front && c.back),
+        key: (c) => c.front, answerOf: (c) => c.back
+      });
+      return { title: (o.focus ? o.focus.slice(0, 50) + ' · ' : '') + `${r.items.length} Bilgi Kartı`, content: { cards: r.items, refs: r.refs, verify: summarize(r.items), note: shortNote(n, r.items.length, r.dropped) } };
     }
   },
 
@@ -238,24 +318,17 @@ export const TOOLS = {
         { v: 'exam', t: 'Deneme sınavı', d: 'Süreli, gerçek sınav gibi; sonuçlar sonda, konu bazlı karne ve hedef puan' }
       ] },
       { key: 'preset', label: 'Sınav türü', type: 'select', default: 'genel', choices: EXAMS.map((e) => ({ v: e.v, t: e.t })) },
-      { key: 'count', label: 'Soru Sayısı', type: 'seg', default: 'std', choices: [{ v: 'few', t: 'Daha az' }, { v: 'std', t: 'Standart' }, { v: 'more', t: 'Daha fazla' }] },
+      { key: 'count', label: 'Soru sayısı', type: 'count', default: 10, min: 1, max: 200, choices: [5, 10, 20, 50, 100] },
       { key: 'level', label: 'Zorluk Seviyesi', type: 'seg', default: 'mid', choices: [{ v: 'easy', t: 'Kolay' }, { v: 'mid', t: 'Orta' }, { v: 'hard', t: 'Zor' }] },
       { key: 'target', label: 'Hedef puan (100 üzerinden)', type: 'seg', default: '70', choices: [{ v: '60', t: '60' }, { v: '70', t: '70' }, { v: '85', t: '85' }, { v: '100', t: '100' }] },
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
-      { key: 'focus', label: 'Konu ne olsun?', type: 'text', placeholder: 'A1 ve A2 sahalarını ayırt eden 5 çoktan seçmeli soru ekle.' }
+      { key: 'focus', label: 'Konu ne olsun?', type: 'text', placeholder: 'A1 ve A2 sahalarını ayırt eden sorular ekle.' }
     ],
     async generate(nb, o, { signal, progress }) {
-      const ctx = await buildContext(nb, o.focus);
-      const ex = EXAMS.find((e) => e.v === o.preset) || EXAMS[0];
-      const n = { few: 6, std: 12, more: 20 }[o.count];
-      const L = 'ABCDE'.slice(0, ex.opts).split('').join(', ');
-      progress(`${n} soru hazırlanıyor…`);
-      const r = await json(
-        `Sınav hazırlayan titiz bir uzmansın. ${BASE_RULES(o.lang)}\n- Her sorunun yalnızca bir doğru cevabı olsun ve bu cevap kaynakla birebir doğrulanabilsin.\n- Çeldiriciler makul ama kesinlikle yanlış olsun; tipik öğrenci hatalarını yansıtsın.`,
-        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\n${n} adet ${ex.opts} şıklı (${L}) çoktan seçmeli soru hazırla. Sınav tarzı: ${ex.style}. Zorluk: ${{ easy: 'kolay', mid: 'orta', hard: 'zor' }[o.level]}. Soruları konularına göre dengeli dağıt ve doğru şıkkın yerini karıştır. Her soruya kısa bir konu etiketi ver.\nJSON: {"title": "...", "questions": [{"topic": "konu etiketi", "q": "...", "options": ["...", "..."], "answer": 0, "hint": "cevabı vermeyen ipucu", "explanation": "doğru cevabın gerekçesi ve neden diğerleri yanlış", "ref": 1}]}`,
-        signal);
-      const qs = (r.questions || []).filter((q) => Array.isArray(q.options) && q.options.length >= 2).map((q) => ({ ...q, answer: Math.max(0, Math.min(q.options.length - 1, +q.answer || 0)) }));
-      return { title: r.title || 'Test', content: { questions: qs, refs: refsOf(ctx), mode: o.mode, preset: o.preset, target: +o.target || 70, minutes: o.mode === 'exam' ? Math.max(5, Math.round(qs.length * ex.minPerQ)) : 0 } };
+      const n = toCount(o.count, { few: 6, std: 12, more: 20 }, 10);
+      const { items, refs, dropped, ex } = await makeQuestions(nb, o, { count: n, signal, progress });
+      if (!items.length) throw new Error('Kaynaktan doğrulanabilir soru üretilemedi. Kaynağın metin içerdiğinden (taranmış PDF ise OCR’ın bittiğinden) emin olun.');
+      return { title: (o.focus ? o.focus.slice(0, 50) + ' · ' : '') + `${items.length} Soruluk Test`, content: { questions: items, refs, mode: o.mode, preset: o.preset, target: +o.target || 70, verify: summarize(items), note: shortNote(n, items.length, dropped), minutes: o.mode === 'exam' ? Math.max(5, Math.round(items.length * ex.minPerQ)) : 0 } };
     }
   },
 
@@ -295,6 +368,40 @@ export const TOOLS = {
         `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nÖğrencinin kendi cümleleriyle anlatması gereken 6-10 ana konu seç. Her konu için anlatımda bulunması gereken 3-6 anahtar nokta ve konuya giriş sorusu yaz.\nJSON: {"title": "...", "topics": [{"name": "...", "question": "Bana ... nedir, nasıl çalışır anlatır mısın?", "keyPoints": ["..."]}]}`,
         signal);
       return { title: r.title || 'Öğreterek Öğren', content: { ...r, level: o.level, lang: o.lang, attempts: {} } };
+    }
+  },
+
+  listen: {
+    label: 'Dinleyerek Öğren', icon: 'audio', title: 'Dinleyerek öğren: dikte, gölgeleme, dinleme banyosu', noLLM: true,
+    options: [
+      { key: 'mode', label: 'Alıştırma', type: 'cards', default: 'dictation', choices: [
+        { v: 'dictation', t: 'Dikte', d: 'Cümleyi dinle, duyduğunu yaz; kelime kelime karşılaştırılır. Dinlediğini anlama ve yazım için.' },
+        { v: 'shadow', t: 'Gölgeleme', d: 'Dinle ve hemen ardından aynı tonla sesli tekrar et; kendini kaydedip karşılaştır. Telaffuz ve akıcılık için.' },
+        { v: 'immersion', t: 'Dinleme banyosu', d: 'Bebeklerin dil edinimi gibi: metne bakmadan kesintisiz dinle, anlamadığın yerde dur; sonra metni aç.' }
+      ] },
+      { key: 'count', label: 'Cümle sayısı', type: 'count', default: 20, min: 3, max: 300, choices: [10, 20, 50, 100] },
+      { key: 'length', label: 'Cümle uzunluğu', type: 'seg', default: 'mid', choices: [{ v: 'short', t: 'Kısa' }, { v: 'mid', t: 'Orta' }, { v: 'long', t: 'Uzun' }] },
+      { key: 'lang', label: 'Kaynağın dili', type: 'lang' },
+      { key: 'focus', label: 'Hangi konudan?', type: 'text', placeholder: 'Boş bırakırsanız kaynağın tamamından eşit aralıklarla seçilir' }
+    ],
+    // Yapay zeka kullanmaz (0 token): cümleler kaynaktan birebir seçilir
+    async generate(nb, o, { progress }) {
+      progress('Cümleler kaynaktan seçiliyor…');
+      const n = toCount(o.count, {}, 20);
+      const [lo, hi] = { short: [4, 10], mid: [8, 18], long: [14, 32] }[o.length] || [8, 18];
+      const seen = new Set(), all = [];
+      for (const sl of await sliceContexts(nb, o.focus || '')) for (const r of sl.refs) {
+        const text = r.text.replace(/\[\[s\.\d+\]\]/g, ' ').replace(/\s+/g, ' ');
+        for (const m of text.match(/[^.!?…]+[.!?…]+/g) || []) {
+          const t = m.trim(), w = t.split(' ').length, k = t.toLocaleLowerCase('tr');
+          if (w < lo || w > hi || seen.has(k) || /https?:|www\.|\d{4,}\s*\d{4,}/.test(t) || !/^[\p{Lu}"“(]/u.test(t)) continue;
+          seen.add(k); all.push({ text: t, title: r.title, page: r.page });
+        }
+      }
+      if (!all.length) throw new Error('Kaynakta uygun uzunlukta cümle bulunamadı. Cümle uzunluğunu değiştirin ya da taranmış PDF ise OCR’ın bitmesini bekleyin.');
+      const step = all.length / Math.min(n, all.length);
+      const picked = Array.from({ length: Math.min(n, all.length) }, (_, k) => all[Math.floor(k * step)]);
+      return { title: `Dinleyerek Öğren · ${picked.length} cümle`, content: { mode: o.mode, lang: o.lang || 'Türkçe', sentences: picked } };
     }
   },
 
@@ -369,19 +476,37 @@ export async function evaluateExplanation(nb, topic, explanation, level, signal)
 }
 
 // Sohbet: kaynaklara dayalı, numaralı alıntılı yanıt
+// Kaynağa bağlılık ölçümü (token harcamaz): bilgi cümlelerinin kaçı geçerli bir [n] alıntısı taşıyor
+export function grounding(text, nRefs) {
+  const body = text.replace(/```[\s\S]*?```/g, '').split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
+  const sents = body.join(' ').split(/(?<=[.!?…])\s+/).map((x) => x.trim()).filter((x) => x.length > 25);
+  const facts = sents.slice(0, Math.max(1, sents.length - 1)); // son cümle "sonraki adım" önerisi
+  let cited = 0, invalid = 0;
+  for (const x of facts) {
+    const ns = [...x.matchAll(/\[(\d+)\]/g)].map((m) => +m[1]);
+    if (ns.some((n) => n >= 1 && n <= nRefs)) cited++;
+    invalid += ns.filter((n) => n < 1 || n > nRefs).length;
+  }
+  return { total: facts.length, cited, invalid, pct: facts.length ? Math.round((cited / facts.length) * 100) : 100 };
+}
+
 export async function answer(nb, history, question, { signal, onToken }) {
   const ctx = await buildContext(nb, question, {});
   const msgs = history.slice(-8).map((m) => ({ role: m.role, content: m.content }));
   msgs.push({ role: 'user', content: `${ctxBlock(ctx)}\n\nSORU: ${question}` });
-  const text = await chat({
-    signal, onToken, messages: msgs,
-    system: `Kullanıcının yüklediği kaynaklar üzerine çalışan bir öğrenme asistanısın.
-- Yalnızca KAYNAKLAR'a dayan; kaynakta yoksa bunu açıkça söyle.
-- Her bilginin sonuna dayandığı parça numarasını [2] veya [2][5] biçiminde ekle.
+  let text = await chat({
+    signal, onToken, messages: msgs, temperature: 0.2,
+    system: `Kullanıcının yüklediği kaynaklar üzerine çalışan, uydurmayan bir öğrenme asistanısın.
+- Yalnızca KAYNAKLAR'daki bilgiye dayan. Genel bilgini, tahminini veya kaynakta olmayan ayrıntıyı ekleme.
+- Cevap kaynaklarda yoksa bunu ilk cümlede açıkça söyle ("Kaynaklarınızda bu bilgi yok.") ve varsa en yakın ilgili bilgiyi alıntısıyla göster.
+- Her bilgi cümlesinin sonuna dayandığı parça numarasını [2] veya [2][5] biçiminde ekle; numarasız bilgi cümlesi yazma.
+- Sayı, tarih, frekans ve adları kaynaktaki gibi aynen aktar.
 - Markdown kullan; uygun yerde başlık ve madde işaretleri kullan.
-- Kullanıcının dilinde yanıt ver. Yanıtın sonunda kullanıcıya konuyu derinleştirecek bir sonraki adımı tek cümleyle öner.`
+- Kullanıcının dilinde yanıt ver. Yanıtın sonunda konuyu derinleştirecek bir sonraki adımı tek cümleyle öner.`
   });
-  return { text, refs: refsOf(ctx) };
+  // var olmayan parça numaralarını temizle (uydurma kaynak gösterimi)
+  text = text.replace(/\[(\d+)\]/g, (m, n) => (+n >= 1 && +n <= ctx.refs.length ? m : ''));
+  return { text, refs: refsOf(ctx), grounding: grounding(text, ctx.refs.length) };
 }
 
 export async function suggestQuestions(nb, signal) {

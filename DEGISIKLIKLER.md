@@ -1,5 +1,28 @@
 # Değişiklikler
 
+## 2026-10-12 — 0.3.0
+- Ses sistemi v3: ElevenLabs v4, Gemini 3.8 Flash TTS, **MiniMax** (Türkçe kadın/erkek hazır sesler, **ses klonlama** ve metinle
+  ses tasarımı), Google Cloud TTS (Chirp 3 HD), Azure Speech (Emel/Ahmet), OpenAI, lokal sunucu, Piper. Otomatik modda bir motor
+  hata verirse sıradakine geçilir; geçici hatalarda yeniden deneme.
+- Kadın sesi: Piper'ın Türkçe seslerinin üçü de erkek olduğu için kadın konuşmacı varken ücretsiz çözüm kartı gösterilir. Türkçe
+  tarayıcı sesi yoksa tarayıcı sesi hiç kullanılmaz (robot sesin kaynağı buydu). Ses hazırlanırken hazır bölümler sırayla çalar.
+- Videolu Özet: tüm anlatım tek ses dosyası, varsayılan **erkek anlatıcı**, sahneler sesle eşzamanlı, MP4/WebM sesli indirme.
+  Slaytlarda "Anlatımlı oynat" (konuşmacı notları seslendirilir, slaytlar kendiliğinden ilerler).
+- **Tam sayılar:** test 1–200 soru, kart 1–300, slayt 1–150. Büyük sayılar kaynağın tamamına yayılarak parti parti üretilir.
+- **Kaynak doğrulama:** her soru ve kart kaynaktan birebir alıntı taşır; alıntı kaynakta bulunamazsa ya da cevabı desteklemezse
+  öğe elenir ve yerine yenisi üretilir. Sohbette olmayan kaynak numaraları silinir, "kaynaklı" rozeti gösterilir.
+- **Soru bankası:** sorular bir kez (lokal modelle ücretsiz) üretilir; bankadan istenen sayıda test 0 token ile anında oluşur.
+  Arka planda, kaldığı yerden devam eden doldurma; çözülmemiş/çözülmüş/zayıf/tekrar zamanı sayıları; sınav tarihine göre günlük plan.
+- Yeni araç **Dinleyerek Öğren** (yapay zeka gerektirmez): dikte, gölgeleme, dinleme banyosu. Bilgi kartlarında boşluk doldurma
+  ve terim–tanım türleri. Pomodoro zamanlayıcısı. Öğrenme bilimi sayfasında kanıt düzeyli **yöntemler kütüphanesi**.
+- Slaytlarda yeni düzenler: zaman çizelgesi, adımlar, grafik, tablo.
+- Yeni sağlayıcılar: xAI Grok, DeepSeek, Qwen (DashScope), Mistral, Together, Moonshot Kimi, MiniMax. Gemini anahtarı artık
+  adres yerine başlıkta gönderiliyor. JSON görevlerinde düşük sıcaklık ve Ollama'da düşünme kapalı (daha hızlı).
+- Lokal sunucu v2: uygulamayı `http://localhost:8765` adresinde sunar (Ollama izin ayarı gerekmez), Chatterbox/XTTS ile lokal ses
+  klonlama, edge-tts kadın/erkek ses, Ollama ve API vekili, motorlar arası otomatik geçiş. RTX 50xx için `tools/kur-gpu.bat`.
+- Testler depoda: `tests/mock_llm.py` (sahte model + sahte sunucu) ve `tests/e2e.py` (31 kontrol).
+- Service worker modülleri sunucuya sorarak alıyor: yeni sürümde eski/yeni dosya karışmıyor.
+
 ## 2026-10-12 — 0.2.2
 - Taranmış (resim) PDF'ler için Türkçe metin tanıma (OCR, Tesseract.js): arka planda sayfa sayfa, ilerleme göstergesi,
   duraklat/sürdür, sayfa yenilense de kaldığı yerden devam.

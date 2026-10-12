@@ -9,7 +9,11 @@ import { seedDemo } from './demo.js';
 import { getStats, levelOf, xpForLevel, BADGES, updateXpPill, dueMistakes, readiness, sciencePage, resolveMistake } from './learn.js';
 import { typingPage } from './typing.js';
 import { looksScanned, runOcr, stopOcr, ocrRunning, onOcrProgress, ocrText } from './ocr.js';
-import { ENGINES, loadTTS, saveTTS, VOICES, hasNaturalBrowserVoice, synthesize, listElevenVoices } from './tts.js';
+import { loadTTS, saveTTS, synthesize } from './tts.js';
+import { voiceSettings } from './voice-settings.js';
+import { bankCard } from './bank-ui.js';
+import { pomodoroButton } from './pomodoro.js';
+import { resumeBankFills } from './bank.js';
 import * as vMemory from './studio/views/memory.js';
 import * as vTeach from './studio/views/teach.js';
 import * as vSpeed from './studio/views/speedread.js';
@@ -23,8 +27,9 @@ import * as vCards from './studio/views/flashcards.js';
 import * as vQuiz from './studio/views/quiz.js';
 import * as vInfo from './studio/views/infographic.js';
 import * as vTable from './studio/views/table.js';
+import * as vListen from './studio/views/listen.js';
 
-const VIEWS = { podcast: vPodcast, slides: vSlides, video: vVideo, mindmap: vMindmap, report: vReport, flashcards: vCards, quiz: vQuiz, infographic: vInfo, table: vTable, memory: vMemory, teach: vTeach, speedread: vSpeed,
+const VIEWS = { podcast: vPodcast, slides: vSlides, video: vVideo, mindmap: vMindmap, report: vReport, flashcards: vCards, quiz: vQuiz, infographic: vInfo, table: vTable, memory: vMemory, teach: vTeach, speedread: vSpeed, listen: vListen,
   note: { render: (root, art) => root.append(renderMarkdown(art.content.markdown, art.content.refs || [])), toText: (a) => a.content.markdown } };
 const TYPE_LABEL = { ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.label])), note: 'Not' };
 const TYPE_ICON = { ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.icon])), note: 'note' };
@@ -42,6 +47,9 @@ async function boot() {
   window.addEventListener('hashchange', route);
   route();
   serverUrl().then(updateStatus);
+  // Yarıda kalan soru bankası doldurmayı sürdür (yalnız kullanıcı başlatmışsa ve model erişilebilirse)
+  db.settings.where('key').startsWith('bank:').filter((r) => r.value?.status === 'running').count()
+    .then(async (n) => { if (n && (await checkLLM()).ok) resumeBankFills(); }).catch(() => {});
 }
 
 function applyTheme(t) {
@@ -70,6 +78,7 @@ function topbar(extra = []) {
     h('a', { class: 'brand', href: '#/', 'aria-label': 'Ana sayfa' }, h('span', { class: 'logo' }, icon('book', 22)), h('span', { class: 'brand-t' }, 'Defter Studio')),
     ...extra,
     h('span', { class: 'grow' }),
+    pomodoroButton(),
     h('a', { id: 'xp-pill', class: 'status-pill xp', href: '#/bugun', title: 'Seri · seviye · bugünkü puan' }),
     h('span', { id: 'llm-status', class: 'status-pill', title: 'Model durumu' }),
     h('button', { class: 'icon-btn', 'aria-label': 'Ses efektleri', title: 'Ses efektleri', onclick: (e) => { const off = localStorage.getItem('ds-sound') === 'off'; localStorage.setItem('ds-sound', off ? 'on' : 'off'); toast(off ? 'Ses efektleri açık' : 'Ses efektleri kapalı'); } }, icon('audio')),
@@ -352,7 +361,7 @@ async function renderChat(refreshSummary = false) {
       const history = (await db.messages.where('notebookId').equals(nb.id).sortBy('createdAt')).slice(0, -1);
       let last = 0;
       const r = await answer(nb.id, history, q, { signal: chatAbort.signal, onToken: (_, all) => { if (Date.now() - last > 80) { last = Date.now(); live.firstChild.replaceWith(renderMarkdown(all.replace(/<think>[\s\S]*?(<\/think>|$)/g, ''))); } } });
-      const am = { notebookId: nb.id, role: 'assistant', content: r.text, refs: r.refs, createdAt: now() };
+      const am = { notebookId: nb.id, role: 'assistant', content: r.text, refs: r.refs, grounding: r.grounding, createdAt: now() };
       am.id = await db.messages.add(am);
       live.replaceWith(msgEl(am));
       touchNotebook(nb.id);
@@ -396,8 +405,10 @@ function drawSummary(box, r) {
 
 function msgEl(m) {
   if (m.role === 'user') return h('div', { class: 'msg user' }, m.content);
+  const g = m.grounding;
   return h('div', { class: 'msg assistant' }, renderMarkdown(m.content, m.refs || []),
     h('div', { class: 'msg-actions' },
+      g?.total ? h('span', { class: 'chip ' + (g.pct >= 90 ? 'ok-chip' : 'warn-chip'), title: `${g.total} bilgi cümlesinin ${g.cited} tanesi kaynak numarası taşıyor` }, g.pct >= 90 ? '✓ kaynaklı' : `⚠ %${g.pct} kaynaklı`) : null,
       h('button', { class: 'btn ghost small', onclick: async () => { await createNote(m.content.split('\n')[0].replace(/[#*]/g, '').slice(0, 60) || 'Sohbet notu', m.content, m.refs); toast('Notlara kaydedildi'); } }, icon('note', 15), ' Notlara kaydet'),
       h('button', { class: 'icon-btn small', 'aria-label': 'Kopyala', onclick: () => { navigator.clipboard.writeText(m.content); toast('Kopyalandı'); } }, icon('copy', 15)),
       h('button', { class: 'icon-btn small', 'aria-label': 'Sil', onclick: async (e) => { await db.messages.delete(m.id); e.target.closest('.msg').remove(); } }, icon('trash', 15))));
@@ -452,7 +463,8 @@ async function connectionModal(err) {
         h('li', {}, 'Hâlâ olmazsa: görev çubuğundaki Ollama simgesine sağ tıklayıp ', h('b', {}, 'Quit'), ' deyin, sonra PowerShell’de şunu çalıştırın ve pencereyi açık bırakın:',
           h('pre', { class: 'src-text' }, OLLAMA_SERVE), copy(OLLAMA_SERVE)),
         h('li', {}, `Model indirilmiş olmalı: `, h('code', {}, `ollama pull ${cfg.model || 'qwen3.8:27b'}`), ' ', copy(`ollama pull ${cfg.model || 'qwen3.8:27b'}`)),
-        h('li', {}, 'Chrome "yerel ağ erişimi" izni sorarsa İzin ver deyin.'))) : null,
+        h('li', {}, 'Chrome "yerel ağ erişimi" izni sorarsa İzin ver deyin.'),
+        h('li', {}, h('b', {}, 'Ayarsız yol: '), 'depodaki ', h('code', {}, 'server/baslat.bat'), ' dosyasını çalıştırın; uygulama ', h('a', { href: 'http://localhost:8765/', target: '_blank', rel: 'noopener' }, 'localhost:8765'), ' adresinde açılır. Bu adreste Ollama izin ayarı gerekmez, verileriniz için yeni bir defter alanı kullanılır (yedekle / içe aktar ile taşıyabilirsiniz).'))) : null,
     h('div', { class: 'card' }, h('h3', {}, 'Ya da hemen buluta geçin: Gemini (ücretsiz kota)'),
       h('p', { class: 'muted small' }, 'Anahtar yalnız bu tarayıcıda saklanır. Aynı anahtar doğal Türkçe çok sesli seslendirme için de kullanılır.'),
       h('div', { class: 'row gap' }, gKey, h('button', { class: 'btn primary', onclick: async () => {
@@ -495,6 +507,7 @@ async function renderStudio() {
       h('button', { class: 'btn ghost small', onclick: async () => { const st = await checkLLM(true); if (!st.ok) return connectionModal(st.error); for (const a of arts.filter((x) => x.status === 'error')) runJob(a.id); } }, icon('refresh', 15), ' Tümünü yeniden dene'),
       h('button', { class: 'btn ghost small', onclick: async () => { for (const a of arts.filter((x) => x.status === 'error')) await deleteArtifact(a.id); renderStudio(); } }, icon('trash', 15), ' Hatalıları sil')) : null,
     h('div', { class: 'tiles' }, Object.entries(TOOLS).map(([k, t]) => h('button', { class: 'tile t-' + k, onclick: () => openCustomize(k) }, icon(t.icon), h('span', {}, t.label)))),
+    bankCard(state.nb.id, { open: (id) => { renderStudio(); location.hash = `#/n/${state.nb.id}/a/${id}`; } }),
     h('div', { class: 'art-list', role: 'list' }, arts.map(artRow)),
     !arts.length ? h('div', { class: 'empty small muted' }, 'Studio çıktıları burada listelenir. Bir araç seçerek başlayın; tüm geçmiş içerikler burada saklanır, açılır, düzenlenir ve silinir.') : null,
     h('button', { class: 'btn note-btn', onclick: async () => { const t = await promptBox('Not başlığı', 'Yeni not'); if (t) { await createNote(t, ''); const a = await db.artifacts.where('notebookId').equals(state.nb.id).last(); location.hash = `#/n/${state.nb.id}/a/${a.id}`; } } }, icon('note', 16), ' Not ekle'));
@@ -559,6 +572,16 @@ function openCustomize(type, preset = {}) {
         paint(); body.append(h('div', { class: 'field inline' }, h('label', {}, o.label), wrap));
       } else if (o.type === 'select') {
         body.append(h('div', { class: 'field inline' }, h('label', {}, o.label), h('select', { class: 'input', onchange: (e) => (vals[o.key] = e.target.value) }, o.choices.map((c) => h('option', { value: c.v, selected: c.v === vals[o.key] ? true : null }, c.t)))));
+      } else if (o.type === 'count') {
+        if (!(parseInt(vals[o.key], 10) > 0)) vals[o.key] = o.default; // eski 'few/std/more' kayıtları
+        const num = h('input', { class: 'input count-in', type: 'number', min: o.min || 1, max: o.max || 200, value: vals[o.key], 'aria-label': o.label });
+        const wrap = h('div', { class: 'seg' });
+        const est = h('span', { class: 'muted small' });
+        const paint = () => { wrap.querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.v === +vals[o.key])); est.textContent = +vals[o.key] > 20 ? `≈ ${Math.ceil(+vals[o.key] / 8)} parti hâlinde üretilir; arka planda çalışır, sayfayı kullanmaya devam edebilirsiniz.` : ''; };
+        o.choices.forEach((c) => wrap.append(h('button', { 'data-v': c, onclick: () => { vals[o.key] = c; num.value = c; paint(); } }, String(c))));
+        num.oninput = () => { const n = parseInt(num.value, 10); if (n > 0) vals[o.key] = Math.max(o.min || 1, Math.min(o.max || 200, n)); paint(); };
+        num.onchange = () => { num.value = vals[o.key]; };
+        paint(); body.append(h('div', { class: 'field inline' }, h('label', {}, o.label), h('div', { class: 'row gap wrap' }, wrap, num)), est);
       } else if (o.type === 'lang') {
         body.append(h('div', { class: 'field inline' }, h('label', {}, o.label), h('select', { class: 'input', onchange: (e) => (vals[o.key] = e.target.value) }, LANGS.map((l) => h('option', { selected: l === vals[o.key] ? true : null }, l)))));
       } else {
@@ -571,7 +594,7 @@ function openCustomize(type, preset = {}) {
       { label: 'Vazgeç', run: (c) => c() },
       { label: 'Hemen oluştur', primary: true, run: async (c) => {
         if (!srcs.length) { toast('Önce en az bir kaynak seçin.', 'error'); return; }
-        const st = await checkLLM();
+        const st = t.noLLM ? { ok: true } : await checkLLM();
         if (!st.ok) { c(); connectionModal(st.error); return; }
         c();
         const { focus, ...keep } = vals; await setSetting('lastOpts:' + type, keep);
@@ -750,51 +773,8 @@ async function openSettings() {
   prov.onchange = () => { const p = PROVIDERS[prov.value]; base.value = p.baseUrl; model.value = p.model; embedM.value = p.embedModel; sync(); };
   sync();
   const read = () => ({ provider: prov.value, baseUrl: base.value.trim(), apiKey: key.value.trim(), model: model.value.trim(), fastModel: fastM.value.trim(), embedModel: embedM.value.trim(), numCtx: +ctx.value, temperature: +temp.value });
-  const tts = await loadTTS();
-  const tEngine = h('select', { class: 'input' }, Object.entries(ENGINES).map(([k, t]) => h('option', { value: k, selected: k === tts.engine ? true : null }, t)));
-  const tGKey = h('input', { class: 'input', type: 'password', value: tts.geminiKey || '', placeholder: 'Gemini sağlayıcısı seçiliyse onun anahtarı kullanılır', autocomplete: 'off' });
-  const tGModel = h('input', { class: 'input', value: tts.geminiModel || 'gemini-3.8-flash-tts' });
-  const tOKey = h('input', { class: 'input', type: 'password', value: tts.openaiKey || '', autocomplete: 'off' });
-  const tOut = h('div', { class: 'small', role: 'status' });
-  const tEKey = h('input', { class: 'input', type: 'password', value: tts.elevenKey || '', placeholder: 'elevenlabs.io › Profil › API Keys', autocomplete: 'off' });
-  const tEModel = h('input', { class: 'input', value: tts.elevenModel || 'eleven_v3', list: 'eleven-models' });
-  const eModels = h('datalist', { id: 'eleven-models' }, ['eleven_v3', 'eleven_v4', 'eleven_multilingual_v2', 'eleven_flash_v2_5'].map((m) => h('option', { value: m })));
-  const vOpt = (v, cur) => h('option', { value: v.id, selected: v.id === cur ? true : null }, `${v.name}${v.gender ? ' · ' + v.gender : ''}${v.lang ? ' · ' + v.lang : ''}`);
-  const tEF = h('select', { class: 'input' }, h('option', { value: tts.elevenF || '' }, tts.elevenF ? 'Seçili kadın sesi' : 'Varsayılan kadın sesi'));
-  const tEM = h('select', { class: 'input' }, h('option', { value: tts.elevenM || '' }, tts.elevenM ? 'Seçili erkek sesi' : 'Varsayılan erkek sesi'));
-  const listV = h('button', { class: 'btn ghost small', onclick: async () => {
-    tOut.textContent = 'Sesler alınıyor…';
-    try {
-      const vs = await listElevenVoices(tEKey.value.trim());
-      const f = vs.filter((v) => !/^male$/i.test(v.gender)), m = vs.filter((v) => !/female/i.test(v.gender));
-      put(tEF, ...f.map((v) => vOpt(v, tts.elevenF))); put(tEM, ...m.map((v) => vOpt(v, tts.elevenM)));
-      tOut.textContent = `${vs.length} ses bulundu. En doğal Türkçe için ElevenLabs Ses Kütüphanesi'nden Türkçe anadil sesleri hesabınıza ekleyip yeniden listeleyin.`;
-    } catch (e) { tOut.textContent = '✗ ' + e.message; }
-  } }, 'Sesleri listele');
-  const readTTS = () => ({ ...tts, engine: tEngine.value, geminiKey: tGKey.value.trim(), geminiModel: tGModel.value.trim() || 'gemini-3.8-flash-tts', openaiKey: tOKey.value.trim(), elevenKey: tEKey.value.trim(), elevenModel: tEModel.value.trim() || 'eleven_v3', elevenF: tEF.value, elevenM: tEM.value });
-  const natural = hasNaturalBrowserVoice('Türkçe');
-  const ttsBlock = h('div', {},
-    h('h3', {}, 'Seslendirme (podcast ve video)'),
-    h('p', { class: 'muted small' }, 'Gerçek insan sesine en yakın sonuç: ElevenLabs (duygulu, nefesli, kadın ve erkek ses; ücretsiz aylık kota). Ücretsiz ve çok doğal alternatif: Gemini TTS (Google’ın podcast’lerine en yakın ses). Ücretsiz ve çevrimdışı seçenek: tarayıcıda Piper (ilk kullanımda ses modeli iner). Tarayıcı sesi için Microsoft Edge doğal Emel/Ahmet seslerini sunar' + (natural ? ' — bu tarayıcıda doğal Türkçe ses bulundu.' : '.')),
-    h('div', { class: 'grid2' },
-      h('div', { class: 'field' }, h('label', {}, 'Ses motoru'), tEngine),
-      h('div', { class: 'field' }, h('label', {}, 'ElevenLabs API anahtarı'), tEKey),
-      h('div', { class: 'field' }, h('label', {}, 'ElevenLabs modeli'), tEModel),
-      h('div', { class: 'field' }, h('label', {}, 'Kadın sesi (ElevenLabs)'), h('div', { class: 'row gap' }, tEF, listV)),
-      h('div', { class: 'field' }, h('label', {}, 'Erkek sesi (ElevenLabs)'), tEM),
-      h('div', { class: 'field' }, h('label', {}, 'Gemini API anahtarı'), tGKey),
-      h('div', { class: 'field' }, h('label', {}, 'Gemini TTS modeli'), tGModel),
-      h('div', { class: 'field' }, h('label', {}, 'OpenAI API anahtarı (isteğe bağlı)'), tOKey)),
-    eModels,
-    h('div', { class: 'row gap' }, h('button', { class: 'btn ghost', onclick: async () => {
-      await saveTTS(readTTS()); tOut.textContent = 'Deneniyor…';
-      try {
-        const r = await synthesize('test:' + Date.now(), [{ speaker: 'A', text: 'Merhaba, ben Deniz. GMDSS bir Şubat bin dokuz yüz doksan dokuzda tam olarak yürürlüğe girdi.', tone: 'sıcak' }, { speaker: 'B', text: 'Ben de Kaan. Bugün deniz sahalarını konuşacağız, hazır mısın?', tone: 'neşeli' }],
-          [{ id: 'A', name: 'Deniz', gender: 'f', role: 'sunucu' }, { id: 'B', name: 'Kaan', gender: 'm', role: 'sunucu' }], 'Türkçe', { onProgress: (m) => (tOut.textContent = m) });
-        if (r.blob) { new Audio(URL.createObjectURL(r.blob)).play(); tOut.textContent = '✓ ' + ENGINES[r.engine] + ' çalışıyor (dinliyorsunuz)'; }
-        else tOut.textContent = 'Tarayıcı sesi seçili: podcast satır satır okunur.';
-      } catch (e) { tOut.textContent = '✗ ' + e.message; }
-    } }, 'Sesi dene (kadın + erkek)'), tOut));
+  const vset = await voiceSettings();
+  const ttsBlock = vset.el;
   const est = await navigator.storage?.estimate?.().catch(() => null);
   modal({ title: 'Ayarlar', wide: true, body: h('div', { class: 'settings' },
     h('h3', {}, 'Dil modeli'),
@@ -829,7 +809,7 @@ async function openSettings() {
       h('button', { class: 'btn ghost small', onclick: () => Notification?.requestPermission?.() }, 'Hazır olunca bildirim gönder'),
       h('button', { class: 'btn ghost small', onclick: async () => { await seedDemo(); toast('Örnek defter eklendi'); location.hash = '#/'; renderHome(); } }, 'Örnek defteri yeniden ekle'),
       h('button', { class: 'btn danger small', onclick: async () => { if (await confirmBox('Tüm veriler silinsin mi?', 'Bütün defterler, kaynaklar ve Studio içerikleri bu tarayıcıdan kalıcı olarak silinir.', 'Hepsini sil')) { await db.delete(); location.hash = '#/'; location.reload(); } } }, 'Tüm verileri sil'))),
-  actions: [{ label: 'Vazgeç', run: (c) => c() }, { label: 'Kaydet', primary: true, run: async (c) => { await saveConfig(read()); await saveTTS(readTTS()); c(); toast('Ayarlar kaydedildi'); updateStatus(); } }] });
+  actions: [{ label: 'Vazgeç', run: (c) => c() }, { label: 'Kaydet', primary: true, run: async (c) => { await saveConfig(read()); await saveTTS(vset.read()); c(); toast('Ayarlar kaydedildi'); updateStatus(); } }] });
 }
 
 boot().catch((e) => { console.error(e); put(app, h('pre', { class: 'fatal' }, 'Başlatılamadı: ' + e.message)); });

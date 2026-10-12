@@ -1,69 +1,144 @@
-// Defter Studio — seslendirme motoru
-// Motorlar (kaliteye göre): Gemini TTS (çok konuşmacılı, doğal Türkçe) · OpenAI TTS · lokal sunucu (XTTS/Chatterbox/Piper)
-// · tarayıcıda Piper (ücretsiz, çevrimdışı, Türkçe) · tarayıcı sesi (Web Speech; Edge'de doğal Emel/Ahmet sesleri).
-// Çıktı: tek parça, ses seviyesi dengelenmiş WAV + satır zamanlamaları (döküm vurgusu ve ileri/geri sarma için).
+// Defter Studio — seslendirme motoru (v3)
+// Motorlar (AA TTS Arena kalitesine göre): ElevenLabs v4 · Gemini 3.8 Flash TTS · MiniMax Speech 2.8 · Google Cloud TTS ·
+// Azure Speech · OpenAI TTS · lokal sunucu (Chatterbox / edge-tts / Piper) · tarayıcıda Piper (ücretsiz, yalnız erkek) ·
+// tarayıcı sesi (yalnız bu tarayıcıda Türkçe ses varsa).
+// Çıktı: tek parça, ses seviyesi dengelenmiş WAV + satır zamanlamaları. Parçalar hazır oldukça onPiece ile bildirilir
+// (oynatıcı beklemeden çalmaya başlar). Otomatik modda bir motor hata verirse sıradakine geçilir.
 import { db, getSetting, setSetting } from './db.js';
-import { serverUrl } from './server.js';
+import { serverUrl, serverInfo } from './server.js';
 import { normalizeTR } from './textnorm.js';
 import { loadConfig } from './llm.js';
 
 const LANG_CODES = { 'Türkçe': 'tr-TR', English: 'en-US', Deutsch: 'de-DE', 'Français': 'fr-FR', 'Español': 'es-ES', 'العربية': 'ar-SA', 'Русский': 'ru-RU', Italiano: 'it-IT', Nederlands: 'nl-NL', '日本語': 'ja-JP' };
-export const langCode = (l) => LANG_CODES[l] || 'tr-TR';
+export const langCode = (l) => LANG_CODES[l] || (/^[a-z]{2}-[A-Z]{2}$/.test(l || '') ? l : 'tr-TR');
+const MINIMAX_LANG = { tr: 'Turkish', en: 'English', de: 'German', fr: 'French', es: 'Spanish', ar: 'Arabic', ru: 'Russian', it: 'Italian', nl: 'Dutch', ja: 'Japanese' };
 
 export const ENGINES = {
-  auto: 'Otomatik (en iyisini seç)',
-  elevenlabs: 'ElevenLabs — gerçek insan sesi, duygulu (API anahtarı, ücretsiz kota var)',
-  gemini: 'Gemini TTS — en doğal, çok konuşmacılı (API anahtarı)',
-  openai: 'OpenAI TTS (API anahtarı)',
-  server: 'Lokal yardımcı sunucu (XTTS / Chatterbox / Piper)',
-  piper: 'Tarayıcıda Piper — ücretsiz, çevrimdışı Türkçe',
-  browser: 'Tarayıcı sesi (Edge’de doğal Emel/Ahmet)'
+  auto: 'Otomatik (anahtarı olan en iyi motor; hata olursa sıradakine geçer)',
+  elevenlabs: 'ElevenLabs v4 — gerçek insan sesi, duygulu',
+  gemini: 'Gemini TTS — çok doğal, ücretsiz katman var',
+  minimax: 'MiniMax — Türkçe kadın/erkek, ses klonlama ve tasarım',
+  google: 'Google Cloud TTS — Chirp 3 HD (aylık ücretsiz kota)',
+  azure: 'Azure Speech — Emel / Ahmet (aylık ücretsiz kota)',
+  openai: 'OpenAI TTS',
+  server: 'Lokal sunucu — Chatterbox klon / edge-tts / Piper',
+  piper: 'Tarayıcıda Piper — ücretsiz, çevrimdışı (Türkçede yalnız erkek)',
+  browser: 'Tarayıcı sesi (yalnız bu tarayıcıda Türkçe ses varsa)'
 };
+export const ENGINE_SHORT = { elevenlabs: 'ElevenLabs', gemini: 'Gemini TTS', minimax: 'MiniMax', google: 'Google Cloud TTS', azure: 'Azure Speech', openai: 'OpenAI TTS', server: 'Lokal sunucu', piper: 'Piper (tarayıcı)', browser: 'Tarayıcı sesi' };
+
 export const VOICES = {
-  gemini: { f: ['Kore', 'Aoede', 'Leda', 'Zephyr', 'Sulafat', 'Despina'], m: ['Puck', 'Charon', 'Orus', 'Iapetus', 'Algenib', 'Sadaltager'] },
+  gemini: { f: ['Kore', 'Aoede', 'Leda', 'Zephyr', 'Sulafat', 'Despina', 'Achernar', 'Vindemiatrix'], m: ['Charon', 'Puck', 'Orus', 'Iapetus', 'Algenib', 'Sadaltager', 'Alnilam', 'Schedar'] },
   openai: { f: ['nova', 'shimmer', 'coral', 'sage'], m: ['onyx', 'echo', 'ash', 'ballad'] },
+  minimax: { f: ['Turkish_CalmWoman'], m: ['Turkish_Trustworthyman'] },
+  azure: { f: ['tr-TR-EmelNeural', 'en-US-AvaMultilingualNeural', 'en-US-EmmaMultilingualNeural'], m: ['tr-TR-AhmetNeural', 'en-US-AndrewMultilingualNeural', 'en-US-BrianMultilingualNeural'] },
+  google: { f: ['tr-TR-Chirp3-HD-Kore', 'tr-TR-Chirp3-HD-Aoede', 'tr-TR-Chirp3-HD-Leda', 'tr-TR-Wavenet-A'], m: ['tr-TR-Chirp3-HD-Charon', 'tr-TR-Chirp3-HD-Puck', 'tr-TR-Chirp3-HD-Orus', 'tr-TR-Wavenet-B'] },
+  // Piper'ın Türkçe seslerinin üçü de erkek; kadın konuşmacıya ayrı bir erkek ses verilir ve kullanıcı uyarılır.
   piper: { f: ['tr_TR-dfki-medium'], m: ['tr_TR-fahrettin-medium', 'tr_TR-fettah-medium'] }
 };
-
-// ElevenLabs hazır sesleri (çok dilli modellerle Türkçe konuşur); Ayarlar › Seslendirme › "Sesleri listele" ile
-// hesabınızdaki ya da Ses Kütüphanesi'nden eklediğiniz Türkçe anadil seslerini seçebilirsiniz.
+// ElevenLabs hazır sesleri (çok dilli modellerle Türkçe konuşur). Ayarlar'dan hesabınızdaki Türkçe anadil sesler seçilebilir.
 export const ELEVEN_DEFAULT = { f: ['EXAVITQu4vr4xnSDxMaL', '21m00Tcm4TlvDq8ikWAM'], m: ['nPczCjzI2devNBz1zQrb', 'pNInz6obpgDQGcFmaJgB'] };
 
+const DEFAULTS = {
+  engine: 'auto', rate: 1, narrator: 'm',
+  elevenKey: '', elevenModel: 'eleven_v4', elevenF: '', elevenM: '',
+  geminiKey: '', geminiModel: 'gemini-3.8-flash-tts', geminiF: '', geminiM: '',
+  minimaxKey: '', minimaxModel: 'speech-2.8-hd', minimaxF: '', minimaxM: '', minimaxVoices: [],
+  googleKey: '', googleF: '', googleM: '',
+  azureKey: '', azureRegion: 'westeurope', azureF: '', azureM: '',
+  openaiKey: '', openaiModel: 'gpt-4o-mini-tts',
+  serverF: '', serverM: ''
+};
 export async function loadTTS() {
-  return { engine: 'auto', geminiKey: '', geminiModel: 'gemini-3.8-flash-tts', openaiKey: '', openaiModel: 'gpt-4o-mini-tts', elevenKey: '', elevenModel: 'eleven_v3', elevenF: '', elevenM: '', rate: 1, ...(await getSetting('tts', {})) };
+  const s = { ...DEFAULTS, ...(await getSetting('tts', {})) };
+  if (!s.schema) { if (s.elevenModel === 'eleven_v3') s.elevenModel = 'eleven_v4'; s.schema = 3; }
+  return s;
 }
-export async function saveTTS(cfg) { await setSetting('tts', cfg); }
+export async function saveTTS(cfg) { await setSetting('tts', { ...cfg, schema: 3 }); }
 
-// Hangi motor kullanılacak? (otomatik: anahtar varsa Gemini, sunucu varsa sunucu, yoksa tarayıcıda Piper)
+const geminiKey = async (cfg) => { if (cfg.geminiKey) return cfg.geminiKey; const l = await loadConfig(); return l.provider === 'gemini' ? l.apiKey : ''; };
+
+// Anahtarı/erişimi olan motorlar, kalite sırasıyla
+export async function availableEngines(cfg) {
+  cfg = cfg || await loadTTS();
+  const out = [];
+  if (cfg.elevenKey) out.push('elevenlabs');
+  if (await geminiKey(cfg)) out.push('gemini');
+  if (cfg.minimaxKey) out.push('minimax');
+  if (cfg.googleKey) out.push('google');
+  if (cfg.azureKey) out.push('azure');
+  if (cfg.openaiKey) out.push('openai');
+  if (await serverUrl()) out.push('server');
+  out.push('piper');
+  return out;
+}
 export async function resolveEngine(cfg) {
   cfg = cfg || await loadTTS();
-  if (cfg.engine !== 'auto') return cfg.engine;
-  const llm = await loadConfig();
-  if (cfg.elevenKey) return 'elevenlabs';
-  if (cfg.geminiKey || (llm.provider === 'gemini' && llm.apiKey)) return 'gemini';
-  if (cfg.openaiKey) return 'openai';
-  if (await serverUrl()) return 'server';
-  return 'piper';
+  if (cfg.engine === 'browser') return hasBrowserVoice() ? 'browser' : 'piper';
+  if (cfg.engine && cfg.engine !== 'auto') return cfg.engine;
+  return (await availableEngines(cfg))[0];
 }
-const geminiKey = async (cfg) => cfg.geminiKey || ((await loadConfig()).provider === 'gemini' ? (await loadConfig()).apiKey : '');
+// Bu motor Türkçe kadın sesi verebiliyor mu?
+export function femaleOK(engine) {
+  if (engine === 'piper') return false;
+  if (engine === 'server') return serverInfo()?.tts?.female !== false;
+  if (engine === 'browser') return !!pickBrowserVoice('Türkçe', 'f')?.female;
+  return true;
+}
 
 // Konuşmacılara cinsiyete göre farklı ses ata
-export function assignVoices(speakers, engine, cfg = {}) {
-  const pool = engine === 'elevenlabs'
-    ? { f: [cfg.elevenF, ...ELEVEN_DEFAULT.f].filter(Boolean), m: [cfg.elevenM, ...ELEVEN_DEFAULT.m].filter(Boolean) }
-    : VOICES[engine];
+export async function voicePool(engine, cfg) {
+  const own = (f, m) => ({ f: [f].filter(Boolean), m: [m].filter(Boolean) });
+  const merge = (a, b) => ({ f: [...new Set([...a.f, ...b.f])], m: [...new Set([...a.m, ...b.m])] });
+  switch (engine) {
+    case 'elevenlabs': return merge(own(cfg.elevenF, cfg.elevenM), ELEVEN_DEFAULT);
+    case 'minimax': return merge(own(cfg.minimaxF, cfg.minimaxM), VOICES.minimax);
+    case 'azure': return merge(own(cfg.azureF, cfg.azureM), VOICES.azure);
+    case 'google': {
+      let best = VOICES.google;
+      try { const vs = await listGoogleVoices(cfg.googleKey); if (vs.length) best = { f: vs.filter((v) => v.gender === 'FEMALE').map((v) => v.name), m: vs.filter((v) => v.gender === 'MALE').map((v) => v.name) }; } catch {}
+      if (!best.f.length) best.f = VOICES.google.f; if (!best.m.length) best.m = VOICES.google.m;
+      return merge(own(cfg.googleF, cfg.googleM), best);
+    }
+    case 'gemini': return merge(own(cfg.geminiF, cfg.geminiM), VOICES.gemini);
+    case 'server': return { f: [cfg.serverF || 'f'], m: [cfg.serverM || 'm'] };
+    default: return VOICES[engine] || { f: ['f'], m: ['m'] };
+  }
+}
+export async function assignVoices(speakers, engine, cfg = {}) {
+  const pool = await voicePool(engine, cfg);
   const used = { f: 0, m: 0 };
   return Object.fromEntries(speakers.map((s) => {
     const g = s.gender === 'm' ? 'm' : 'f';
-    const v = s.voice || (pool ? pool[g][used[g]++ % pool[g].length] : g);
-    return [s.id, v];
+    return [s.id, s.voice || pool[g][used[g]++ % pool[g].length]];
   }));
 }
 
-// ---------------- Motorlar ----------------
+// ---------------- Yardımcılar ----------------
+class TTSError extends Error { constructor(msg, status = 0, retry = false) { super(msg); this.status = status; this.retry = retry; } }
+const httpErr = async (who, r) => {
+  const t = (await r.text().catch(() => '')).slice(0, 220);
+  const s = r.status;
+  const why = s === 401 || s === 403 ? 'anahtar geçersiz ya da yetkisiz' : s === 429 ? 'kota/hız sınırı' : s === 402 ? 'bakiye yetersiz' : '';
+  return new TTSError(`${who}: ${s}${why ? ' (' + why + ')' : ''} ${t}`, s, s === 429 || s >= 500);
+};
+async function withRetry(fn, tries = 3) {
+  for (let k = 0; ; k++) {
+    try { return await fn(); } catch (e) {
+      const transient = e.retry || e instanceof TypeError; // TypeError: ağ kesintisi
+      if (!transient || k >= tries - 1) throw e;
+      await new Promise((r) => setTimeout(r, [1500, 4000, 9000][k] || 9000));
+    }
+  }
+}
 function b64ToBlob(b64, type) {
   const bin = atob(b64); const u = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new Blob([u], { type });
+}
+export function hexToBlob(hex, type = 'audio/mpeg') {
+  const u = new Uint8Array(hex.length >> 1);
+  for (let i = 0; i < u.length; i++) u[i] = parseInt(hex.substr(i * 2, 2), 16);
   return new Blob([u], { type });
 }
 function pcmToWav(blob, sr = 24000) {
@@ -74,10 +149,12 @@ function pcmToWav(blob, sr = 24000) {
     return encodeWav([f], sr);
   });
 }
+const toneHas = (tone, re) => re.test(String(tone || '').toLocaleLowerCase('tr'));
 
+// ---------------- Motorlar ----------------
 async function geminiChunk(lines, voices, speakers, cfg, style) {
   const key = await geminiKey(cfg);
-  if (!key) throw new Error('Gemini TTS için ayarlara Gemini API anahtarı girin.');
+  if (!key) throw new TTSError('Gemini TTS için Ayarlar › Seslendirme’ye Gemini API anahtarı girin (aistudio.google.com, ücretsiz).');
   const names = Object.fromEntries(speakers.map((s) => [s.id, s.name]));
   const ids = [...new Set(lines.map((l) => l.speaker))];
   const TR = 'Türkçe konuş: doğal İstanbul Türkçesi telaffuzu, doğru kelime vurgusu ve cümle tonlaması; gerçek bir insan gibi nefes al, duraksa, robotik olma';
@@ -91,25 +168,25 @@ async function geminiChunk(lines, voices, speakers, cfg, style) {
   });
   if (res.ok) {
     const j = await res.json();
-    const audio = (j.steps || []).filter((s) => s.type === 'model_output').flatMap((s) => s.content || []).filter((c) => c.type === 'audio').pop();
+    const audio = (j.steps || j.outputs || []).filter((s) => !s.type || s.type === 'model_output').flatMap((s) => s.content || [s]).filter((c) => c.type === 'audio').pop();
     if (audio?.data) return b64ToBlob(audio.data, audio.mime_type || 'audio/wav');
-    throw new Error('Gemini yanıtında ses yok');
+    throw new TTSError('Gemini yanıtında ses yok');
   }
-  if (res.status !== 404 && res.status !== 400) throw new Error('Gemini TTS: ' + res.status + ' ' + (await res.text()).slice(0, 200));
+  if (res.status !== 404 && res.status !== 400) throw await httpErr('Gemini TTS', res);
   // Eski uç nokta (generateContent) ile yeniden dene
   const legacy = cfg.geminiLegacyModel || 'gemini-2.5-flash-preview-tts';
   const text = `Aşağıdaki Türkçe konuşmayı doğal İstanbul Türkçesiyle, doğru vurgu ve tonlamayla, gerçek insanlar gibi seslendir. ${style}.\n` + lines.map((l) => `${names[l.speaker]}: ${normalizeTR(l.text)}`).join('\n');
   const speechConfig = ids.length > 1
     ? { multiSpeakerVoiceConfig: { speakerVoiceConfigs: ids.slice(0, 2).map((id) => ({ speaker: names[id], voiceConfig: { prebuiltVoiceConfig: { voiceName: voices[id] } } })) } }
     : { voiceConfig: { prebuiltVoiceConfig: { voiceName: voices[ids[0]] } } };
-  const r2 = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${legacy}:generateContent?key=${encodeURIComponent(key)}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+  const r2 = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${legacy}:generateContent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({ contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig } })
   });
-  if (!r2.ok) throw new Error('Gemini TTS: ' + r2.status + ' ' + (await r2.text()).slice(0, 200));
+  if (!r2.ok) throw await httpErr('Gemini TTS', r2);
   const j2 = await r2.json();
   const part = j2.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
-  if (!part) throw new Error('Gemini yanıtında ses yok');
+  if (!part) throw new TTSError('Gemini yanıtında ses yok');
   return pcmToWav(b64ToBlob(part.inlineData.data, 'audio/l16'), 24000);
 }
 
@@ -118,25 +195,27 @@ const tagFor = (tone) => { const t = String(tone || '').toLocaleLowerCase('tr');
 const usesTags = (m) => /v3|v4/.test(m || '');
 
 async function elevenChunk(lines, voices, cfg) {
-  if (!cfg.elevenKey) throw new Error('ElevenLabs için ayarlara API anahtarı girin.');
-  const model = cfg.elevenModel || 'eleven_v3';
+  if (!cfg.elevenKey) throw new TTSError('ElevenLabs için ayarlara API anahtarı girin.');
+  let model = cfg.elevenModel || 'eleven_v4';
   const headers = { 'Content-Type': 'application/json', 'xi-api-key': cfg.elevenKey, Accept: 'audio/mpeg' };
-  const prep = (l) => (usesTags(model) ? tagFor(l.tone) : '') + normalizeTR(l.text);
-  const res = await fetch('https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128', {
-    method: 'POST', headers, body: JSON.stringify({ model_id: model, language_code: 'tr', inputs: lines.map((l) => ({ text: prep(l), voice_id: voices[l.speaker] })) })
+  const prep = (l, m) => (usesTags(m) ? tagFor(l.tone) : '') + normalizeTR(l.text);
+  const dialogue = (m) => fetch('https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128', {
+    method: 'POST', headers, body: JSON.stringify({ model_id: m, language_code: 'tr', inputs: lines.map((l) => ({ text: prep(l, m), voice_id: voices[l.speaker] })) })
   });
+  let res = await dialogue(model);
+  if (!res.ok && (res.status === 400 || res.status === 422) && model !== 'eleven_v3') { model = 'eleven_v3'; res = await dialogue(model); }
   if (res.ok) return { blob: await res.blob(), whole: true };
-  if (res.status === 401) throw new Error('ElevenLabs anahtarı geçersiz.');
+  if (res.status === 401 || res.status === 403 || res.status === 429 || res.status >= 500) throw await httpErr('ElevenLabs', res);
   // diyalog uç noktası bu modeli desteklemiyorsa satır satır üret
   const blobs = [];
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voices[l.speaker]}?output_format=mp3_44100_128`, {
       method: 'POST', headers,
-      body: JSON.stringify({ text: prep(l), model_id: usesTags(model) && res.status !== 400 ? model : 'eleven_multilingual_v2', language_code: 'tr',
+      body: JSON.stringify({ text: prep(l, model), model_id: model, language_code: 'tr',
         previous_text: lines[i - 1]?.text?.slice(-100), next_text: lines[i + 1]?.text?.slice(0, 100), voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true } })
     });
-    if (!r.ok) throw new Error('ElevenLabs: ' + r.status + ' ' + (await r.text()).slice(0, 200));
+    if (!r.ok) throw await httpErr('ElevenLabs', r);
     blobs.push(await r.blob());
   }
   return { blobs };
@@ -144,26 +223,125 @@ async function elevenChunk(lines, voices, cfg) {
 
 export async function listElevenVoices(key) {
   const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } });
-  if (!r.ok) throw new Error('ElevenLabs: ' + r.status);
+  if (!r.ok) throw await httpErr('ElevenLabs', r);
   return (await r.json()).voices.map((v) => ({ id: v.voice_id, name: v.name, gender: v.labels?.gender || '', lang: v.labels?.language || v.labels?.accent || '' }));
 }
 
+// MiniMax: https://platform.minimax.io/docs/api-reference/speech-t2a-http
+const MM = 'https://api.minimax.io/v1';
+const mmErr = (j, r) => {
+  const c = j?.base_resp?.status_code, m = j?.base_resp?.status_msg || '';
+  const why = { 1002: 'hız sınırı', 1004: 'anahtar geçersiz', 2049: 'anahtar geçersiz', 1008: 'bakiye yetersiz', 1026: 'içerik filtresi', 2013: 'geçersiz parametre', 2038: 'klonlama izni yok: hesap doğrulamasını tamamlayın', 1043: 'kayıt metniyle eşleşmedi' }[c] || '';
+  return new TTSError(`MiniMax: ${c ?? r.status}${why ? ' (' + why + ')' : ''} ${m}`.trim(), c === 1004 || c === 2049 ? 401 : r.status, c === 1002 || c === 1001 || c === 1000 || r.status >= 500);
+};
+async function mmFetch(path, key, init) {
+  const r = await fetch(MM + path, { ...init, headers: { Authorization: 'Bearer ' + key, ...(init.headers || {}) } });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || (j.base_resp && j.base_resp.status_code)) throw mmErr(j, r);
+  return j;
+}
+const EMO = [[/üzgün|hüzün/, 'sad'], [/şaşkın|şaşır/, 'surprised'], [/neşeli|coşkulu|heyecanlı|gülerek/, 'happy'], [/sakin|sabırlı|rahat/, 'calm'], [/endişeli|korku/, 'fearful'], [/kızgın|öfke/, 'angry']];
+async function minimaxLine(line, voice, cfg, _style, lang) {
+  if (!cfg.minimaxKey) throw new TTSError('MiniMax için ayarlara API anahtarı girin.');
+  const model = cfg.minimaxModel || 'speech-2.8-hd';
+  const emo = EMO.find(([re]) => toneHas(line.tone, re))?.[1];
+  const laugh = /2\.8/.test(model) && toneHas(line.tone, /gülerek/) ? '(laughs) ' : '';
+  const j = await mmFetch('/t2a_v2', cfg.minimaxKey, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, text: laugh + normalizeTR(line.text), stream: false, output_format: 'hex', language_boost: MINIMAX_LANG[langCode(lang).slice(0, 2)] || 'auto',
+      voice_setting: { voice_id: voice, speed: 1, vol: 1, pitch: 0, ...(emo ? { emotion: emo } : {}) },
+      audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 } })
+  });
+  if (!j.data?.audio) throw new TTSError('MiniMax yanıtında ses yok');
+  return hexToBlob(j.data.audio, 'audio/mpeg');
+}
+// Ses klonlama: kayıt yükle → klonla → voice_id. Yalnız kendi sesiniz ya da izinli bir ses.
+export async function minimaxUpload(key, blob, name = 'ses.wav') {
+  const fd = new FormData(); fd.append('purpose', 'voice_clone'); fd.append('file', blob, name);
+  const j = await mmFetch('/files/upload', key, { method: 'POST', body: fd });
+  return j.file.file_id;
+}
+export async function minimaxClone(key, { fileId, voiceId, model = 'speech-2.8-hd', previewText }) {
+  const j = await mmFetch('/voice_clone', key, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_id: fileId, voice_id: voiceId, need_noise_reduction: true, need_volume_normalization: true, language_boost: 'Turkish', ...(previewText ? { text: previewText, model } : {}) })
+  });
+  return { voiceId, demo: j.demo_audio || '' };
+}
+export async function minimaxDesign(key, { prompt, previewText, voiceId }) {
+  const j = await mmFetch('/voice_design', key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, preview_text: previewText, ...(voiceId ? { voice_id: voiceId } : {}) }) });
+  return { voiceId: j.voice_id, trial: j.trial_audio ? hexToBlob(j.trial_audio) : null };
+}
+export const newVoiceId = (p = 'defter') => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+// Azure Speech: https://learn.microsoft.com/azure/ai-services/speech-service/rest-text-to-speech
+const xmlEsc = (s) => s.replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+async function azureLine(line, voice, cfg, _style, lang) {
+  if (!cfg.azureKey) throw new TTSError('Azure için ayarlara anahtar ve bölge girin.');
+  const lc = langCode(lang), text = xmlEsc(normalizeTR(line.text));
+  const inner = /Multilingual/i.test(voice) ? `<lang xml:lang="${lc}">${text}</lang>` : text;
+  const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${lc}"><voice name="${voice}">${inner}</voice></speak>`;
+  const r = await fetch(`https://${(cfg.azureRegion || 'westeurope').trim()}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+    method: 'POST', headers: { 'Ocp-Apim-Subscription-Key': cfg.azureKey, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'audio-24khz-96kbitrate-mono-mp3' }, body: ssml
+  });
+  if (!r.ok) throw await httpErr('Azure', r);
+  return r.blob();
+}
+
+// Google Cloud Text-to-Speech: https://cloud.google.com/text-to-speech/docs/reference/rest
+const GQ = ['Chirp3-HD', 'Chirp-HD', 'Studio', 'Neural2', 'Wavenet', 'Standard'];
+const gScore = (n) => { const i = GQ.findIndex((q) => n.includes(q)); return i < 0 ? 9 : i; };
+const gCache = {};
+export async function listGoogleVoices(key, lang = 'tr-TR') {
+  if (!key) return [];
+  if (gCache[key + lang]) return gCache[key + lang];
+  const r = await fetch('https://texttospeech.googleapis.com/v1/voices?languageCode=' + lang, { headers: { 'x-goog-api-key': key } });
+  if (!r.ok) throw await httpErr('Google TTS', r);
+  const vs = ((await r.json()).voices || []).filter((v) => v.languageCodes?.includes(lang)).map((v) => ({ name: v.name, gender: v.ssmlGender })).sort((a, b) => gScore(a.name) - gScore(b.name));
+  return (gCache[key + lang] = vs);
+}
+async function googleLine(line, voice, cfg, _style, lang) {
+  if (!cfg.googleKey) throw new TTSError('Google Cloud TTS için ayarlara API anahtarı girin.');
+  const lc = /^[a-z]{2}-[A-Z]{2}/.exec(voice)?.[0] || langCode(lang);
+  const r = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.googleKey },
+    body: JSON.stringify({ input: { text: normalizeTR(line.text) }, voice: { languageCode: lc, name: voice }, audioConfig: { audioEncoding: 'MP3' } })
+  });
+  if (!r.ok) throw await httpErr('Google TTS', r);
+  return b64ToBlob((await r.json()).audioContent, 'audio/mpeg');
+}
+
 async function openaiLine(line, voice, cfg, style) {
-  if (!cfg.openaiKey) throw new Error('OpenAI TTS için ayarlara OpenAI API anahtarı girin.');
+  if (!cfg.openaiKey) throw new TTSError('OpenAI TTS için ayarlara OpenAI API anahtarı girin.');
   const res = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.openaiKey },
-    body: JSON.stringify({ model: cfg.openaiModel || 'gpt-4o-mini-tts', voice, input: normalizeTR(line.text), instructions: `${style}${line.tone ? '; ' + line.tone : ''}. Doğal Türkçe telaffuz.`, response_format: 'wav' })
+    body: JSON.stringify({ model: cfg.openaiModel || 'gpt-4o-mini-tts', voice, input: normalizeTR(line.text), instructions: `${style}${line.tone ? '; ' + line.tone : ''}. Doğal Türkçe telaffuz, doğru vurgu.`, response_format: 'wav' })
   });
-  if (!res.ok) throw new Error('OpenAI TTS: ' + res.status);
+  if (!res.ok) throw await httpErr('OpenAI TTS', res);
   return res.blob();
 }
 
-async function serverLine(line, speaker, lang) {
+async function serverLine(line, voice, cfg, style, lang, speaker) {
   const base = await serverUrl();
-  if (!base) throw new Error('Lokal yardımcı sunucu çalışmıyor.');
-  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(line.text), speaker: speaker.id, gender: speaker.gender, lang: langCode(lang) }) });
-  if (!r.ok) throw new Error('Sunucu TTS: ' + (await r.text()).slice(0, 200));
+  if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
+  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(line.text), speaker: speaker.id, gender: speaker.gender === 'm' ? 'm' : 'f', voice, tone: line.tone || '', lang: langCode(lang) }) });
+  if (!r.ok) throw new TTSError('Sunucu TTS: ' + (await r.text()).slice(0, 200), r.status, r.status >= 500);
   return r.blob();
+}
+export async function serverVoices() {
+  const base = await serverUrl(); if (!base) return [];
+  const r = await fetch(base + '/voices'); return r.ok ? (await r.json()).voices || [] : [];
+}
+export async function uploadServerVoice(name, gender, blob) {
+  const base = await serverUrl(); if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
+  const fd = new FormData(); fd.append('name', name); fd.append('gender', gender); fd.append('file', blob, name + '.wav');
+  const r = await fetch(base + '/voices', { method: 'POST', body: fd });
+  if (!r.ok) throw new TTSError('Sunucu: ' + (await r.text()).slice(0, 200));
+  return r.json();
+}
+export async function deleteServerVoice(name) {
+  const base = await serverUrl(); if (!base) return;
+  await fetch(base + '/voices/' + encodeURIComponent(name), { method: 'DELETE' });
 }
 
 let piperW = null, piperSeq = 0;
@@ -175,7 +353,7 @@ function piperWorker() {
   piperW.onerror = (e) => { for (const k in piperWaits) { piperWaits[k].fail(new Error('Piper ses motoru başlatılamadı: ' + (e.message || 'bilinmeyen hata'))); delete piperWaits[k]; } piperW = null; };
   return piperW;
 }
-async function piperLine(line, voice, onInfo) {
+async function piperLine(line, voice, _cfg, _style, _lang, _sp, onInfo) {
   const id = ++piperSeq;
   const text = normalizeTR(line.text);
   try {
@@ -184,10 +362,12 @@ async function piperLine(line, voice, onInfo) {
       piperWorker().postMessage({ id, text, voiceId: voice });
     });
   } catch (e) {
-    if (/fetch|import|network|Failed/i.test(e.message)) throw new Error('Ücretsiz Piper sesi indirilemedi (internet gerekir). Ayarlar › Seslendirme’den ElevenLabs veya Gemini seçebilirsiniz.');
+    if (/fetch|import|network|Failed/i.test(e.message)) throw new TTSError('Ücretsiz Piper sesi indirilemedi (ilk kullanımda internet gerekir). Ayarlar › Seslendirme’den başka bir motor seçebilirsiniz.');
     throw e;
   }
 }
+const LINE_FN = { openai: openaiLine, server: serverLine, piper: piperLine, minimax: minimaxLine, azure: azureLine, google: googleLine };
+const CONCURRENCY = { openai: 3, minimax: 3, azure: 3, google: 3, server: 1, piper: 1 };
 
 // ---------------- Üst düzey: tüm konuşmayı tek dosyaya çevir ----------------
 const STYLE = {
@@ -200,7 +380,7 @@ const STYLE = {
   munazara: 'Resmî münazara; moderatör tarafsız, taraflar ikna edici ve heyecanlı',
   exam: 'Sözlü sınav: sınav görevlisi ciddi, aday heyecanlı, eğitmen cesaretlendirici',
   story: 'Sürükleyici, duygulu hikâye anlatımı; gerilim ve rahatlama anları',
-  narration: 'Belgesel anlatıcısı; sıcak, net, merak uyandıran'
+  narration: 'Belgesel anlatıcısı; sıcak, tok, net diksiyonlu, merak uyandıran; kusursuz Türkçe telaffuz'
 };
 
 function chunkLines(lines, maxChars = 1600, maxSpeakers = 2) {
@@ -215,63 +395,82 @@ function chunkLines(lines, maxChars = 1600, maxSpeakers = 2) {
 }
 
 const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+const inflight = {};
 
 /**
  * lines: [{speaker, text, tone?}], speakers: [{id, name, gender}]
  * Dönen: { blob (WAV), timings: [{start, end}], engine } — önbelleğe alınır, metin değişmedikçe yeniden üretilmez.
+ * onPiece({blob, idx:[satır no]}) parçalar sırayla hazır oldukça çağrılır (beklemeden dinletmek için).
  */
-export async function synthesize(artifactId, lines, speakers, lang, { format = 'deep', onProgress = () => {} } = {}) {
+export async function synthesize(artifactId, lines, speakers, lang, { format = 'deep', onProgress = () => {}, onPiece, engine: forced } = {}) {
+  if (!lines?.length) throw new TTSError('Seslendirilecek metin yok.');
   const cfg = await loadTTS();
-  const engine = await resolveEngine(cfg);
-  if (engine === 'browser') return { engine, blob: null, timings: null };
-  const voices = assignVoices(speakers, engine, cfg);
-  const key = hash(engine + JSON.stringify(voices) + (cfg.geminiModel || '') + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone])));
-  const cached = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.key === key).first();
-  if (cached) return { engine, blob: cached.blob, timings: cached.timings };
-  if (inflight[key]) return inflight[key]; // aynı ses zaten üretiliyorsa onu bekle
-  const job = (async () => {
-  const style = STYLE[format] || STYLE.deep;
-  const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
-  const pieces = []; // {blob, lines:[idx...]}
-  if (engine === 'elevenlabs') {
-    const chunks = chunkLines(lines, 1800, 10);
-    let done = 0;
-    for (const ch of chunks) {
-      onProgress(`Gerçek insan sesiyle seslendiriliyor ${done + 1}–${done + ch.length} / ${lines.length}`);
-      const r = await elevenChunk(ch, voices, cfg);
-      if (r.whole) pieces.push({ blob: r.blob, idx: ch.map((l) => lines.indexOf(l)) });
-      else r.blobs.forEach((b, k) => pieces.push({ blob: b, idx: [lines.indexOf(ch[k])] }));
-      done += ch.length;
-    }
-  } else if (engine === 'gemini') {
-    const chunks = chunkLines(lines);
-    let done = 0;
-    for (const ch of chunks) {
-      onProgress(`Seslendiriliyor ${done + 1}–${done + ch.length} / ${lines.length}`);
-      pieces.push({ blob: await geminiChunk(ch, voices, speakers, cfg, style), idx: ch.map((l) => lines.indexOf(l)) });
-      done += ch.length;
-    }
-  } else {
-    for (let i = 0; i < lines.length; i++) {
-      onProgress(`Seslendiriliyor ${i + 1} / ${lines.length}`);
-      const l = lines[i];
-      const sp = byId[l.speaker] || speakers[0];
-      const blob = engine === 'openai' ? await openaiLine(l, voices[l.speaker], cfg, style)
-        : engine === 'server' ? await serverLine(l, sp, lang)
-          : await piperLine(l, voices[l.speaker], onProgress);
-      pieces.push({ blob, idx: [i] });
+  const order = forced ? [forced] : cfg.engine === 'auto' ? await availableEngines(cfg) : [await resolveEngine(cfg)];
+  if (order[0] === 'browser') return { engine: 'browser', blob: null, timings: null };
+  let lastErr;
+  for (let k = 0; k < order.length; k++) {
+    try { return await synthWith(order[k], cfg, artifactId, lines, speakers, lang, format, onProgress, k ? null : onPiece); }
+    catch (e) {
+      lastErr = e;
+      if (k < order.length - 1) onProgress(`${ENGINE_SHORT[order[k]]} çalışmadı (${String(e.message).slice(0, 90)}). ${ENGINE_SHORT[order[k + 1]]} deneniyor…`);
     }
   }
-  onProgress('Ses birleştiriliyor ve dengeleniyor…');
-  const { blob, timings } = await mixPieces(pieces, lines);
-  await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix').delete();
-  await db.blobs.add({ artifactId, kind: 'mix', key, blob, timings });
-  return { engine, blob, timings };
+  throw lastErr;
+}
+
+async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format, onProgress, onPiece) {
+  const voices = await assignVoices(speakers, engine, cfg);
+  const model = { gemini: cfg.geminiModel, elevenlabs: cfg.elevenModel, minimax: cfg.minimaxModel, openai: cfg.openaiModel, azure: cfg.azureRegion }[engine] || '';
+  const key = hash(engine + JSON.stringify(voices) + model + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone])));
+  const cached = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.key === key).first();
+  if (cached) return { engine, blob: cached.blob, timings: cached.timings, cached: true };
+  if (inflight[key]) return inflight[key]; // aynı ses zaten üretiliyorsa onu bekle
+  const job = (async () => {
+    const style = STYLE[format] || STYLE.deep;
+    const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
+    const pieces = []; // {blob, idx:[satır no]}
+    const emit = (p) => { pieces.push(p); try { onPiece?.(p); } catch {} };
+    if (engine === 'elevenlabs' || engine === 'gemini') {
+      const chunks = engine === 'elevenlabs' ? chunkLines(lines, 1800, 10) : chunkLines(lines);
+      let done = 0;
+      for (const ch of chunks) {
+        onProgress(`${ENGINE_SHORT[engine]} ile seslendiriliyor ${done + 1}–${done + ch.length} / ${lines.length}`);
+        const idx = ch.map((l) => lines.indexOf(l));
+        if (engine === 'gemini') emit({ blob: await withRetry(() => geminiChunk(ch, voices, speakers, cfg, style)), idx });
+        else {
+          const r = await withRetry(() => elevenChunk(ch, voices, cfg));
+          if (r.whole) emit({ blob: r.blob, idx }); else r.blobs.forEach((b, n) => emit({ blob: b, idx: [idx[n]] }));
+        }
+        done += ch.length;
+      }
+    } else {
+      const fn = LINE_FN[engine];
+      if (!fn) throw new TTSError('Bilinmeyen ses motoru: ' + engine);
+      const conc = CONCURRENCY[engine] || 1;
+      const results = new Array(lines.length);
+      let next = 0, delivered = 0, finished = 0;
+      const deliver = () => { while (delivered < lines.length && results[delivered]) emit({ blob: results[delivered], idx: [delivered++] }); };
+      const worker = async () => {
+        while (next < lines.length) {
+          const i = next++;
+          const l = lines[i];
+          results[i] = await withRetry(() => fn(l, voices[l.speaker], cfg, style, lang, byId[l.speaker] || speakers[0], onProgress));
+          finished++;
+          onProgress(`${ENGINE_SHORT[engine]} ile seslendiriliyor ${finished} / ${lines.length}`);
+          deliver();
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(conc, lines.length) }, worker));
+    }
+    onProgress('Ses birleştiriliyor ve dengeleniyor…');
+    const { blob, timings } = await mixPieces(pieces, lines);
+    await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix').delete();
+    await db.blobs.add({ artifactId, kind: 'mix', key, blob, timings, engine });
+    return { engine, blob, timings };
   })();
   inflight[key] = job;
   try { return await job; } finally { delete inflight[key]; }
 }
-const inflight = {};
 
 // Parçaları birleştir: konuşmacı değişiminde ~0,3 sn doğal duraklama (Google podcast'inde ölçülen ortanca 0,32 sn),
 // ses seviyesini podcast standardına yakın (-16 LUFS civarı) dengele
@@ -279,8 +478,7 @@ async function mixPieces(pieces, lines) {
   const SR = 44100;
   const ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
   const bufs = [];
-  for (const p of pieces) bufs.push(await ac.decodeAudioData(await p.blob.arrayBuffer()));
-  ac.close();
+  try { for (const p of pieces) bufs.push(await ac.decodeAudioData(await p.blob.arrayBuffer())); } finally { ac.close(); }
   const gapFor = (i) => {
     if (i === 0) return 0;
     const prev = lines[pieces[i - 1].idx.at(-1)], cur = lines[pieces[i].idx[0]];
@@ -288,7 +486,7 @@ async function mixPieces(pieces, lines) {
     return base + (Math.random() - 0.5) * 0.12;
   };
   const gaps = pieces.map((_, i) => Math.floor(gapFor(i) * SR));
-  const total = bufs.reduce((a, b, i) => a + b.length + gaps[i], 0) + Math.floor(0.4 * SR);
+  const total = bufs.reduce((a, b, i) => a + b.length + gaps[i], 0) + Math.floor(0.6 * SR);
   const out = new Float32Array(total);
   const timings = new Array(lines.length);
   let off = Math.floor(0.2 * SR);
@@ -324,31 +522,60 @@ export function encodeWav(channels, sr) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+// Herhangi bir ses dosyasını (webm/ogg/mp3) mono WAV'a çevir (MiniMax ve lokal klonlama WAV/MP3 ister)
+export async function toWav(blob, sr = 24000) {
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  let b; try { b = await ac.decodeAudioData(await blob.arrayBuffer()); } finally { ac.close(); }
+  const off = new OfflineAudioContext(1, Math.ceil(b.duration * sr), sr);
+  const src = off.createBufferSource(); src.buffer = b; src.connect(off.destination); src.start();
+  const r = await off.startRendering();
+  return { blob: encodeWav([r.getChannelData(0)], sr), seconds: b.duration };
+}
+
+// Mikrofondan kayıt: const rec = await recordVoice(); … const { blob, seconds } = await rec.stop();
+export async function recordVoice() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  const mr = new MediaRecorder(stream); const parts = [];
+  mr.ondataavailable = (e) => e.data.size && parts.push(e.data);
+  mr.start(250);
+  const end = () => new Promise((ok) => { mr.onstop = ok; mr.stop(); }).then(() => stream.getTracks().forEach((t) => t.stop()));
+  return {
+    stop: async () => { await end(); return toWav(new Blob(parts, { type: mr.mimeType })); },
+    cancel: () => end()
+  };
+}
+
 // ---------------- Tarayıcı sesi (canlı, dosyasız) ----------------
 export function browserVoices(lang) {
   const code = langCode(lang).slice(0, 2);
-  const vs = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(code));
+  const vs = (window.speechSynthesis?.getVoices() || []).filter((v) => v.lang.toLowerCase().replace('_', '-').startsWith(code));
   const score = (v) => (/natural|online|neural/i.test(v.name) ? 10 : 0) + (/google/i.test(v.name) ? 3 : 0);
   return vs.sort((a, b) => score(b) - score(a));
 }
+export const hasBrowserVoice = (lang = 'Türkçe') => browserVoices(lang).length > 0;
 export function hasNaturalBrowserVoice(lang) { return browserVoices(lang).some((v) => /natural|online|neural/i.test(v.name)); }
-
-export function speakBrowser(text, { lang, gender = 'f', rate = 1, onend }) {
-  const u = new SpeechSynthesisUtterance(normalizeTR(text));
-  u.lang = langCode(lang);
+const FEMALE_RE = /emel|female|kadın|seda|yelda|filiz|google/i, MALE_RE = /ahmet|(^|\W)male|erkek|tolga|cem/i;
+function pickBrowserVoice(lang, gender) {
   const vs = browserVoices(lang);
-  const female = vs.find((v) => /emel|female|kadın|seda|yelda|filiz/i.test(v.name));
-  const male = vs.find((v) => /ahmet|male|erkek|tolga|cem/i.test(v.name) && !/female/i.test(v.name));
-  u.voice = (gender === 'm' ? male || vs[1] : female || vs[0]) || vs[0] || null;
-  if (gender === 'm' && !male && vs.length < 2) u.pitch = 0.75;
-  u.rate = rate;
+  if (!vs.length) return null;
+  const f = vs.find((v) => FEMALE_RE.test(v.name) && !/(^|\W)male/i.test(v.name));
+  const m = vs.find((v) => MALE_RE.test(v.name) && !/female/i.test(v.name));
+  if (gender === 'm') return { voice: m || vs.find((v) => v !== f) || vs[0], male: !!m };
+  return { voice: f || vs[0], female: !!f };
+}
+// Bu dilde tarayıcı sesi yoksa hiç konuşmaz (yabancı sesle Türkçe okumak robot gibi duyulur), onend hemen çağrılır.
+export function speakBrowser(text, { lang, gender = 'f', rate = 1, onend }) {
+  const p = window.speechSynthesis && pickBrowserVoice(lang, gender);
+  if (!p) { setTimeout(() => onend?.(), 0); return null; }
+  const u = new SpeechSynthesisUtterance(normalizeTR(text));
+  u.lang = langCode(lang); u.voice = p.voice; u.rate = rate;
   u.onend = onend; u.onerror = onend;
   speechSynthesis.speak(u);
   return u;
 }
 
 // Tek satır (video sahnesi gibi) için ses dosyası
-export async function synthOne(artifactId, key, text, speaker, lang, format = 'narration') {
-  const r = await synthesize(artifactId + ':' + key, [{ speaker: speaker.id, text }], [speaker], lang, { format });
+export async function synthOne(artifactId, key, text, speaker, lang, format = 'narration', opts = {}) {
+  const r = await synthesize(artifactId + ':' + key, [{ speaker: speaker.id, text }], [speaker], lang, { format, ...opts });
   return r.blob;
 }

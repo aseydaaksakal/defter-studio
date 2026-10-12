@@ -23,6 +23,12 @@ db.version(1).stores({
   blobs: '++id, artifactId, kind',
   settings: 'key'
 });
+// Şema sürüm 2 (0.3.0): soru bankası. Sorular token harcamadan tekrar tekrar test oluşturmak için saklanır.
+// questions: { notebookId, q, options, answer, explanation, hint, topic, evidence, ref:{title,page,text}, verified,
+//              preset, level, createdAt, seen, correct, wrong, lastAt, lastOk, due }
+db.version(2).stores({
+  questions: '++id, notebookId, topic, preset, createdAt, lastAt, due'
+});
 
 export const now = () => Date.now();
 
@@ -71,6 +77,8 @@ export async function deleteNotebook(id) {
   const srcs = await db.sources.where('notebookId').equals(id).primaryKeys();
   for (const s of srcs) await deleteSource(s);
   await db.messages.where('notebookId').equals(id).delete();
+  await db.questions.where('notebookId').equals(id).delete();
+  await db.settings.delete('bank:' + id);
   await db.notebooks.delete(id);
 }
 
@@ -82,7 +90,8 @@ export async function exportNotebook(id) {
   const artifacts = await db.artifacts.where('notebookId').equals(id).toArray();
   const versions = [];
   for (const a of artifacts) versions.push(...await db.versions.where('artifactId').equals(a.id).toArray());
-  return { format: 'defter-studio', v: 1, exportedAt: now(), notebook, sources, messages, artifacts, versions };
+  const questions = await db.questions.where('notebookId').equals(id).toArray();
+  return { format: 'defter-studio', v: 2, exportedAt: now(), notebook, sources, messages, artifacts, versions, questions };
 }
 
 export async function importNotebook(data, chunkText) {
@@ -98,5 +107,6 @@ export async function importNotebook(data, chunkText) {
   const map = {};
   for (const a of data.artifacts) { const { id: oldId, ...rest } = a; map[oldId] = await db.artifacts.add({ ...rest, notebookId: nid }); }
   for (const v of data.versions || []) { const { id: _v, ...rest } = v; if (map[rest.artifactId]) await db.versions.add({ ...rest, artifactId: map[rest.artifactId] }); }
+  for (const q of data.questions || []) { const { id: _q, ...rest } = q; await db.questions.add({ ...rest, notebookId: nid }); }
   return nid;
 }

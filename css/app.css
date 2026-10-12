@@ -507,3 +507,54 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .voice-up { border-color: var(--accent); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ocr-chip { display: block; font-size: 11px; color: var(--warn); }
 .diag.warn { border-color: var(--warn); } .diag.no { border-color: var(--no); }
+
+/* ===== 0.3.0: ses ayarları, soru bankası, doğrulama, yeni slayt düzenleri, dinleyerek öğren, pomodoro, yöntemler ===== */
+.voice-settings .vsec { border: 1px solid var(--line); border-radius: var(--r); margin: 8px 0; background: var(--card2); }
+.voice-settings .vsec > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; list-style: revert; }
+.voice-settings .vsec > .grid2 { padding: 0 14px 14px; }
+.span2 { grid-column: 1 / -1; }
+.stack { display: grid; gap: 8px; }
+.w100 { width: 100%; }
+.voice-up ol { margin: 6px 0 10px; padding-left: 20px; display: grid; gap: 4px; }
+.bank { display: grid; gap: 8px; margin: 10px 0; border-left: 4px solid var(--c, #81d4fa); --c: #81d4fa; }
+.bank-nums { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.bank-nums b { font-size: 16px; }
+.small-in { width: auto; padding: 4px 8px; font-size: 13px; }
+.count-in { width: 90px; }
+.ok-chip { border-color: var(--ok); color: var(--ok); }
+.warn-chip { border-color: var(--warn); color: var(--warn); }
+.q-src { margin-top: 10px; }
+.q-src blockquote, .fc-src { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 6px; font-style: italic; }
+.fc-src { margin-top: 10px; font-size: 13px; }
+.slide .s-tl { display: grid; gap: 1.1cqw; border-left: .4cqw solid var(--s-acc); padding-left: 2.4cqw; font-size: 2cqw; }
+.slide .s-tl .s-step { display: grid; grid-template-columns: 14cqw 1fr; gap: 1.6cqw; }
+.slide .s-proc { display: grid; gap: 1.1cqw; font-size: 2cqw; padding-left: 3cqw; }
+.slide .s-proc .s-step b { color: var(--s-acc); margin-right: 1cqw; }
+.slide .s-chart { display: grid; gap: 1cqw; font-size: 1.9cqw; margin-bottom: 1.4cqw; }
+.slide .s-bar { display: grid; grid-template-columns: 24cqw 1fr 12cqw; gap: 1.2cqw; align-items: center; }
+.slide .s-bar-t { height: 2.4cqw; background: color-mix(in srgb, var(--s-fg) 12%, transparent); border-radius: 1cqw; overflow: hidden; }
+.slide .s-bar-f { display: block; height: 100%; background: var(--s-acc); border-radius: 1cqw; }
+.slide .s-bar-v { font-weight: 700; text-align: right; }
+.slide .s-table { border-collapse: collapse; font-size: 1.8cqw; width: 100%; }
+.slide .s-table th, .slide .s-table td { border-bottom: .15cqw solid color-mix(in srgb, var(--s-fg) 25%, transparent); padding: .8cqw 1.2cqw; text-align: left; }
+.slide .s-table th { color: var(--s-acc); }
+.t-listen { --c: #b39ddb; }
+.listen { display: grid; gap: 12px; }
+.listen .big-label { font-size: 20px; line-height: 1.5; }
+.dict-res.ok { border-color: var(--ok); } .dict-res.no { border-color: var(--warn); }
+.w-ok { color: var(--ok); } .w-miss { color: var(--no); text-decoration: underline wavy; }
+.transcript.blurred .tline-text { filter: blur(5px); transition: filter .2s; }
+.transcript.blurred .tline.on .tline-text, .transcript.blurred .tline:hover .tline-text { filter: none; }
+.status-pill.pomo { cursor: pointer; font-variant-numeric: tabular-nums; }
+.status-pill.pomo.on { border-color: var(--no); color: var(--no); }
+.status-pill.pomo.brk { border-color: var(--ok); color: var(--ok); }
+.methods { margin-top: 28px; }
+.methods section { margin: 18px 0; }
+.m-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.m-item p { margin: 6px 0; }
+.ev { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 8px; margin: 0 4px; white-space: nowrap; }
+.ev-y { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
+.ev-o { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.ev-d { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+.ev-m { background: color-mix(in srgb, var(--no) 20%, transparent); color: var(--no); }
+@media (max-width: 640px) { .voice-settings .grid2 { grid-template-columns: 1fr; } .slide .s-bar { grid-template-columns: 30cqw 1fr 14cqw; } }
