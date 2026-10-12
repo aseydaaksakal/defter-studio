@@ -1,5 +1,6 @@
 // Bilgi kartları: çevirme (Boşluk), gezinme (← →), bildim/bilemedim sayacı, Leitner aralıklı tekrar, Anki CSV
 import { h, icon, download, slug, toast } from '../../ui.js';
+import { award, correctFx, wrongFx } from '../../learn.js';
 
 export function render(root, art, api) {
   const c = art.content;
@@ -41,6 +42,8 @@ export function render(root, art, api) {
     p.due = Date.now() + [0, 1, 10, 60 * 24, 60 * 24 * 3, 60 * 24 * 7][p.box] * 60000; // dakika
     prog[i] = p;
     ok ? right++ : wrong++;
+    ok ? correctFx(rBtn) : wrongFx(wBtn);
+    award(ok ? 2 : 1, 'kart', null, { silent: true });
     await api.save({ ...c, progress: prog }, null);
     go(1);
   }

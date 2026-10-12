@@ -19,6 +19,42 @@ async function json(system, user, signal, role) {
 }
 const refsOf = (ctx) => ctx.refs.map(({ n, sourceId, title, page, text }) => ({ n, sourceId, title, page, text: text.slice(0, 600) }));
 
+// Biçime göre konuşmacı kadrosu (cinsiyet sesleri ayrı tutulur)
+export function castFor(format, voices = 'fm') {
+  const F = ['Deniz', 'Elif', 'Zeynep'], M = ['Kaan', 'Emre', 'Murat'];
+  const g = voices === 'ff' ? ['f', 'f', 'f'] : voices === 'mm' ? ['m', 'm', 'm'] : ['f', 'm', 'f'];
+  const name = (i) => (g[i] === 'f' ? F[i] : M[i]);
+  const mk = (roles) => roles.map((r, i) => ({ id: 'ABCD'[i], name: name(i), gender: g[i], role: r }));
+  switch (format) {
+    case 'brief': return mk(['anlatıcı']);
+    case 'lecture': return mk(['hoca', 'öğrenci']);
+    case 'consult': return mk(['moderatör', 'uzman 1', 'uzman 2']);
+    case 'munazara': return mk(['moderatör ve hakem', 'lehte konuşmacı', 'aleyhte konuşmacı']);
+    case 'exam': return mk(['sınav görevlisi', 'aday', 'eğitmen']);
+    case 'story': return mk(['anlatıcı', 'karakter']);
+    case 'critique': return mk(['baş eleştirmen', 'ikinci uzman']);
+    default: return mk(['sunucu', 'sunucu']);
+  }
+}
+
+// Sınav türleri: soru tarzı, şık sayısı ve soru başına süre
+export const EXAMS = [
+  { v: 'genel', t: 'Genel', opts: 4, minPerQ: 1.2, style: 'açık, net, bilgi ölçen sorular' },
+  { v: 'lgs', t: 'LGS', opts: 4, minPerQ: 1.5, style: 'MEB LGS tarzı, okuduğunu anlama ve yorum içeren beceri temelli sorular' },
+  { v: 'tyt', t: 'YKS · TYT', opts: 5, minPerQ: 1.2, style: 'ÖSYM TYT tarzı, temel yeterlilik, paragraf ve yorum ağırlıklı' },
+  { v: 'ayt', t: 'YKS · AYT', opts: 5, minPerQ: 1.8, style: 'ÖSYM AYT tarzı, alan bilgisi derin, çok adımlı akıl yürütme' },
+  { v: 'kpss', t: 'KPSS', opts: 5, minPerQ: 1.1, style: 'ÖSYM KPSS tarzı, bilgi ve öncüllü (I, II, III) sorular' },
+  { v: 'ales', t: 'ALES / DGS', opts: 5, minPerQ: 1.3, style: 'ÖSYM ALES tarzı sayısal-sözel mantık' },
+  { v: 'yds', t: 'YDS / YÖKDİL', opts: 5, minPerQ: 1.2, style: 'ÖSYM YDS tarzı, kelime, dilbilgisi, okuma' },
+  { v: 'uni', t: 'Üniversite vize/final', opts: 5, minPerQ: 1.5, style: 'üniversite ders sınavı, kavram ve uygulama' },
+  { v: 'master', t: 'Yüksek lisans / doktora yeterlik', opts: 4, minPerQ: 2.5, style: 'derin kavrayış, kuram karşılaştırma, araştırma yorumu' },
+  { v: 'uab_goc', t: 'UAB · GMDSS GOC telsiz operatörü', opts: 4, minPerQ: 1.2, style: 'Ulaştırma ve Altyapı Bakanlığı GOC sınavı tarzı; GMDSS, frekanslar, prosedürler, SOLAS IV' },
+  { v: 'uab_roc', t: 'UAB · GMDSS ROC', opts: 4, minPerQ: 1.2, style: 'UAB ROC sınavı tarzı; A1 sahası, VHF DSC prosedürleri' },
+  { v: 'uab_vardiya', t: 'UAB · Vardiya zabiti (STCW)', opts: 4, minPerQ: 1.3, style: 'UAB gemiadamları sınavı tarzı; seyir, vardiya standartları, STCW' },
+  { v: 'colreg', t: 'COLREG (Denizde çatışmayı önleme)', opts: 4, minPerQ: 1.2, style: 'COLREG kuralları, fenerler, işaretler, manevra senaryoları' },
+  { v: 'ehliyet', t: 'Sürücü belgesi', opts: 4, minPerQ: 1.0, style: 'MEB sürücü sınavı tarzı' }
+];
+
 // ---------------- Studio araçlarının tanımı ----------------
 export const TOOLS = {
   podcast: {
@@ -28,38 +64,52 @@ export const TOOLS = {
         { v: 'deep', t: 'Ayrıntılı inceleme', d: 'İki sunucu arasında geçen, kaynaklarınızdaki konuları açıklayıp birbirine bağlayan canlı bir sohbet' },
         { v: 'brief', t: 'Özet', d: 'Kaynaklarınızdaki temel fikirleri hızlıca anlamanıza yardımcı olacak kısa bir özet' },
         { v: 'critique', t: 'Eleştiri', d: 'Materyalinizi iyileştirmenize yardımcı olacak yapıcı geri bildirimler sunan uzman incelemesi' },
-        { v: 'debate', t: 'Tartışma', d: 'İki sunucu arasında geçen, farklı bakış açılarını yansıtan düşünceli bir tartışma' }
+        { v: 'debate', t: 'Tartışma', d: 'İki sunucu arasında geçen, farklı bakış açılarını yansıtan düşünceli bir tartışma' },
+        { v: 'lecture', t: 'Hoca anlatımı', d: 'Deneyimli bir öğretmen konuyu adım adım anlatır, öğrenci soru sorar; örnek ve tekrarlarla' },
+        { v: 'consult', t: 'İstişare', d: 'Üç uzman aynı masada; her biri kendi açısından katkı verir, ortak sonuca varır' },
+        { v: 'munazara', t: 'Münazara', d: 'Moderatör, lehte ve aleyhte taraflar; kurallı turlar, çürütmeler ve hakem değerlendirmesi' },
+        { v: 'exam', t: 'Sözlü sınav provası', d: 'Sınav görevlisi soruyor, aday cevaplıyor, eğitmen hataları düzeltip ipucu veriyor' },
+        { v: 'story', t: 'Hikâyeyle öğren', d: 'Bilgileri duygulu, gerilimli bir hikâyeye yerleştirir; akılda kalıcı sahneler ve hafıza ipuçları' }
       ] },
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
       { key: 'length', label: 'Uzunluk', type: 'seg', default: 'default', choices: [{ v: 'short', t: 'Kısa' }, { v: 'default', t: 'Varsayılan' }, { v: 'long', t: 'Uzun' }] },
+      { key: 'voices', label: 'Sesler', type: 'seg', default: 'fm', choices: [{ v: 'fm', t: 'Kadın + erkek' }, { v: 'ff', t: 'İki kadın' }, { v: 'mm', t: 'İki erkek' }] },
       { key: 'focus', label: 'Yapay zeka sunucuları bu bölümde neye odaklanmalı?', type: 'text', placeholder: 'Örn. Deniz sahaları ve zorunlu cihazlar' }
     ],
     async generate(nb, o, { signal, progress }) {
       const ctx = await buildContext(nb, o.focus);
       const segCount = { short: 2, default: 4, long: 7 }[o.length] || 4;
+      const speakers = castFor(o.format, o.voices);
+      const cast = speakers.map((s) => `${s.id}: ${s.name} (${s.gender === 'm' ? 'erkek' : 'kadın'}, ${s.role})`).join('; ');
       const style = {
-        deep: 'İki sunucu (A: Deniz, kadın; B: Kaan, erkek) konuyu merakla, örneklerle ve benzetmelerle derinlemesine işler. Doğal konuşma dili, kısa araya girmeler ("Evet, tam olarak", "Peki ama...") kullanılır.',
-        brief: 'Tek sunucu (A: Deniz) kısa ve net bir özet sunar. Yalnızca A konuşur.',
-        critique: 'İki uzman (A ve B) materyalin güçlü ve zayıf yönlerini, eksiklerini ve nasıl iyileştirileceğini yapıcı biçimde değerlendirir.',
-        debate: 'İki sunucu (A ve B) konunun tartışmalı yönlerini farklı bakış açılarıyla saygılı bir tartışma şeklinde ele alır.'
+        deep: 'Sunucular konuyu merakla, örneklerle ve benzetmelerle derinlemesine işler. Kısa araya girmeler ("Evet, tam olarak", "Dur bir saniye…"), şaşırma ve gülme anları olur.',
+        brief: 'Tek anlatıcı kısa ve net bir özet sunar.',
+        critique: 'İki uzman materyalin güçlü ve zayıf yönlerini, eksiklerini ve nasıl iyileştirileceğini yapıcı biçimde değerlendirir.',
+        debate: 'İki sunucu konunun tartışmalı yönlerini farklı bakış açılarıyla saygılı biçimde tartışır, sonunda ortak noktaları özetler.',
+        lecture: 'Hoca konuyu kolaydan zora adım adım anlatır, her bölümün sonunda öğrenciye soru sorar; öğrenci bazen yanılır, hoca nazikçe düzeltir ve kalıcı bir hafıza ipucu (kısaltma, benzetme) verir.',
+        consult: 'Moderatör sorunu ortaya koyar; iki uzman kendi uzmanlık açılarından görüş bildirir, birbirine soru sorar, sonunda eylem listesine varırlar.',
+        munazara: 'Moderatör önergeyi okur. Sırasıyla açılış konuşmaları, çürütme turları ve kapanış yapılır. Taraflar kaynaklardan kanıt gösterir. Sonunda moderatör puanlayıp kazananı ve öğrenilmesi gerekenleri açıklar.',
+        exam: 'Sınav görevlisi gerçek sınav tarzında sorular sorar, aday cevaplar (bazen eksik/yanlış), eğitmen doğrusunu açıklar ve sınavda dikkat edilecek tuzakları söyler.',
+        story: 'Bilgiler gerçekçi, duygulu bir senaryoya yerleştirilir (ör. tehlikedeki bir gemi). Gerilim ve rahatlama anları, canlı imgeler ve her kritik bilgide akılda kalıcı bir cümle kullanılır.'
       }[o.format];
       progress('Bölüm planı çıkarılıyor…');
       const plan = await json(
         `Bir podcast yapımcısısın. ${BASE_RULES(o.lang)}`,
-        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nBu kaynaklardan bir podcast bölümü planla. Tarz: ${style}\n${segCount} bölümlük akış çıkar.\nJSON: {"title": "çekici bölüm başlığı", "segments": [{"topic": "bölüm konusu", "points": ["işlenecek nokta", "..."]}]}`,
+        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nBu kaynaklardan bir bölüm planla. Kadro: ${cast}. Tarz: ${style}\n${segCount} bölümlük akış çıkar; sınavda çıkabilecek kritik bilgileri mutlaka kapsa.\nJSON: {"title": "çekici bölüm başlığı", "segments": [{"topic": "bölüm konusu", "points": ["işlenecek nokta", "..."]}]}`,
         signal, 'fast');
       const lines = [];
       const segs = (plan.segments || []).slice(0, segCount);
+      const ids = speakers.map((s) => s.id);
       for (let i = 0; i < segs.length; i++) {
         progress(`Senaryo yazılıyor (${i + 1}/${segs.length})…`);
         const prev = lines.slice(-4).map((l) => `${l.speaker}: ${l.text}`).join('\n');
         const part = await json(
-          `Doğal, akıcı podcast diyaloğu yazan bir senaristsin. ${BASE_RULES(o.lang)}`,
-          `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nTarz: ${style}\nBölüm başlığı: ${plan.title}\nŞu an ${i + 1}. / ${segs.length} kısım: ${segs[i].topic}\nİşlenecek noktalar: ${(segs[i].points || []).join('; ')}\n${i === 0 ? 'Bu ilk kısım: dinleyiciyi karşıla ve konuyu tanıt.' : 'Önceki son replikler:\n' + prev + '\nKaldığın yerden doğal devam et, tekrar selamlama yapma.'}\n${i === segs.length - 1 ? 'Bu son kısım: ana fikirleri toparla ve vedalaş.' : ''}\nYaklaşık 14-20 replik yaz. Kısaltmaları açıkla. Sayıları okunacak biçimde yaz.\nJSON: {"lines": [{"speaker": "A", "text": "..."}, {"speaker": "B", "text": "..."}]}`,
+          `Doğal, akıcı ve konuşma diline uygun podcast senaryoları yazan bir senaristsin. ${BASE_RULES(o.lang)}\n- Metin yüksek sesle okunacak: sayıları ve kısaltmaları ilk geçtiği yerde açık söyle, cümleleri kısa tut.`,
+          `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nKadro: ${cast}\nTarz: ${style}\nBölüm başlığı: ${plan.title}\nŞu an ${i + 1}. / ${segs.length} kısım: ${segs[i].topic}\nİşlenecek noktalar: ${(segs[i].points || []).join('; ')}\n${i === 0 ? 'İlk kısım: dinleyiciyi karşıla, konuşmacılar kendini tanıtsın.' : 'Önceki son replikler:\n' + prev + '\nKaldığın yerden doğal devam et, tekrar selamlama yapma.'}\n${i === segs.length - 1 ? 'Son kısım: ana fikirleri 3 maddede toparla, dinleyiciye kendini test edeceği bir soru bırak ve vedalaş.' : ''}\nYaklaşık 14-20 replik. Her replikte konuşan kişinin kimliğini (${ids.join(', ')}) ve kısa bir ton notu ver (ör. "meraklı", "heyecanlı", "sakin", "gülerek").\nJSON: {"lines": [{"speaker": "${ids[0]}", "tone": "meraklı", "text": "..."}]}`,
           signal);
-        for (const l of part.lines || []) if (l.text) lines.push({ speaker: o.format === 'brief' ? 'A' : (l.speaker === 'B' ? 'B' : 'A'), text: String(l.text) });
+        for (const l of part.lines || []) if (l.text) lines.push({ speaker: ids.includes(l.speaker) ? l.speaker : ids[0], tone: l.tone || '', text: String(l.text) });
       }
-      return { title: plan.title || 'Sesli Özet', content: { format: o.format, lang: o.lang, hosts: { A: 'Deniz', B: 'Kaan' }, lines } };
+      return { title: plan.title || 'Sesli Özet', content: { format: o.format, lang: o.lang, speakers, lines } };
     }
   },
 
@@ -183,21 +233,87 @@ export const TOOLS = {
   quiz: {
     label: 'Test', icon: 'quiz', title: 'Test',
     options: [
+      { key: 'mode', label: 'Mod', type: 'cards', default: 'practice', choices: [
+        { v: 'practice', t: 'Alıştırma', d: 'Her sorudan sonra doğru cevap ve açıklama; ipucu açık' },
+        { v: 'exam', t: 'Deneme sınavı', d: 'Süreli, gerçek sınav gibi; sonuçlar sonda, konu bazlı karne ve hedef puan' }
+      ] },
+      { key: 'preset', label: 'Sınav türü', type: 'select', default: 'genel', choices: EXAMS.map((e) => ({ v: e.v, t: e.t })) },
       { key: 'count', label: 'Soru Sayısı', type: 'seg', default: 'std', choices: [{ v: 'few', t: 'Daha az' }, { v: 'std', t: 'Standart' }, { v: 'more', t: 'Daha fazla' }] },
       { key: 'level', label: 'Zorluk Seviyesi', type: 'seg', default: 'mid', choices: [{ v: 'easy', t: 'Kolay' }, { v: 'mid', t: 'Orta' }, { v: 'hard', t: 'Zor' }] },
+      { key: 'target', label: 'Hedef puan (100 üzerinden)', type: 'seg', default: '70', choices: [{ v: '60', t: '60' }, { v: '70', t: '70' }, { v: '85', t: '85' }, { v: '100', t: '100' }] },
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
       { key: 'focus', label: 'Konu ne olsun?', type: 'text', placeholder: 'A1 ve A2 sahalarını ayırt eden 5 çoktan seçmeli soru ekle.' }
     ],
     async generate(nb, o, { signal, progress }) {
       const ctx = await buildContext(nb, o.focus);
+      const ex = EXAMS.find((e) => e.v === o.preset) || EXAMS[0];
       const n = { few: 6, std: 12, more: 20 }[o.count];
+      const L = 'ABCDE'.slice(0, ex.opts).split('').join(', ');
       progress(`${n} soru hazırlanıyor…`);
       const r = await json(
-        `Sınav hazırlayan titiz bir uzmansın. ${BASE_RULES(o.lang)}\n- Her sorunun yalnızca bir doğru cevabı olsun ve bu cevap kaynakla birebir doğrulanabilsin.\n- Çeldiriciler makul ama kesinlikle yanlış olsun.`,
-        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\n${n} adet 4 şıklı çoktan seçmeli soru hazırla. Zorluk: ${{ easy: 'kolay', mid: 'orta', hard: 'zor' }[o.level]}. Doğru şıkkın yerini sorular arasında karıştır.\nJSON: {"title": "...", "questions": [{"q": "...", "options": ["A metni", "B metni", "C metni", "D metni"], "answer": 0, "hint": "cevabı vermeyen ipucu", "explanation": "doğru cevabın gerekçesi ve neden diğerleri yanlış", "ref": 1}]}`,
+        `Sınav hazırlayan titiz bir uzmansın. ${BASE_RULES(o.lang)}\n- Her sorunun yalnızca bir doğru cevabı olsun ve bu cevap kaynakla birebir doğrulanabilsin.\n- Çeldiriciler makul ama kesinlikle yanlış olsun; tipik öğrenci hatalarını yansıtsın.`,
+        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\n${n} adet ${ex.opts} şıklı (${L}) çoktan seçmeli soru hazırla. Sınav tarzı: ${ex.style}. Zorluk: ${{ easy: 'kolay', mid: 'orta', hard: 'zor' }[o.level]}. Soruları konularına göre dengeli dağıt ve doğru şıkkın yerini karıştır. Her soruya kısa bir konu etiketi ver.\nJSON: {"title": "...", "questions": [{"topic": "konu etiketi", "q": "...", "options": ["...", "..."], "answer": 0, "hint": "cevabı vermeyen ipucu", "explanation": "doğru cevabın gerekçesi ve neden diğerleri yanlış", "ref": 1}]}`,
         signal);
       const qs = (r.questions || []).filter((q) => Array.isArray(q.options) && q.options.length >= 2).map((q) => ({ ...q, answer: Math.max(0, Math.min(q.options.length - 1, +q.answer || 0)) }));
-      return { title: r.title || 'Test', content: { questions: qs, refs: refsOf(ctx) } };
+      return { title: r.title || 'Test', content: { questions: qs, refs: refsOf(ctx), mode: o.mode, preset: o.preset, target: +o.target || 70, minutes: o.mode === 'exam' ? Math.max(5, Math.round(qs.length * ex.minPerQ)) : 0 } };
+    }
+  },
+
+  memory: {
+    label: 'Hafıza Teknikleri', icon: 'brain', title: 'Akılda kalıcı öğrenme',
+    options: [
+      { key: 'place', label: 'Hafıza sarayı mekânı', type: 'seg', default: 'ev', choices: [{ v: 'ev', t: 'Evim' }, { v: 'gemi', t: 'Gemi' }, { v: 'okul', t: 'Okul' }, { v: 'sehir', t: 'Şehir yolu' }] },
+      { key: 'count', label: 'Bilgi sayısı', type: 'seg', default: 'std', choices: [{ v: 'few', t: '8' }, { v: 'std', t: '15' }, { v: 'more', t: '25' }] },
+      { key: 'lang', label: 'Dil seçin', type: 'lang' },
+      { key: 'focus', label: 'Hangi bilgileri ezberlemek istiyorsunuz?', type: 'text', placeholder: 'Örn. tarihler, frekanslar ve deniz sahaları' }
+    ],
+    async generate(nb, o, { signal, progress }) {
+      const ctx = await buildContext(nb, o.focus);
+      const n = { few: 8, std: 15, more: 25 }[o.count];
+      const place = { ev: 'kendi evi (kapı, antre, salon, mutfak, banyo, yatak odası, balkon...)', gemi: 'bir gemi (iskele, güverte, köprüüstü, telsiz odası, makine dairesi, kamara, can filikası...)', okul: 'okul (giriş, koridor, sınıf, laboratuvar, kantin, spor salonu...)', sehir: 'her gün yürüdüğü bir şehir yolu (durak, fırın, park, cami, eczane, köprü...)' }[o.place];
+      progress('Hafıza ipuçları oluşturuluyor…');
+      const r = await json(
+        `Bellek şampiyonlarının tekniklerini öğreten bir hafıza koçusun (loci yöntemi, akrostiş, kodlama, canlı imgeleme, duygusal bağ). ${BASE_RULES(o.lang)}\n- İmgeler abartılı, renkli, hareketli, komik ya da duygulu olsun; beyin sıradan olanı unutur, olağanüstü olanı hatırlar.\n- Sayıları görüntüye çevirmek için ses benzerliği veya şekil benzerliği kullan.`,
+        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nSınav için en kritik ${n} bilgiyi seç. Her biri için: kısa soru (cue), kesin cevap, bir kodlama/kısaltma/akrostiş (mnemonic), canlı bir zihinsel sahne (image), 1-3 emoji. Ardından bu bilgileri sırayla ${place} içinde bir hafıza sarayı yürüyüşüne yerleştir. Son olarak hepsini bağlayan kısa, duygulu ve akılda kalıcı bir hikâye yaz.\nJSON: {"title": "...", "items": [{"cue": "soru", "fact": "cevap", "mnemonic": "...", "image": "...", "emoji": "🛰️"}], "palace": {"place": "mekân adı", "stops": [{"loc": "durak (ör. ön kapı)", "item": 0, "scene": "o durakta gördüğün sahne"}]}, "story": "hikâye", "tips": ["öğrenme ipucu"]}`,
+        signal);
+      return { title: r.title || 'Hafıza Teknikleri', content: { ...r, place: o.place, progress: {} } };
+    }
+  },
+
+  teach: {
+    label: 'Öğreterek Öğren', icon: 'teach', title: 'Feynman yöntemi: bana öğret',
+    options: [
+      { key: 'lang', label: 'Dil seçin', type: 'lang' },
+      { key: 'level', label: 'Öğrencinin seviyesi', type: 'seg', default: 'lise', choices: [{ v: 'cocuk', t: '12 yaşında' }, { v: 'lise', t: 'Lise' }, { v: 'uzman', t: 'Sınav jürisi' }] },
+      { key: 'focus', label: 'Hangi konuları anlatacaksınız?', type: 'text', placeholder: 'Boş bırakırsanız kaynaklardan ana konular seçilir' }
+    ],
+    async generate(nb, o, { signal, progress }) {
+      const ctx = await buildContext(nb, o.focus);
+      progress('Anlatılacak konular seçiliyor…');
+      const r = await json(
+        `Feynman tekniğini uygulayan bir öğretmensin. ${BASE_RULES(o.lang)}`,
+        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nÖğrencinin kendi cümleleriyle anlatması gereken 6-10 ana konu seç. Her konu için anlatımda bulunması gereken 3-6 anahtar nokta ve konuya giriş sorusu yaz.\nJSON: {"title": "...", "topics": [{"name": "...", "question": "Bana ... nedir, nasıl çalışır anlatır mısın?", "keyPoints": ["..."]}]}`,
+        signal);
+      return { title: r.title || 'Öğreterek Öğren', content: { ...r, level: o.level, lang: o.lang, attempts: {} } };
+    }
+  },
+
+  speedread: {
+    label: 'Hızlı Okuma', icon: 'speed', title: 'Hızlı okuma ve anlama testi',
+    options: [
+      { key: 'length', label: 'Metin uzunluğu', type: 'seg', default: 'std', choices: [{ v: 'short', t: '~250 kelime' }, { v: 'std', t: '~500 kelime' }, { v: 'long', t: '~900 kelime' }] },
+      { key: 'lang', label: 'Dil seçin', type: 'lang' },
+      { key: 'focus', label: 'Hangi konu okunsun?', type: 'text', placeholder: 'Boş bırakırsanız kaynakların genel özeti' }
+    ],
+    async generate(nb, o, { signal, progress }) {
+      const ctx = await buildContext(nb, o.focus);
+      const w = { short: 250, std: 500, long: 900 }[o.length];
+      progress('Okuma metni ve anlama soruları hazırlanıyor…');
+      const r = await json(
+        `Okuma-anlama sınavı hazırlayan bir eğitimcisin. ${BASE_RULES(o.lang)}`,
+        `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nKaynaklardan yaklaşık ${w} kelimelik, paragraflara ayrılmış, akıcı bir okuma metni yaz. Ardından yalnızca bu metinle cevaplanabilen 6 adet 4 şıklı anlama sorusu hazırla (ana fikir, ayrıntı, çıkarım).\nJSON: {"title": "...", "text": "paragraf1\\n\\nparagraf2...", "questions": [{"q": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}]}`,
+        signal);
+      return { title: r.title || 'Hızlı Okuma', content: { text: r.text || '', questions: r.questions || [], history: [] } };
     }
   },
 
@@ -240,6 +356,17 @@ export const TOOLS = {
     }
   }
 };
+
+// Feynman değerlendirmesi: öğrencinin anlatımını puanla
+export async function evaluateExplanation(nb, topic, explanation, level, signal) {
+  const ctx = await buildContext(nb, topic.name, { budgetChars: 30000 });
+  const who = { cocuk: '12 yaşında meraklı bir çocuk', lise: 'meraklı bir lise öğrencisi', uzman: 'titiz bir sınav jürisi' }[level] || 'meraklı bir öğrenci';
+  return chatJSON({
+    signal,
+    system: `Sen ${who} rolündesin ve öğretmenin (kullanıcının) anlatımını dinliyorsun. Kaynaklara göre doğruluğu ve eksikleri tespit et; nazik ama dürüst ol. Yalnızca JSON döndür.`,
+    messages: [{ role: 'user', content: `${ctxBlock(ctx)}\n\nKONU: ${topic.name}\nANAHTAR NOKTALAR: ${(topic.keyPoints || []).join('; ')}\n\nÖĞRETMENİN ANLATIMI:\n${explanation}\n\nPuanla (0-100): doğruluk, eksiksizlik, sadelik.\nJSON: {"score": 0, "covered": ["anlatılan doğru noktalar"], "missing": ["eksik noktalar"], "mistakes": ["yanlış ya da hatalı ifadeler ve doğrusu"], "question": "öğrencinin sorduğu takip sorusu", "praise": "kısa övgü cümlesi"}` }]
+  });
+}
 
 // Sohbet: kaynaklara dayalı, numaralı alıntılı yanıt
 export async function answer(nb, history, question, { signal, onToken }) {

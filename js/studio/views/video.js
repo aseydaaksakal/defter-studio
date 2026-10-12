@@ -1,7 +1,6 @@
 // Videolu Özet: sahneler tuvale (canvas) canlı çizilir, seslendirme ile eşlenir; WebM olarak dışa aktarılabilir.
 import { h, icon, toast, download, slug, fmtTime } from '../../ui.js';
-import { speakBrowser, renderLine } from '../../tts.js';
-import { serverUrl } from '../../server.js';
+import { speakBrowser, synthOne, resolveEngine } from '../../tts.js';
 
 const THEMES = {
   sketch: { bg: '#fbfaf6', grid: '#e9e6dc', ink: '#1d1d1f', accent: '#f2c94c', soft: '#dbe9f6', font: '"Patrick Hand", "Comic Sans MS", system-ui' },
@@ -78,6 +77,8 @@ export function drawScene(ctx, W, H, sc, k, t, n, theme, deckTitle, caption) {
   ctx.fillStyle = T.accent; ctx.fillRect(0, H - 6 * u, W * ((k + t) / n), 6 * u);
 }
 
+const NARRATOR = { id: 'A', name: 'Anlatıcı', gender: 'f', role: 'anlatıcı' };
+
 // Seslendirmeyi altyazı parçalarına böl (cümle cümle)
 const sentences = (s) => (String(s || '').match(/[^.!?…]+[.!?…]*/g) || [s || '']).map((x) => x.trim()).filter(Boolean);
 
@@ -115,7 +116,7 @@ export function render(root, art, api) {
     const next = () => { if (ended || !playing) return; ended = true; k++; if (k >= scenes.length) { playing = false; k = scenes.length - 1; elapsedBefore = durs[k]; ui(); frame(); recording?.stop(); return; } playScene(); };
     if (useServer) {
       try {
-        const blob = await renderLine(art.id, k, sc.narration, 'A', v.lang);
+        const blob = await synthOne(art.id, 'scene' + k, sc.narration, NARRATOR, v.lang, 'narration');
         if (blob) {
           audio = new Audio(URL.createObjectURL(blob));
           await new Promise((r) => { audio.onloadedmetadata = r; audio.onerror = r; });
@@ -129,7 +130,7 @@ export function render(root, art, api) {
     }
     start = performance.now(); cancelAnimationFrame(raf); frame();
     if (recording) setTimeout(next, durs[k] * 1000); // kayıtta tarayıcı sesi yakalanamaz → sabit süre
-    else speakBrowser(sc.narration, { lang: v.lang, onend: next });
+    else speakBrowser(sc.narration, { lang: v.lang, gender: 'f', onend: next });
   }
   function ui() { playBtn.replaceChildren(icon(playing ? 'pause' : 'play', 26)); }
   playBtn.onclick = () => {
@@ -149,11 +150,11 @@ export function render(root, art, api) {
     rec.ondataavailable = (e) => e.data.size && parts.push(e.data);
     rec.onstop = () => { download(slug(art.title) + '.webm', new Blob(parts, { type: 'video/webm' })); recording = null; ac.close(); recBtn.disabled = false; toast('Video hazır'); };
     recording = { stop: () => rec.state !== 'inactive' && rec.stop(), ac, dest: useServer ? dest : null };
-    if (!useServer) toast('Lokal sunucu yok: video altyazılı ama sessiz kaydedilecek.', 'info', 6000);
+    if (!useServer) toast('Doğal ses motoru seçili değil: video altyazılı ama sessiz kaydedilecek (Ayarlar › Seslendirme).', 'info', 6000);
     recBtn.disabled = true; rec.start(500);
     k = 0; elapsedBefore = 0; playing = true; ui(); playScene();
   };
-  serverUrl().then((u) => { useServer = !!u; });
+  resolveEngine().then((e) => { useServer = e !== 'browser'; });
 
   const editBtn = h('button', { class: 'btn ghost small' }, icon('edit', 16), ' Sahneleri düzenle');
   editBtn.onclick = () => api.editJSON();

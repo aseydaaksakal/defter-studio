@@ -6,6 +6,12 @@ import { serverUrl, serverBase, setServerBase, serverInfo } from './server.js';
 import { TOOLS, LANGS, answer, suggestQuestions } from './studio/gen.js';
 import { h, icon, toast, modal, confirmBox, promptBox, renderMarkdown, download, slug, timeAgo } from './ui.js';
 import { seedDemo } from './demo.js';
+import { getStats, levelOf, xpForLevel, BADGES, updateXpPill, dueMistakes, readiness, sciencePage, resolveMistake } from './learn.js';
+import { typingPage } from './typing.js';
+import { ENGINES, loadTTS, saveTTS, VOICES, hasNaturalBrowserVoice, synthesize } from './tts.js';
+import * as vMemory from './studio/views/memory.js';
+import * as vTeach from './studio/views/teach.js';
+import * as vSpeed from './studio/views/speedread.js';
 
 import * as vPodcast from './studio/views/podcast.js';
 import * as vSlides from './studio/views/slides.js';
@@ -17,7 +23,7 @@ import * as vQuiz from './studio/views/quiz.js';
 import * as vInfo from './studio/views/infographic.js';
 import * as vTable from './studio/views/table.js';
 
-const VIEWS = { podcast: vPodcast, slides: vSlides, video: vVideo, mindmap: vMindmap, report: vReport, flashcards: vCards, quiz: vQuiz, infographic: vInfo, table: vTable,
+const VIEWS = { podcast: vPodcast, slides: vSlides, video: vVideo, mindmap: vMindmap, report: vReport, flashcards: vCards, quiz: vQuiz, infographic: vInfo, table: vTable, memory: vMemory, teach: vTeach, speedread: vSpeed,
   note: { render: (root, art) => root.append(renderMarkdown(art.content.markdown, art.content.refs || [])), toText: (a) => a.content.markdown } };
 const TYPE_LABEL = { ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.label])), note: 'Not' };
 const TYPE_ICON = { ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.icon])), note: 'note' };
@@ -51,7 +57,11 @@ async function route() {
     if (state.nb?.id !== nb.id || !document.querySelector('.nb')) { state.nb = nb; await renderNotebook(); }
     state.nb = nb;
     if (m[2]) openViewer(+m[2]); else closeViewer(false);
-  } else { state.nb = null; await renderHome(); }
+  } else {
+    state.nb = null;
+    const tab = (location.hash.match(/^#\/(bugun|klavye|bilim)/) || [])[1] || 'defterler';
+    if (tab === 'defterler') await renderHome(); else await renderHub(tab);
+  }
 }
 
 function topbar(extra = []) {
@@ -59,7 +69,9 @@ function topbar(extra = []) {
     h('a', { class: 'brand', href: '#/', 'aria-label': 'Ana sayfa' }, h('span', { class: 'logo' }, icon('book', 22)), h('span', { class: 'brand-t' }, 'Defter Studio')),
     ...extra,
     h('span', { class: 'grow' }),
+    h('a', { id: 'xp-pill', class: 'status-pill xp', href: '#/bugun', title: 'Seri · seviye · bugünkü puan' }),
     h('span', { id: 'llm-status', class: 'status-pill', title: 'Model durumu' }),
+    h('button', { class: 'icon-btn', 'aria-label': 'Ses efektleri', title: 'Ses efektleri', onclick: (e) => { const off = localStorage.getItem('ds-sound') === 'off'; localStorage.setItem('ds-sound', off ? 'on' : 'off'); toast(off ? 'Ses efektleri açık' : 'Ses efektleri kapalı'); } }, icon('audio')),
     h('button', { class: 'icon-btn', 'aria-label': 'Tema', onclick: cycleTheme }, icon('sun')),
     h('button', { class: 'icon-btn', 'aria-label': 'Ayarlar', onclick: openSettings }, icon('settings')));
 }
@@ -74,6 +86,7 @@ async function updateStatus() {
   const srv = await serverUrl();
   put(el, h('span', { class: 'dot ' + (cfg.model ? 'ok' : 'skip') }), ' ', (PROVIDERS[cfg.provider]?.label || cfg.provider).split(' (')[0], cfg.model ? ' · ' + cfg.model : ' · model seçilmedi', srv ? ' · sunucu ✓' : '');
   el.onclick = openSettings;
+  updateXpPill();
 }
 
 // ===================== Ana sayfa =====================
@@ -94,12 +107,68 @@ async function renderHome() {
   const imp = h('input', { type: 'file', accept: '.json', hidden: true, onchange: async (e) => {
     try { const id = await importNotebook(JSON.parse(await e.target.files[0].text()), chunkText); location.hash = '#/n/' + id; } catch (err) { toast(err.message, 'error'); }
   } });
-  put(app, topbar(), h('main', { class: 'home' },
+  put(app, topbar(), hubTabs('defterler'), h('main', { class: 'home' },
     h('div', { class: 'home-head' }, h('div', {}, h('h1', {}, 'Defterleriniz'), h('p', { class: 'muted' }, 'Kaynaklarınızı yükleyin; sohbet edin, podcast, slayt, video, test ve daha fazlasını kendi bilgisayarınızda üretin.')),
       h('button', { class: 'btn ghost', onclick: () => imp.click() }, icon('upload', 16), ' Yedekten içe aktar'), imp),
     grid));
   updateStatus();
 }
+
+// ===================== Merkez sekmeleri: Bugün · Klavye · Öğrenme bilimi =====================
+function hubTabs(cur) {
+  const T = [['defterler', 'Defterler', '#/'], ['bugun', 'Bugün', '#/bugun'], ['klavye', '10 parmak', '#/klavye'], ['bilim', 'Öğrenme bilimi', '#/bilim']];
+  return h('nav', { class: 'hub-tabs', 'aria-label': 'Bölümler' }, T.map(([k, t, href]) => h('a', { class: 'tab' + (k === cur ? ' on' : ''), href }, t)));
+}
+async function renderHub(tab) {
+  let body;
+  if (tab === 'klavye') body = await typingPage();
+  else if (tab === 'bilim') body = sciencePage();
+  else body = await todayPage();
+  put(app, topbar(), hubTabs(tab), h('main', { class: 'home' }, body));
+  updateStatus();
+}
+
+async function todayPage() {
+  const s = await getStats();
+  const lv = levelOf(s.xp), lo = xpForLevel(lv), hi = xpForLevel(lv + 1);
+  const todayXp = s.days[new Date().toISOString().slice(0, 10)] || 0;
+  const mistakes = await dueMistakes();
+  const nbs = await db.notebooks.orderBy('updatedAt').reverse().toArray();
+  const rows = [];
+  let dueTotal = 0;
+  for (const n of nbs) { const r = await readiness(n.id); dueTotal += r.dueCards; rows.push({ n, r }); }
+  const week = Array.from({ length: 14 }, (_, i) => { const d = new Date(Date.now() - (13 - i) * 864e5).toISOString().slice(0, 10); return { d, v: s.days[d] || 0 }; });
+  const maxW = Math.max(s.goal, ...week.map((w) => w.v));
+  const plan = [];
+  if (dueTotal) plan.push(['🃏', `${dueTotal} bilgi kartının tekrar zamanı geldi`, 'Kartları aç ve "Yalnız tekrar zamanı gelenler"i seç']);
+  if (mistakes.length) plan.push(['📕', `Hata defterinde ${mistakes.length} soru seni bekliyor`, 'Aşağıdan "Hataları tekrar et"e bas']);
+  const weakest = rows.filter((x) => x.r.arts.length).sort((a, b) => a.r.score - b.r.score)[0];
+  if (weakest) plan.push(['🎯', `En zayıf defterin: ${weakest.n.title} (%${weakest.r.score})`, 'Bir deneme sınavı çöz, yanlışlarını öğreterek öğren aracıyla anlat']);
+  plan.push(['⌨️', '5 dakika 10 parmak klavye', 'Kendi kaynaklarını yazarak hem hız hem tekrar kazan'], ['🧠', 'Bir konuyu hafıza sarayına yerleştir', 'Studio › Hafıza Teknikleri']);
+  const reviewBtn = mistakes.length ? h('button', { class: 'btn primary', onclick: () => reviewMistakes(mistakes) }, `Hataları tekrar et (${mistakes.length})`) : null;
+  return h('div', { class: 'today' },
+    h('div', { class: 'today-top' },
+      h('div', { class: 'card stat-big' }, h('div', { class: 'sb-v' }, '🔥 ' + s.streak), h('div', { class: 'muted' }, `günlük seri · en iyi ${s.best}`)),
+      h('div', { class: 'card stat-big' }, h('div', { class: 'sb-v' }, 'Seviye ' + lv), h('div', { class: 'meter thin' }, h('div', { style: { width: Math.round(((s.xp - lo) / (hi - lo)) * 100) + '%' } })), h('div', { class: 'muted small' }, `${s.xp} puan · sonraki seviye ${hi}`)),
+      h('div', { class: 'card stat-big' }, h('div', { class: 'sb-v' }, `${todayXp}/${s.goal}`), h('div', { class: 'meter thin' }, h('div', { style: { width: Math.min(100, (todayXp / s.goal) * 100) + '%' } })), h('div', { class: 'muted small' }, 'bugünkü hedef puan'))),
+    h('div', { class: 'card' }, h('h3', {}, 'Son 14 gün'), h('div', { class: 'week' }, week.map((w) => h('div', { class: 'wk', title: `${w.d}: ${w.v} puan` }, h('div', { class: 'wk-bar' + (w.v >= s.goal ? ' pass' : ''), style: { height: Math.max(3, (w.v / maxW) * 70) + 'px' } }), h('small', {}, w.d.slice(8)))))),
+    h('div', { class: 'card' }, h('h3', {}, 'Bugünün planı'), h('ol', { class: 'plan' }, plan.map(([e, t, d]) => h('li', {}, h('span', { class: 'plan-e' }, e), h('div', {}, h('b', {}, t), h('div', { class: 'muted small' }, d))))), reviewBtn),
+    h('div', { class: 'card' }, h('h3', {}, 'Sınava hazırlık durumu'),
+      rows.length ? h('div', { class: 'ready' }, rows.map(({ n, r }) => h('a', { class: 'ready-row', href: '#/n/' + n.id },
+        h('span', { class: 'grow' }, `${n.emoji || '📘'} ${n.title}`),
+        h('div', { class: 'meter thin', style: { width: '40%' } }, h('div', { style: { width: r.score + '%', background: r.score >= 70 ? 'var(--ok)' : r.score >= 40 ? 'var(--warn)' : 'var(--no)' } })),
+        h('span', { class: 'small muted', style: { width: '170px', textAlign: 'right' } }, `%${r.score} · ${r.dueCards} kart bekliyor${r.lastQuiz !== null ? ' · son test %' + r.lastQuiz : ''}`)))) : h('p', { class: 'muted' }, 'Henüz defter yok.'),
+      h('p', { class: 'muted small' }, 'Hazırlık: kart ustalığı ve son üç testin ortalaması. Hedef puanı geçince sınava hazırsın.')),
+    h('div', { class: 'card' }, h('h3', {}, 'Rozetler'), h('div', { class: 'badges' }, Object.entries(BADGES).map(([k, [e, t, d]]) => h('div', { class: 'badge' + (s.badges.includes(k) ? ' got' : ''), title: d }, h('div', { class: 'be' }, e), h('small', {}, t))))));
+}
+
+function reviewMistakes(list) {
+  const art = { id: 0, notebookId: 0, title: 'Hata defteri', content: { questions: list.map((m) => m.q), mode: 'practice', target: 70 } };
+  const body = h('div');
+  const close = modal({ title: 'Hata defteri tekrarı', wide: true, body, onClose: () => route() });
+  vQuiz.render(body, art, { save: async () => {}, ask: (t) => { close(); askAnywhere(t); } });
+}
+function askAnywhere(t) { toast('Bir defter açıp sohbette sorabilirsin: ' + t.slice(0, 60)); }
 
 async function newNotebook() {
   const id = await db.notebooks.add({ title: 'Adsız defter', emoji: ['📘', '📗', '📙', '📕', '🧭', '⚓', '🧪', '🎓'][Math.floor(Math.random() * 8)], createdAt: now(), updatedAt: now() });
@@ -382,6 +451,8 @@ function openCustomize(type, preset = {}) {
         const paint = () => wrap.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === vals[o.key]));
         o.choices.forEach((c) => wrap.append(h('button', { 'data-v': c.v, onclick: () => { vals[o.key] = c.v; paint(); } }, c.t)));
         paint(); body.append(h('div', { class: 'field inline' }, h('label', {}, o.label), wrap));
+      } else if (o.type === 'select') {
+        body.append(h('div', { class: 'field inline' }, h('label', {}, o.label), h('select', { class: 'input', onchange: (e) => (vals[o.key] = e.target.value) }, o.choices.map((c) => h('option', { value: c.v, selected: c.v === vals[o.key] ? true : null }, c.t)))));
       } else if (o.type === 'lang') {
         body.append(h('div', { class: 'field inline' }, h('label', {}, o.label), h('select', { class: 'input', onchange: (e) => (vals[o.key] = e.target.value) }, LANGS.map((l) => h('option', { selected: l === vals[o.key] ? true : null }, l)))));
       } else {
@@ -423,6 +494,11 @@ async function doJob(id) {
       onToken: (_, all) => { if (Date.now() - lastPaint > 1500) { lastPaint = Date.now(); progress(`Yazılıyor… ${all.length.toLocaleString('tr')} karakter`); } } });
     const prev = await db.artifacts.get(id);
     if (prev.content) await db.versions.add({ artifactId: id, content: prev.content, title: prev.title, note: 'Yeniden üretimden önceki sürüm', createdAt: prev.updatedAt });
+    if (a.type === 'podcast') { // senaryo hazır: doğal sesi de şimdi üret (hata olursa oynatıcı tarayıcı sesine düşer)
+      await db.artifacts.update(id, { content: r.content, title: r.title });
+      try { await synthesize(id, r.content.lines, r.content.speakers, r.content.lang, { format: r.content.format, onProgress: progress }); }
+      catch (e) { toast('Ses dosyası üretilemedi: ' + e.message, 'error', 6000); }
+    }
     await db.artifacts.update(id, { status: 'done', title: r.title, content: r.content, updatedAt: now(), progress: null, versionNote: 'Üretildi' });
     toast(`${TYPE_LABEL[a.type]} hazır: ${r.title}`, 'ok');
     notify(`${TYPE_LABEL[a.type]} hazır`, r.title);
@@ -478,6 +554,7 @@ function viewerApi(a) {
     ask: (text) => askInChat(text),
     regenerate: (extra) => regenerate(a.id, extra),
     editJSON: () => editJSON(a),
+    reopen: () => openViewer(a.id),
     renderEmbedded: async (id, box) => {
       const e = await db.artifacts.get(id);
       if (!e || e.status !== 'done') { box.append(h('p', { class: 'muted' }, 'Gömülü içerik bulunamadı.')); return; }
@@ -558,6 +635,31 @@ async function openSettings() {
   prov.onchange = () => { const p = PROVIDERS[prov.value]; base.value = p.baseUrl; model.value = p.model; embedM.value = p.embedModel; sync(); };
   sync();
   const read = () => ({ provider: prov.value, baseUrl: base.value.trim(), apiKey: key.value.trim(), model: model.value.trim(), fastModel: fastM.value.trim(), embedModel: embedM.value.trim(), numCtx: +ctx.value, temperature: +temp.value });
+  const tts = await loadTTS();
+  const tEngine = h('select', { class: 'input' }, Object.entries(ENGINES).map(([k, t]) => h('option', { value: k, selected: k === tts.engine ? true : null }, t)));
+  const tGKey = h('input', { class: 'input', type: 'password', value: tts.geminiKey || '', placeholder: 'Gemini sağlayıcısı seçiliyse onun anahtarı kullanılır', autocomplete: 'off' });
+  const tGModel = h('input', { class: 'input', value: tts.geminiModel || 'gemini-3.8-flash-tts' });
+  const tOKey = h('input', { class: 'input', type: 'password', value: tts.openaiKey || '', autocomplete: 'off' });
+  const tOut = h('div', { class: 'small', role: 'status' });
+  const readTTS = () => ({ ...tts, engine: tEngine.value, geminiKey: tGKey.value.trim(), geminiModel: tGModel.value.trim() || 'gemini-3.8-flash-tts', openaiKey: tOKey.value.trim() });
+  const natural = hasNaturalBrowserVoice('Türkçe');
+  const ttsBlock = h('div', {},
+    h('h3', {}, 'Seslendirme (podcast ve video)'),
+    h('p', { class: 'muted small' }, 'En doğal Türkçe çok sesli sonuç için Gemini TTS (Google’ın podcast’lerine en yakın ses). Ücretsiz ve çevrimdışı seçenek: tarayıcıda Piper (ilk kullanımda ses modeli iner). Tarayıcı sesi için Microsoft Edge doğal Emel/Ahmet seslerini sunar' + (natural ? ' — bu tarayıcıda doğal Türkçe ses bulundu.' : '.')),
+    h('div', { class: 'grid2' },
+      h('div', { class: 'field' }, h('label', {}, 'Ses motoru'), tEngine),
+      h('div', { class: 'field' }, h('label', {}, 'Gemini API anahtarı'), tGKey),
+      h('div', { class: 'field' }, h('label', {}, 'Gemini TTS modeli'), tGModel),
+      h('div', { class: 'field' }, h('label', {}, 'OpenAI API anahtarı (isteğe bağlı)'), tOKey)),
+    h('div', { class: 'row gap' }, h('button', { class: 'btn ghost', onclick: async () => {
+      await saveTTS(readTTS()); tOut.textContent = 'Deneniyor…';
+      try {
+        const r = await synthesize('test:' + Date.now(), [{ speaker: 'A', text: 'Merhaba, ben Deniz. GMDSS bir Şubat bin dokuz yüz doksan dokuzda tam olarak yürürlüğe girdi.', tone: 'sıcak' }, { speaker: 'B', text: 'Ben de Kaan. Bugün deniz sahalarını konuşacağız, hazır mısın?', tone: 'neşeli' }],
+          [{ id: 'A', name: 'Deniz', gender: 'f', role: 'sunucu' }, { id: 'B', name: 'Kaan', gender: 'm', role: 'sunucu' }], 'Türkçe', { onProgress: (m) => (tOut.textContent = m) });
+        if (r.blob) { new Audio(URL.createObjectURL(r.blob)).play(); tOut.textContent = '✓ ' + ENGINES[r.engine] + ' çalışıyor (dinliyorsunuz)'; }
+        else tOut.textContent = 'Tarayıcı sesi seçili: podcast satır satır okunur.';
+      } catch (e) { tOut.textContent = '✗ ' + e.message; }
+    } }, 'Sesi dene (kadın + erkek)'), tOut));
   const est = await navigator.storage?.estimate?.().catch(() => null);
   modal({ title: 'Ayarlar', wide: true, body: h('div', { class: 'settings' },
     h('h3', {}, 'Dil modeli'),
@@ -578,6 +680,7 @@ async function openSettings() {
       out.textContent = 'Deneniyor…';
       try { const t = await chat({ cfg: read(), messages: [{ role: 'user', content: 'Tek kelimeyle "hazır" yaz.' }] }); put(out, h('span', { class: 'ok-t' }, '✓ Bağlantı çalışıyor: '), t.slice(0, 80)); } catch (e) { put(out, connectionHelp(e)); }
     } }, 'Bağlantıyı test et'), out),
+    ttsBlock,
     h('h3', {}, 'Lokal yardımcı sunucu (isteğe bağlı)'),
     h('p', { class: 'muted small' }, 'Yüksek kaliteli Türkçe seslendirme, ses dosyası/video indirme, ses ve YouTube dökümü, web araması için. Kurulum: server/README.md'),
     h('div', { class: 'row gap' }, srvIn, h('button', { class: 'btn ghost small', onclick: async () => {
@@ -591,7 +694,7 @@ async function openSettings() {
       h('button', { class: 'btn ghost small', onclick: () => Notification?.requestPermission?.() }, 'Hazır olunca bildirim gönder'),
       h('button', { class: 'btn ghost small', onclick: async () => { await seedDemo(); toast('Örnek defter eklendi'); location.hash = '#/'; renderHome(); } }, 'Örnek defteri yeniden ekle'),
       h('button', { class: 'btn danger small', onclick: async () => { if (await confirmBox('Tüm veriler silinsin mi?', 'Bütün defterler, kaynaklar ve Studio içerikleri bu tarayıcıdan kalıcı olarak silinir.', 'Hepsini sil')) { await db.delete(); location.hash = '#/'; location.reload(); } } }, 'Tüm verileri sil'))),
-  actions: [{ label: 'Vazgeç', run: (c) => c() }, { label: 'Kaydet', primary: true, run: async (c) => { await saveConfig(read()); c(); toast('Ayarlar kaydedildi'); updateStatus(); } }] });
+  actions: [{ label: 'Vazgeç', run: (c) => c() }, { label: 'Kaydet', primary: true, run: async (c) => { await saveConfig(read()); await saveTTS(readTTS()); c(); toast('Ayarlar kaydedildi'); updateStatus(); } }] });
 }
 
 boot().catch((e) => { console.error(e); put(app, h('pre', { class: 'fatal' }, 'Başlatılamadı: ' + e.message)); });

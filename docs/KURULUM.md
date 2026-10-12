@@ -33,7 +33,20 @@ Developer sekmesinde sunucuyu başlatın, **Enable CORS** açın. Ayarlar › Sa
 Ayarlar › Sağlayıcı: Gemini, Groq, OpenRouter, OpenAI veya Anthropic seçin, anahtarı yapıştırın, **Listele** ile model seçin.
 Anahtar yalnızca bu tarayıcıda saklanır; GitHub'a veya başka bir yere gönderilmez.
 
-## 4. Yardımcı sunucu (kaliteli ses, video sesi, ses/YouTube dökümü, web araması)
+## 4. Doğal seslendirme (podcast ve video)
+⚙ Ayarlar › **Seslendirme** bölümünden motoru seçin ve **Sesi dene** ile kadın + erkek sesi dinleyin.
+
+| Motor | Kalite | Gerekenler |
+|---|---|---|
+| Gemini TTS | En doğal, çok konuşmacılı, Türkçe destekli | aistudio.google.com'dan Gemini API anahtarı |
+| OpenAI TTS | Çok doğal | OpenAI API anahtarı (ücretli) |
+| Lokal sunucu | XTTS-v2 / Chatterbox ile çok doğal | Aşağıdaki yardımcı sunucu + GPU |
+| Tarayıcıda Piper | İyi, ücretsiz, çevrimdışı | İlk kullanımda ~60 MB ses modeli iner |
+| Tarayıcı sesi | Edge'de doğal (Emel/Ahmet), Chrome'da robotik | Hiçbir şey |
+
+Otomatik modda sırasıyla Gemini anahtarı → OpenAI anahtarı → lokal sunucu → tarayıcıda Piper seçilir.
+
+## 5. Yardımcı sunucu (kaliteli ses, video sesi, ses/YouTube dökümü, web araması)
 
 Gerekenler: Python 3.11, (GPU için) güncel NVIDIA sürücüsü.
 
@@ -58,7 +71,7 @@ RTX 5090 (Blackwell) için PyTorch'un CUDA 12.8+ sürümünü kurun:
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
-## 5. Kendi bilgisayarınızda geliştirme
+## 6. Kendi bilgisayarınızda geliştirme
 ```powershell
 cd defter-studio
 python -m http.server 8080

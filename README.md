@@ -7,6 +7,8 @@ kendi bilgisayarınızdaki yapay zekayla (Ollama) ücretsiz çalışır; isteyen
 **Canlı önizleme:** https://aseydaaksakal.github.io/defter-studio/
 
 ## Öne çıkanlar
+- **Doğal Türkçe çok sesli podcast:** kadın ve erkek sesler, 9 biçim (ayrıntılı inceleme, özet, eleştiri, tartışma, hoca anlatımı, istişare, münazara, sözlü sınav provası, hikâyeyle öğren). Gemini TTS, OpenAI TTS, lokal sunucu ya da tarayıcıda ücretsiz Piper.
+- **Öğrenme merkezi:** Bugün paneli (seri, seviye, günlük hedef, tekrar planı, hazırlık durumu, rozetler), hata defteri, deneme sınavı (TYT, AYT, LGS, KPSS, UAB GOC/ROC, STCW vardiya, COLREG…), hafıza sarayı, öğreterek öğren (Feynman), hızlı okuma ve anlama testi, 10 parmak Türkçe Q klavye.
 - **9 Studio aracı + notlar**, her biri NotebookLM'deki seçeneklerle (biçim, dil, uzunluk, zorluk, odak).
 - **Alıntılı sohbet:** her bilgi kaynaktaki parçaya bağlanır; numaraya tıklayınca ilgili metin açılır.
 - **Geçmiş ve sürümler:** üretilen her şey defterde saklanır; açın, düzenleyin, eski sürüme dönün, silin.

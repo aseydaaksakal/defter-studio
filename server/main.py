@@ -125,7 +125,10 @@ async def tts(req: Request):
     text = (j.get("text") or "").strip()
     if not text:
         raise HTTPException(400, "Metin boş")
-    speaker = "B" if j.get("speaker") == "B" else "A"
+    gender = "m" if j.get("gender") == "m" else "f"
+    # Konuşmacıyı cinsiyete göre A (kadın) / B (erkek) ses yuvasına eşle; voices/<id>.wav varsa o kullanılır
+    sid = (j.get("speaker") or "A")[:1].upper()
+    speaker = sid if os.path.exists(os.path.join(VOICES_DIR, f"{sid}.wav")) else ("B" if gender == "m" else "A")
     lang = (j.get("lang") or "tr-TR")[:2].lower()
     try:
         if TTS_ENGINE == "edge":

@@ -163,6 +163,47 @@ Sınav için tarihler, sahalar, frekanslar ve belge türleri birlikte öğrenilm
     { cells: ['A4', 'Kutup bölgeleri', 'A1-A3 dışı', 'HF DSC', 'GOC'], ref: 3 }
   ] });
 
+  await add('quiz', 'GOC Deneme Sınavı', { refs, mode: 'exam', preset: 'uab_goc', target: 70, minutes: 6, questions: [
+    { topic: 'Frekanslar', q: 'VHF bandında yalnızca DSC için ayrılmış kanal hangisidir?', options: ['Kanal 16', 'Kanal 13', 'Kanal 70', 'Kanal 6'], answer: 2, explanation: 'Kanal 70 (156,525 MHz) yalnız DSC içindir; Kanal 16 sesli tehlike kanalıdır.' },
+    { topic: 'Frekanslar', q: 'Uluslararası NAVTEX yayınları hangi frekanstan yapılır?', options: ['490 kHz', '518 kHz', '2182 kHz', '2187,5 kHz'], answer: 1, explanation: '518 kHz uluslararası (İngilizce), 490 kHz ulusal dilde yayın içindir.' },
+    { topic: 'Deniz sahaları', q: 'MF kıyı istasyonu kapsamıyla tanımlanan deniz sahası hangisidir?', options: ['A1', 'A2', 'A3', 'A4'], answer: 1, explanation: 'A2, A1 dışında kalan ve en az bir MF kıyı istasyonunun kapsadığı alandır.' },
+    { topic: 'Tarihçe', q: 'Cospas-Sarsat 121,5/243 MHz sinyallerinin uydu ile işlenmesini hangi tarihte sonlandırdı?', options: ['1 Şubat 1999', '1 Şubat 2009', '1 Ocak 2024', '1 Ağustos 1993'], answer: 1, explanation: '1 Şubat 2009’dan beri yalnızca 406 MHz izlenir.' },
+    { topic: 'Belgeler', q: 'Yalnızca A1 sahasında görev için yeterli olan en alt seviye SOLAS operatör belgesi hangisidir?', options: ['GOC', 'ROC', '1. Sınıf REO', 'LRC'], answer: 1, explanation: 'ROC (Tahditli Operatör Belgesi) yalnız A1 sahası içindir.' },
+    { topic: 'Bakım', q: 'A3 ve A4 sahalarındaki gemiler çalışırlığı sağlama yöntemlerinden en az kaçını uygulamalıdır?', options: ['1', '2', '3', 'Hiçbiri'], answer: 1, explanation: 'A1/A2 en az bir, A3/A4 en az iki yöntem uygular.' }
+  ] }, { mode: 'exam', preset: 'uab_goc' });
+
+  await add('memory', 'GMDSS Hafıza Sarayı', { place: 'gemi', progress: {},
+    items: [
+      { cue: 'GMDSS tam olarak hangi tarihte yürürlüğe girdi?', fact: '1 Şubat 1999', emoji: '🎆', mnemonic: '"99 balon": 1999’da 99 balon uçar', image: 'İskelede yeni yıl gibi 99 kırmızı balon gökyüzüne yükseliyor, her birinde "GMDSS" yazıyor.' },
+      { cue: 'Yalnız DSC için kullanılan VHF kanalı?', fact: 'Kanal 70', emoji: '👴', mnemonic: '"70 yaşında dede sadece dijital konuşur"', image: 'Güvertede 70 yaşında bir dede, ağzını açmadan sadece mesaj atıyor.' },
+      { cue: 'Sesli tehlike çağrısı kanalı?', fact: 'Kanal 16', emoji: '📣', mnemonic: '"16’sında bağıran genç"', image: 'Köprüüstünde 16 yaşında bir genç megafonla "MAYDAY!" diye bağırıyor.' },
+      { cue: 'Uluslararası NAVTEX frekansı?', fact: '518 kHz', emoji: '📠', mnemonic: '"5 18 = beş arkadaş 18 yaşında haber okur"', image: 'Telsiz odasında 5 kişi, 18 metre uzunluğunda bir kâğıt şeritten haber okuyor.' },
+      { cue: 'SART hangi bantta çalışır?', fact: '9 GHz (X-bant)', emoji: '🎯', mnemonic: '"9 nokta değil, 12 nokta çizer"', image: 'Can filikasında parlayan bir koni, radar ekranına 12 parlak nokta fırlatıyor.' }
+    ],
+    palace: { place: 'Gemi', stops: [
+      { loc: 'İskele', item: 0, scene: 'İskeleye adım attığın anda 99 kırmızı balon patlayarak havaya yükseliyor; konfeti yüzüne yapışıyor.' },
+      { loc: 'Güverte', item: 1, scene: 'Güvertede 70 yaşında bir dede, telefonuna gömülmüş; sessizce dijital mesaj yağdırıyor.' },
+      { loc: 'Köprüüstü', item: 2, scene: 'Kaptan koltuğunda 16 yaşında bir genç, megafonla "MAYDAY!" diye bağırıyor; camlar titriyor.' },
+      { loc: 'Telsiz odası', item: 3, scene: '5 arkadaş 18 metrelik kâğıt şeridi açıyor; şerit hâlâ yazıcıdan çıkıyor ve odayı dolduruyor.' },
+      { loc: 'Can filikası', item: 4, scene: 'Filikanın tepesindeki turuncu koni yanıp sönüyor ve radar ekranına 12 parlak nokta saçıyor.' }
+    ] },
+    story: 'Gece yarısı gemi sarsıldı. İskeleden yükselen 99 balon, 1999’dan beri hiçbir geminin yalnız olmadığını hatırlattı. Güvertedeki yaşlı telsizci tek bir tuşla Kanal 70’ten dijital çağrıyı gönderdi; köprüüstündeki genç zabit Kanal 16’dan "MAYDAY" diye haykırdı. Telsiz odasında 518 kilohertzden gelen NAVTEX uyarısı fırtınayı haber veriyordu. Sabaha karşı can filikasındaki SART, kurtarma gemisinin radarına 12 parlak nokta çizdi ve herkes eve döndü.',
+    tips: ['Sarayı her tekrarda aynı sırayla yürü.', 'Sahneleri ne kadar abartır ve duygulandırırsan o kadar kalıcı olur.', '1-3-7-21 gün aralıklarla kendini test et.'] });
+
+  await add('teach', 'GMDSS’i Bana Anlat', { level: 'lise', lang: 'Türkçe', attempts: {}, topics: [
+    { name: 'Deniz sahaları A1-A4', question: 'Bana deniz sahalarının neye göre ayrıldığını anlatır mısın?', keyPoints: ['A1: VHF kıyı istasyonu, ~20-30 nm', 'A2: MF kıyı istasyonu, ~100-150 nm', 'A3: tanınmış mobil uydu hizmeti', 'A4: kutup bölgeleri'] },
+    { name: 'Haberleşme öncelikleri', question: 'MAYDAY, PAN PAN ve SECURITE arasındaki fark ne?', keyPoints: ['Tehlike: MAYDAY, ciddi ve yakın tehlike', 'Acelelik: PAN PAN', 'Emniyet: SECURITE, seyir/meteoroloji uyarısı', 'Öncelik sırası'] },
+    { name: 'EPIRB ve SART', question: 'Bir gemi battığında EPIRB ve SART ne işe yarar?', keyPoints: ['EPIRB 406 MHz, Cospas-Sarsat', 'Konum bildirir', 'SART 9 GHz radar transponderi', 'Radar ekranında 12 nokta'] }
+  ] });
+
+  await add('speedread', 'GMDSS Hızlı Okuma', { history: [], text: 'GMDSS, denizde can güvenliğini sağlamak için kurulmuş küresel bir haberleşme sistemidir. Eski sistemde tehlikedeki bir gemi, yardımı ancak yakındaki gemilerin onu duymasına bağlıydı. GMDSS ile tehlike uyarısı otomatik olarak kıyıdaki kurtarma koordinasyon merkezlerine ulaşır.\n\nSistem denizi dört sahaya ayırır. A1 sahası bir VHF kıyı istasyonunun kapsadığı, yaklaşık yirmi ile otuz deniz millik alandır. A2 sahası, MF kıyı istasyonunun kapsadığı ve yaklaşık yüz ile yüz elli mile uzanan bölgedir. A3 sahası tanınmış mobil uydu hizmetlerinin kapsadığı alanı, A4 sahası ise kutup bölgelerini ifade eder.\n\nGemiler hangi sahada sefer yapıyorsa o sahaya uygun cihazları taşımak zorundadır. VHF DSC, NAVTEX alıcısı, EPIRB ve SART temel cihazlardır. Operatörler de sahaya uygun belgeye sahip olmalıdır: A1 için ROC yeterliyken diğer sahalarda GOC gerekir.\n\n2024 yılında yürürlüğe giren değişikliklerle A3 sahası belirli bir uydu şirketine bağlı olmaktan çıktı ve dar bantlı doğrudan yazma telgrafı zorunluluğu kaldırıldı.',
+    questions: [
+      { q: 'GMDSS’in eski sisteme göre temel üstünlüğü nedir?', options: ['Daha ucuz olması', 'Uyarının otomatik olarak kıyıya ulaşması', 'Mors alfabesi kullanması', 'Yalnızca yolcu gemilerinde olması'], answer: 1 },
+      { q: 'A2 sahasının yaklaşık menzili nedir?', options: ['5-10 deniz mili', '20-30 deniz mili', '100-150 deniz mili', 'Sınırsız'], answer: 2 },
+      { q: 'A1 sahasında görev için yeterli belge hangisidir?', options: ['GOC', 'ROC', 'REO', 'LRC'], answer: 1 },
+      { q: '2024 değişiklikleriyle ne kaldırıldı?', options: ['EPIRB zorunluluğu', 'VHF DSC', 'Dar bantlı doğrudan yazma telgrafı zorunluluğu', 'NAVTEX'], answer: 2 }
+    ] });
+
   // Rapordaki gömme işaretini gerçek kart kimliğiyle değiştir
   const rep = await db.artifacts.where('notebookId').equals(id).filter((a) => a.type === 'report').first();
   await db.artifacts.update(rep.id, { content: { ...rep.content, markdown: rep.content.markdown.replace('embed:CARDS', 'embed:' + cardsId) } });

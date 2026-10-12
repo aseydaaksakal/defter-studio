@@ -52,6 +52,7 @@ export async function deleteArtifact(id) {
   await db.transaction('rw', db.artifacts, db.versions, db.blobs, async () => {
     await db.versions.where('artifactId').equals(id).delete();
     await db.blobs.where('artifactId').equals(id).delete();
+    await db.blobs.filter((b) => String(b.artifactId).startsWith(id + ':')).delete();
     await db.artifacts.delete(id);
   });
 }
