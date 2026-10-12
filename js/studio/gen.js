@@ -495,7 +495,7 @@ export async function answer(nb, history, question, { signal, onToken }) {
   const msgs = history.slice(-8).map((m) => ({ role: m.role, content: m.content }));
   msgs.push({ role: 'user', content: `${ctxBlock(ctx)}\n\nSORU: ${question}` });
   let text = await chat({
-    signal, onToken, messages: msgs, temperature: 0.2,
+    signal, onToken, messages: msgs, temperature: 0.2, think: false,
     system: `Kullanıcının yüklediği kaynaklar üzerine çalışan, uydurmayan bir öğrenme asistanısın.
 - Yalnızca KAYNAKLAR'daki bilgiye dayan. Genel bilgini, tahminini veya kaynakta olmayan ayrıntıyı ekleme.
 - Cevap kaynaklarda yoksa bunu ilk cümlede açıkça söyle ("Kaynaklarınızda bu bilgi yok.") ve varsa en yakın ilgili bilgiyi alıntısıyla göster.

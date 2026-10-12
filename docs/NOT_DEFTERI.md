@@ -5,6 +5,32 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 
 ---
 
+## 2026-10-12 — 0.3.1 — kullanıcı geri bildirimi (ekran görüntüleri)
+
+- **Hafıza sarayında "Sesli dinle" robot sesi.**
+  - Neden: Bu düğme hâlâ tarayıcı sesini (`speakBrowser`) kullanıyordu.
+  - Çözüm: `tts.speakText` gerçek ses motoruyla okuyor. İkinci basış durduruyor, düğme "Durdur"a dönüşüyor, görüntüleyici kapanınca ses kesiliyor.
+- **Sohbette art arda "Durduruldu."**
+  - Neden: Yanıt beklenirken yeni soru göndermek (öneri tıklamak, Enter) önceki isteği iptal ediyordu. Lokal 27B modelde ilk kelime 10–30 sn sürebildiği için kullanıcı tekrar tıklıyordu.
+  - Çözüm:
+    - Yalnız ■ düğmesi durduruyor; meşgulken yeni soru uyarıyla reddediliyor.
+    - "Yanıt hazırlanıyor" bilgisi gösteriliyor.
+    - Sohbette Ollama düşünme modu kapatıldı (`think: false`); yanıtlar çok daha hızlı başlıyor.
+- **Sohbetin çöp kutusu görünmüyordu.**
+  - Neden: Düğme yalnız sayfa açılırken mesaj varsa çiziliyordu.
+  - Çözüm: "Sohbet" başlığının yanında her zaman görünen çöp kutusu var; onayla tüm sohbet siliniyor.
+- **Studio'da tüm içerikleri silme.** Soru bankası kartının altına içerik sayısı ve çöp kutusu eklendi. Kaynaklar, sohbet ve banka korunuyor.
+- **Lokal sunucu "Ulaşılamadı".**
+  - Neden: Kullanıcının bilgisayarında sunucu hiç başlatılmamıştı.
+  - Çözüm:
+    - Hata mesajı artık adım adım kurulum gösteriyor: Python, zip indirme, `baslat.bat`, izin.
+    - Çalışırken motor listesi doğru yazılıyor; eskiden `[object Object]` yazıyordu.
+    - Var olmayan `server/README.md` bağlantısı düzeltildi.
+- **"Türkçe kadın sesi yok."**
+  - Neden: Tarayıcıda çalışan ücretsiz ve açık Türkçe kadın sesi gerçekten yok.
+  - Çözüm yolları: ücretsiz Gemini anahtarı ya da lokal sunucu (edge-tts Emel, Chatterbox klon).
+- **Test:** e2e 38/38 (sohbet silme, tüm içerikleri silme eklendi).
+
 ## 2026-10-12 — 0.3.0 — ses v3, tam sayılar, doğrulama, soru bankası, lokal sunucu v2
 
 ### Gerçek model denemesi (kullanıcının Chrome'u, canlı site, Ollama qwen3.8:27b)

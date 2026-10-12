@@ -579,3 +579,24 @@ export async function synthOne(artifactId, key, text, speaker, lang, format = 'n
   const r = await synthesize(artifactId + ':' + key, [{ speaker: speaker.id, text }], [speaker], lang, { format, ...opts });
   return r.blob;
 }
+
+// ---------------- Kısa metni gerçek ses motoruyla oku (hafıza sarayı, hikâye vb.) ----------------
+// Aynı düğmeye ikinci basış durdurur; başka bir metin başlarsa öncekini keser. Robot tarayıcı sesi kullanılmaz.
+let saying = null;
+export function stopSpeaking() { const c = saying; saying = null; c?.stop(); }
+export function speakText(key, text, { lang = 'Türkçe', onState = () => {} } = {}) {
+  if (saying?.key === key) { stopSpeaking(); return null; }
+  stopSpeaking();
+  const ctl = { key, stopped: false, audio: null, stop() { this.stopped = true; this.audio?.pause(); onState('idle'); } };
+  saying = ctl; onState('loading');
+  (async () => {
+    const cfg = await loadTTS();
+    const sp = { id: 'A', name: 'Okuyucu', gender: cfg.narrator === 'f' ? 'f' : 'm', role: 'okuyucu' };
+    const r = await synthesize('say:' + hash(text), [{ speaker: 'A', text }], [sp], lang, { format: 'narration' });
+    if (ctl.stopped) return;
+    ctl.audio = new Audio(URL.createObjectURL(r.blob));
+    ctl.audio.onended = () => { if (saying === ctl) saying = null; onState('idle'); };
+    await ctl.audio.play(); onState('playing');
+  })().catch((e) => { if (saying === ctl) saying = null; onState('error', e); });
+  return ctl;
+}

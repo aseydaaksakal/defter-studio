@@ -558,3 +558,5 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .ev-d { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
 .ev-m { background: color-mix(in srgb, var(--no) 20%, transparent); color: var(--no); }
 @media (max-width: 640px) { .voice-settings .grid2 { grid-template-columns: 1fr; } .slide .s-bar { grid-template-columns: 30cqw 1fr 14cqw; } }
+.art-tools { margin: 6px 2px -4px; align-items: center; }
+.art-tools .icon-btn:hover, .pane-head .icon-btn:hover { color: var(--no); }

@@ -345,17 +345,17 @@ async function renderChat(refreshSummary = false) {
   const input = h('textarea', { class: 'chat-input', rows: 1, placeholder: srcCount ? 'Soru sorun veya içerik oluşturun' : 'Başlamak için bir kaynak ekleyin', 'aria-label': 'Mesaj' });
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(180, input.scrollHeight) + 'px'; });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
-  const sendBtn = h('button', { class: 'send-btn', 'aria-label': 'Gönder', onclick: () => send() }, icon('send', 18));
+  const sendBtn = h('button', { class: 'send-btn', 'aria-label': 'Gönder', onclick: () => (chatAbort ? chatAbort.abort() : send()) }, icon('send', 18));
   async function send(text) {
     const q = (text || input.value).trim();
     if (!q) return;
-    if (chatAbort) { chatAbort.abort(); return; }
+    if (chatAbort) { toast('Önceki yanıt hâlâ hazırlanıyor. Durdurmak için ■ düğmesine basın.', 'info'); return; }
     if (!srcCount) { toast('Önce bir kaynak ekleyin.', 'error'); return; }
     input.value = ''; input.style.height = 'auto';
     const um = { notebookId: nb.id, role: 'user', content: q, createdAt: now() };
     um.id = await db.messages.add(um);
     log.append(msgEl(um));
-    const live = h('div', { class: 'msg assistant' }, h('div', { class: 'md typing' }, h('span', { class: 'dots' }, '•••')));
+    const live = h('div', { class: 'msg assistant' }, h('div', { class: 'md typing' }, h('span', { class: 'dots' }, '•••'), h('span', { class: 'muted small' }, ' Yanıt hazırlanıyor… (lokal modelde ilk kelime 10–30 sn sürebilir)')));
     log.append(live); live.scrollIntoView({ block: 'end' });
     chatAbort = new AbortController();
     put(sendBtn, icon('pause', 18)); sendBtn.setAttribute('aria-label', 'Durdur');
@@ -375,7 +375,10 @@ async function renderChat(refreshSummary = false) {
   }
   put(pane, 
     h('div', { class: 'pane-head' }, h('h2', {}, 'Sohbet'), h('span', { class: 'grow' }),
-      msgs.length ? h('button', { class: 'btn ghost small', onclick: async () => { if (await confirmBox('Sohbet temizlensin mi?', 'Sohbet geçmişi silinir; kaynaklar ve Studio içerikleri kalır.', 'Temizle')) { await db.messages.where('notebookId').equals(nb.id).delete(); renderChat(); } } }, icon('trash', 15), ' Temizle') : null),
+      h('button', { class: 'icon-btn', 'aria-label': 'Sohbeti sil', title: 'Tüm sohbeti sil', onclick: async () => {
+        if (!(await db.messages.where('notebookId').equals(nb.id).count())) return toast('Silinecek sohbet yok.');
+        if (await confirmBox('Tüm sohbet silinsin mi?', 'Bu defterdeki bütün sohbet mesajları kalıcı olarak silinir; kaynaklar ve Studio içerikleri kalır.', 'Sohbeti sil')) { chatAbort?.abort(); await db.messages.where('notebookId').equals(nb.id).delete(); renderChat(); toast('Sohbet silindi'); }
+      } }, icon('trash', 18))),
     log,
     h('div', { class: 'composer' }, input, h('span', { class: 'src-count muted small' }, srcCount + ' kaynak'), sendBtn),
     h('p', { class: 'disclaimer muted small' }, 'Yapay zeka hata yapabilir; yanıtları kaynak numaralarından doğrulayın.'));
@@ -510,6 +513,12 @@ async function renderStudio() {
       h('button', { class: 'btn ghost small', onclick: async () => { for (const a of arts.filter((x) => x.status === 'error')) await deleteArtifact(a.id); renderStudio(); } }, icon('trash', 15), ' Hatalıları sil')) : null,
     h('div', { class: 'tiles' }, Object.entries(TOOLS).map(([k, t]) => h('button', { class: 'tile t-' + k, onclick: () => openCustomize(k) }, icon(t.icon), h('span', {}, t.label)))),
     bankCard(state.nb.id, { open: (id) => { renderStudio(); location.hash = `#/n/${state.nb.id}/a/${id}`; } }),
+    arts.length ? h('div', { class: 'row gap art-tools' }, h('span', { class: 'muted small grow' }, `${arts.length} içerik`),
+      h('button', { class: 'icon-btn', 'aria-label': 'Tüm içerikleri sil', title: 'Üretilen tüm içerikleri sil', onclick: async () => {
+        if (!(await confirmBox('Üretilen tüm içerikler silinsin mi?', `Bu defterdeki ${arts.length} Studio içeriği (podcast, slayt, video, test, kart…), sürümleri ve ses dosyaları kalıcı olarak silinir. Kaynaklar, sohbet ve soru bankası kalır.`, 'Hepsini sil'))) return;
+        for (const a of arts) { aborts[a.id]?.abort(); await deleteArtifact(a.id); }
+        closeViewer(); renderStudio(); toast('Tüm içerikler silindi');
+      } }, icon('trash', 18))) : null,
     h('div', { class: 'art-list', role: 'list' }, arts.map(artRow)),
     !arts.length ? h('div', { class: 'empty small muted' }, 'Studio çıktıları burada listelenir. Bir araç seçerek başlayın; tüm geçmiş içerikler burada saklanır, açılır, düzenlenir ve silinir.') : null,
     h('button', { class: 'btn note-btn', onclick: async () => { const t = await promptBox('Not başlığı', 'Yeni not'); if (t) { await createNote(t, ''); const a = await db.artifacts.where('notebookId').equals(state.nb.id).last(); location.hash = `#/n/${state.nb.id}/a/${a.id}`; } } }, icon('note', 16), ' Not ekle'));
@@ -799,10 +808,16 @@ async function openSettings() {
     } }, 'Bağlantıyı test et'), out),
     ttsBlock,
     h('h3', {}, 'Lokal yardımcı sunucu (isteğe bağlı)'),
-    h('p', { class: 'muted small' }, 'Yüksek kaliteli Türkçe seslendirme, ses dosyası/video indirme, ses ve YouTube dökümü, web araması için. Kurulum: server/README.md'),
+    h('p', { class: 'muted small' }, 'Ücretsiz doğal Türkçe kadın + erkek ses (Emel/Ahmet), lokal ses klonlama, ses/YouTube dökümü ve web araması için. Kurulum: docs/KURULUM.md › 5. bölüm'),
     h('div', { class: 'row gap' }, srvIn, h('button', { class: 'btn ghost small', onclick: async () => {
       await setServerBase(srvIn.value.trim()); const u = await serverUrl(true); const i = serverInfo();
-      srvOut.textContent = u ? `✓ Çalışıyor · TTS: ${i?.tts || '—'} · Döküm: ${i?.stt || '—'}` : '✗ Ulaşılamadı. Sunucu kapalı olabilir.'; updateStatus();
+      if (u) srvOut.textContent = `✓ Çalışıyor · Ses: ${i?.tts?.engines?.join(', ') || 'motor kurulu değil'}${i?.tts?.female ? ' (kadın sesi var)' : ''} · Döküm: ${i?.stt || '—'}`;
+      else put(srvOut, h('div', { class: 'card stack small' }, h('b', {}, '✗ Sunucu bulunamadı: bilgisayarınızda yardımcı sunucu çalışmıyor.'),
+        h('ol', {}, h('li', {}, 'Python 3.11 ya da 3.12 kurun (python.org; kurulumda "Add to PATH" işaretli olsun).'),
+          h('li', {}, 'Projeyi indirip açın: ', h('a', { href: 'https://github.com/aseydaaksakal/defter-studio/archive/refs/heads/main.zip' }, 'defter-studio-main.zip'), '.'),
+          h('li', {}, h('code', {}, 'server\\baslat.bat'), ' dosyasını çift tıklayın (ilk kurulum birkaç dakika). Pencere açık kalsın.'),
+          h('li', {}, 'Tekrar "Kontrol et"e basın; Chrome yerel ağ izni sorarsa İzin ver deyin. Ya da doğrudan ', h('a', { href: 'http://localhost:8765/', target: '_blank', rel: 'noopener' }, 'localhost:8765'), ' adresini kullanın.'))));
+      updateStatus();
     } }, 'Kontrol et')), srvOut,
     h('h3', {}, 'Veriler'),
     h('p', { class: 'muted small' }, 'Tüm defterler bu tarayıcının IndexedDB veritabanında saklanır. ', est ? `Kullanılan alan: ${(est.usage / 1048576).toFixed(1)} MB / ${(est.quota / 1073741824).toFixed(1)} GB.` : ''),

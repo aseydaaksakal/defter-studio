@@ -288,6 +288,16 @@ def main():
         pg.click(".modal-foot >> text=Sil"); pg.wait_for_timeout(800)
         ok("Defter silme", len(pg.query_selector_all(".nb-card:not(.new)")) == n_before)
 
+        # --- Sohbeti sil ve tüm içerikleri sil (çöp kutusu düğmeleri)
+        pg.goto(APP); pg.wait_for_selector(".nb-card")
+        pg.click(".nb-card:not(.new) >> nth=0"); pg.wait_for_selector(".tile")
+        pg.click("button[aria-label='Sohbeti sil']"); pg.wait_for_timeout(300)
+        if pg.query_selector(".modal-foot >> text=Sohbeti sil"):
+            pg.click(".modal-foot >> text=Sohbeti sil"); pg.wait_for_timeout(500)
+        ok("Sohbeti sil", not pg.query_selector(".chat-log .msg.user"))
+        pg.click("button[aria-label='Tüm içerikleri sil']"); pg.click(".modal-foot >> text=Hepsini sil"); pg.wait_for_timeout(1200)
+        ok("Tüm içerikleri sil", len(pg.query_selector_all(".studio-pane .art-row")) == 0)
+
         # --- Öğrenme bilimi sayfası, mobil düzen
         pg.goto(APP + "#/bilim"); pg.wait_for_timeout(800)
         ok("Yöntemler kütüphanesi", "Yöntemler kütüphanesi" in txt("body"))

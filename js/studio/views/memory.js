@@ -1,7 +1,16 @@
 // Hafıza Teknikleri: ipucu kartları, hafıza sarayı yürüyüşü, bağlayıcı hikâye ve kendini test etme
 import { h, icon, toast } from '../../ui.js';
 import { award, correctFx, wrongFx, celebrate } from '../../learn.js';
-import { speakBrowser } from '../../tts.js';
+import { speakText, stopSpeaking } from '../../tts.js';
+
+// Sesli dinle / Durdur düğmesi (gerçek ses motoru; ikinci basış durdurur)
+function sayBtn(key, text, cls = 'btn ghost') {
+  const b = h('button', { class: cls });
+  const set = (st, e) => { b.replaceChildren(icon(st === 'playing' || st === 'loading' ? 'pause' : 'play', 16), st === 'loading' ? ' Hazırlanıyor… (durdur)' : st === 'playing' ? ' Durdur' : ' Sesli dinle'); if (st === 'error') toast('Ses üretilemedi: ' + e.message, 'error'); };
+  set('idle');
+  b.onclick = () => speakText(key, text, { onState: set });
+  return b;
+}
 
 const norm = (s) => String(s || '').toLocaleLowerCase('tr').replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
 function similar(a, b) { // kelime örtüşmesi oranı
@@ -45,12 +54,12 @@ export function render(root, art, api) {
             h('div', { class: 'mem-fact' }, it.fact || ''),
             h('div', { class: 'row gap' },
               h('button', { class: 'btn ghost', disabled: stop === 0 ? true : null, onclick: () => { stop--; paint(); } }, 'Önceki durak'),
-              h('button', { class: 'btn ghost', onclick: () => speakBrowser(`${s.loc}. ${s.scene}`, { lang: 'Türkçe' }) }, icon('play', 16), ' Sesli dinle'),
+              sayBtn('stop' + stop, `${s.loc}. ${s.scene}. ${it.fact || ''}`),
               h('span', { class: 'grow' }),
               h('button', { class: 'btn primary', onclick: () => { if (stop < stops.length - 1) { stop++; paint(); } else { tab = 'test'; paint(); } } }, stop < stops.length - 1 ? 'Sonraki durak' : 'Kendini test et')))));
     } else if (tab === 'story') {
       body.replaceChildren(h('div', { class: 'card story' }, h('p', {}, c.story || 'Hikâye yok.'),
-        h('button', { class: 'btn ghost small', onclick: () => speakBrowser(c.story || '', { lang: 'Türkçe' }) }, icon('play', 16), ' Sesli dinle')));
+        sayBtn('story', c.story || '', 'btn ghost small')));
     } else testMode();
   }
 
@@ -92,6 +101,7 @@ export function render(root, art, api) {
 
   root.append(h('div', { class: 'memory' }, h('div', { class: 'row gap wrap' }, tabs, h('span', { class: 'grow' }), h('button', { class: 'btn ghost small', onclick: () => api.editJSON() }, icon('edit', 16), ' Düzenle')), body));
   paint();
+  return () => stopSpeaking();
 }
 
 export function toText(art) {

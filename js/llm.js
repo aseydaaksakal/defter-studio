@@ -107,7 +107,7 @@ async function check(res) {
   throw new Error(msg);
 }
 
-export async function chat({ system = '', messages, json = false, onToken, signal, cfg, role, temperature }) {
+export async function chat({ system = '', messages, json = false, onToken, signal, cfg, role, temperature, think }) {
   cfg = cfg || await loadConfig();
   const temp = temperature ?? cfg.temperature ?? 0.6;
   // Model rolleri: 'fast' görevleri (özet, öneri, plan) ayarlıysa küçük/hızlı modele gider
@@ -123,7 +123,8 @@ export async function chat({ system = '', messages, json = false, onToken, signa
       messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages],
       options: { num_ctx: cfg.numCtx || 32768, temperature: temp }, keep_alive: '30m'
     };
-    if (json) { body.format = 'json'; body.think = false; } // JSON görevlerinde düşünme çıktısı yalnız süre harcar
+    if (json) { body.format = 'json'; body.think = false; }
+    else if (think === false) body.think = false; // JSON görevlerinde düşünme çıktısı yalnız süre harcar
     let res = await fetch(base + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal });
     if (!res.ok && res.status === 400 && 'think' in body) { delete body.think; res = await fetch(base + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal }); }
     await check(res);

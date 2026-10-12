@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-12 — teslim
+- 0.3.1: hafıza sarayı gerçek ses + durdur, sohbet ve içerik çöp kutuları, sohbet 'Durduruldu' hatası, hızlı sohbet, lokal sunucu kurulum yardımı
+
+## 2026-10-12 — teslim
 - 0.3.0 son tur: çoklu sekme güvenliği (iş sahibi sekme), sınav tarihi düzeltmesi, gerçek model denemesi (10/10 doğrulandı), DEVIR_TESLIM.md, önizleme betiği
 
 ## 2026-10-12 — 0.3.0
