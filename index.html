@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Defter Studio</title>
+  <meta name="description" content="Kaynaklarınızdan podcast, slayt, video özet, zihin haritası, rapor, bilgi kartı, test, infografik ve veri tablosu üreten, lokal yapay zekayla çalışan açık kaynak defter.">
+  <meta name="theme-color" content="#14161c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app"><div class="boot">Defter Studio yükleniyor…</div></div>
+  <noscript>Defter Studio için JavaScript gereklidir.</noscript>
+  <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  </script>
+</body>
+</html>
