@@ -17,7 +17,7 @@ kendi bilgisayarınızdaki yapay zekayla (Ollama) ücretsiz çalışır; isteyen
 
 ## Hızlı başlangıç
 1. Canlı adresi açın ve "Örnek" defteri inceleyin (model gerekmez).
-2. Ollama kurun, `ollama pull qwen3.5:27b`, `setx OLLAMA_ORIGINS "https://aseydaaksakal.github.io"`, Ollama'yı yeniden başlatın.
+2. Ollama kurun, `ollama pull qwen3.8:27b`, `setx OLLAMA_ORIGINS "https://aseydaaksakal.github.io"`, Ollama'yı yeniden başlatın.
 3. ⚙ Ayarlar › Ollama › Bağlantıyı test et. Yeni defter açın, PDF yükleyin, Studio'dan bir araç seçin.
 
 Ayrıntılar: [docs/KURULUM.md](docs/KURULUM.md) · Mimari ve teknoloji seçimleri: [docs/MIMARI.md](docs/MIMARI.md)

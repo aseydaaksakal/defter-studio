@@ -7,7 +7,7 @@ import { getSetting, setSetting } from './db.js';
 export const PROVIDERS = {
   ollama: {
     label: 'Ollama (lokal, ücretsiz)', baseUrl: 'http://localhost:11434', needsKey: false,
-    model: 'qwen3.5:27b', embedModel: '',
+    model: 'qwen3.8:27b', embedModel: '',
     hint: 'Bilgisayarınızda çalışır. OLLAMA_ORIGINS ortam değişkenine bu sitenin adresini ekleyin (KURULUM.md).'
   },
   lmstudio: {
@@ -79,8 +79,10 @@ async function check(res) {
   throw new Error(msg);
 }
 
-export async function chat({ system = '', messages, json = false, onToken, signal, cfg }) {
+export async function chat({ system = '', messages, json = false, onToken, signal, cfg, role }) {
   cfg = cfg || await loadConfig();
+  // Model rolleri: 'fast' görevleri (özet, öneri, plan) ayarlıysa küçük/hızlı modele gider
+  if (role === 'fast' && cfg.fastModel) cfg = { ...cfg, model: cfg.fastModel };
   const kind = kindOf(cfg.provider);
   const base = (cfg.baseUrl || '').replace(/\/$/, '');
   let out = '';
@@ -168,7 +170,7 @@ export async function chatJSON(opts) {
   try { return extractJSON(text); } catch (e) {
     // Modelden bozuk JSON'u düzeltmesini iste
     const fixed = await chat({
-      cfg: opts.cfg, signal: opts.signal, json: true,
+      cfg: opts.cfg, role: opts.role, signal: opts.signal, json: true,
       system: 'Yalnızca geçerli JSON döndür. Açıklama yazma.',
       messages: [{ role: 'user', content: 'Aşağıdaki metni geçerli JSON nesnesine dönüştür, içeriği değiştirme:\n\n' + text.slice(0, 60000) }]
     });

@@ -85,22 +85,23 @@ içe aktarılır. Ayarlar > "Kalıcı depolama iste" tarayıcının verileri ken
 
 ## RTX 5090 (24 GB) dizüstü için model seçimi
 
-Ollama listesinde 24 GB GPU için öne çıkan modeller (boyutlar indirme boyutudur; bağlam penceresi ayrıca VRAM ister):
+Artificial Analysis AgentPerf-Local testinde (4-bit, masaüstü RTX 5090 32 GB) aynı iş için Qwen3.6-35B-A3B
+(3B aktif) en hızlı, yoğun Qwen3.8-27B ise daha yavaş ama daha akıllı çıktı. Dizüstü 5090'ın 24 GB belleği ve
+daha düşük bant genişliği nedeniyle hızlar bunun altında kalır; model seçimi aynı mantıkla yapılır.
 
-| Rol | Model | Boyut | Not |
-|---|---|---|---|
-| **Ana model (önerilen)** | `qwen3.5:27b` | ~17 GB | Çok dilli, metin+görsel, 256K bağlam etiketi |
-| Hızlı alternatif | `gpt-oss:20b` | ~14 GB | Akıl yürütme ve araç kullanımı güçlü |
-| Türkçe alternatifi | `gemma3:27b` | ~17 GB | Çok dilli, metin+görsel |
-| Hafif alternatif | `mistral-small3.2:24b-instruct-2506-q4_K_M` | ~15 GB | Metin+görsel |
-| Embedding | `bge-m3` | ~1,2 GB | Türkçe dahil çok dilli anlamsal arama |
-| Ses dökümü | faster-whisper `large-v3-turbo` | ~1,6 GB | Yardımcı sunucuda |
-| Seslendirme | Piper (CPU) / XTTS-v2 / Chatterbox | 0–6 GB | Yardımcı sunucuda |
+| Rol | Model (Ollama) | 4-bit boyut | 24 GB'a sığar mı | Not |
+|---|---|---|---|---|
+| **Ana model (kalite)** | `qwen3.8:27b` | ~18 GB | Evet, 32K bağlamla rahat | Apache 2.0, metin+görsel, 256K bağlam etiketi |
+| **Ana model (hız)** | `qwen3.6:35b-a3b` | ~21 GB | Sıkışık, ~16-32K bağlam | MoE, testte 27B'den 2,5-3,3 kat hızlı |
+| Hızlı yardımcı | `qwen3.5:9b` | ~6 GB | Evet | "Hızlı model" rolü: özet, öneri, podcast planı |
+| Embedding | `bge-m3` | ~1,2 GB | Evet | Türkçe dahil çok dilli anlamsal arama |
+| Ses dökümü | faster-whisper `large-v3-turbo` | ~1,6 GB | Evet | Yardımcı sunucuda |
+| Seslendirme | Piper (CPU) / XTTS-v2 / Chatterbox | 0–6 GB | Evet | Yardımcı sunucuda |
 
-VRAM bütçesi: 27B model (~17 GB) + 32K bağlam sığar. Seslendirme GPU'da çalışacaksa Ollama modeli boştayken
-bellekten çıkar (`OLLAMA_KEEP_ALIVE=5m`); üretimler zaten sırayla çalıştığı için çakışma olmaz.
-Daha uzun bağlam için `OLLAMA_FLASH_ATTENTION=1` ve `OLLAMA_KV_CACHE_TYPE=q8_0` kullanın.
-64 GB sistem RAM'i, sığmayan katmanların CPU'ya taşmasını (daha yavaş ama çalışır) mümkün kılar.
+**Birden fazla model aynı anda belleğe sığmaz.** 27B + 35B-A3B toplamı 24 GB'ı aşar; Ollama modeller arasında
+geçerken her seferinde yeniden yükler. Bu yüzden üretimler kuyrukta sırayla çalışır ve "Hızlı model" rolü
+isteğe bağlıdır. 1T parametreli MiMo-V2.6-Pro, 753B GLM-5.3, 2,8T Kimi K3 gibi en zeki açık modeller bu
+bilgisayarda çalışmaz; onlar API üzerinden kullanılır.
 
 ## Maliyet
 

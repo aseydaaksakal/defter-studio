@@ -14,8 +14,8 @@ const BASE_RULES = (lang) => `Kurallar:
 const ctxBlock = (ctx) => `KAYNAKLAR (köşeli parantezdeki numara parçanın kimliğidir):\n\n${ctx.text}`;
 const focusLine = (f) => (f ? `\nODAK / KULLANICI İSTEĞİ: ${f}\n` : '');
 
-async function json(system, user, signal) {
-  return chatJSON({ system, messages: [{ role: 'user', content: user }], signal });
+async function json(system, user, signal, role) {
+  return chatJSON({ system, messages: [{ role: 'user', content: user }], signal, role });
 }
 const refsOf = (ctx) => ctx.refs.map(({ n, sourceId, title, page, text }) => ({ n, sourceId, title, page, text: text.slice(0, 600) }));
 
@@ -47,7 +47,7 @@ export const TOOLS = {
       const plan = await json(
         `Bir podcast yapımcısısın. ${BASE_RULES(o.lang)}`,
         `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nBu kaynaklardan bir podcast bölümü planla. Tarz: ${style}\n${segCount} bölümlük akış çıkar.\nJSON: {"title": "çekici bölüm başlığı", "segments": [{"topic": "bölüm konusu", "points": ["işlenecek nokta", "..."]}]}`,
-        signal);
+        signal, 'fast');
       const lines = [];
       const segs = (plan.segments || []).slice(0, segCount);
       for (let i = 0; i < segs.length; i++) {
@@ -259,6 +259,6 @@ export async function answer(nb, history, question, { signal, onToken }) {
 
 export async function suggestQuestions(nb, signal) {
   const ctx = await buildContext(nb, '', { budgetChars: 20000 });
-  const r = await chatJSON({ signal, system: 'Yalnızca JSON döndür.', messages: [{ role: 'user', content: `${ctxBlock(ctx)}\n\nBu kaynaklar hakkında kullanıcının sorabileceği 3 kısa, merak uyandıran soru ve kaynakların 2 cümlelik özetini yaz (kaynakların dilinde).\nJSON: {"summary": "...", "questions": ["...", "...", "..."]}` }] });
+  const r = await chatJSON({ signal, role: 'fast', system: 'Yalnızca JSON döndür.', messages: [{ role: 'user', content: `${ctxBlock(ctx)}\n\nBu kaynaklar hakkında kullanıcının sorabileceği 3 kısa, merak uyandıran soru ve kaynakların 2 cümlelik özetini yaz (kaynakların dilinde).\nJSON: {"summary": "...", "questions": ["...", "...", "..."]}` }] });
   return r;
 }

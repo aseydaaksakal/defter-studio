@@ -544,6 +544,7 @@ async function openSettings() {
   const base = h('input', { class: 'input', value: cfg.baseUrl || '' });
   const key = h('input', { class: 'input', type: 'password', value: cfg.apiKey || '', placeholder: 'Gerekmiyorsa boş bırakın', autocomplete: 'off' });
   const model = h('input', { class: 'input', value: cfg.model || '', list: 'model-list', placeholder: 'Model adı' });
+  const fastM = h('input', { class: 'input', value: cfg.fastModel || '', list: 'model-list', placeholder: 'İsteğe bağlı, örn. qwen3.5:9b' });
   const embedM = h('input', { class: 'input', value: cfg.embedModel || '', list: 'model-list', placeholder: 'İsteğe bağlı, örn. bge-m3 (anlamsal arama)' });
   const dl = h('datalist', { id: 'model-list' });
   const ctx = h('select', { class: 'input' }, [8192, 16384, 32768, 65536, 131072].map((n) => h('option', { value: n, selected: n === (cfg.numCtx || 32768) ? true : null }, (n / 1024) + 'K token')));
@@ -556,7 +557,7 @@ async function openSettings() {
   const sync = () => { const p = PROVIDERS[prov.value]; hint.textContent = p.hint; keyRow.hidden = !p.needsKey && prov.value !== 'custom'; };
   prov.onchange = () => { const p = PROVIDERS[prov.value]; base.value = p.baseUrl; model.value = p.model; embedM.value = p.embedModel; sync(); };
   sync();
-  const read = () => ({ provider: prov.value, baseUrl: base.value.trim(), apiKey: key.value.trim(), model: model.value.trim(), embedModel: embedM.value.trim(), numCtx: +ctx.value, temperature: +temp.value });
+  const read = () => ({ provider: prov.value, baseUrl: base.value.trim(), apiKey: key.value.trim(), model: model.value.trim(), fastModel: fastM.value.trim(), embedModel: embedM.value.trim(), numCtx: +ctx.value, temperature: +temp.value });
   const est = await navigator.storage?.estimate?.().catch(() => null);
   modal({ title: 'Ayarlar', wide: true, body: h('div', { class: 'settings' },
     h('h3', {}, 'Dil modeli'),
@@ -568,6 +569,7 @@ async function openSettings() {
         out.textContent = 'Modeller alınıyor…';
         try { const ms = await listModels(read()); put(dl, ...ms.map((m) => h('option', { value: m }))); out.textContent = `${ms.length} model bulundu. Model kutusuna tıklayıp seçebilirsiniz.`; } catch (e) { put(out, connectionHelp(e)); }
       } }, 'Listele'))),
+      h('div', { class: 'field' }, h('label', {}, 'Hızlı model (özet, öneri, plan)'), fastM),
       h('div', { class: 'field' }, h('label', {}, 'Embedding modeli'), embedM),
       h('div', { class: 'field' }, h('label', {}, 'Bağlam uzunluğu'), ctx),
       h('div', { class: 'field' }, h('label', {}, 'Sıcaklık (yaratıcılık)'), temp)),

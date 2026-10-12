@@ -9,7 +9,7 @@ oynatıcıyı, slaytları, testi, kartları, haritayı inceleyebilirsiniz. Yeni 
 1. https://ollama.com adresinden Windows sürümünü kurun.
 2. Modelleri indirin (PowerShell):
    ```powershell
-   ollama pull qwen3.5:27b
+   ollama pull qwen3.8:27b
    ollama pull bge-m3          # isteğe bağlı: anlamsal arama
    ```
 3. **Siteye izin verin (zorunlu).** Tarayıcıdaki sayfa başka bir adresten Ollama'ya bağlandığı için
@@ -20,7 +20,7 @@ oynatıcıyı, slaytları, testi, kartları, haritayı inceleyebilirsiniz. Yeni 
    setx OLLAMA_KV_CACHE_TYPE q8_0
    ```
    Ardından görev çubuğundaki Ollama simgesinden **Quit** deyip Ollama'yı yeniden açın.
-4. Uygulamada ⚙ Ayarlar › Sağlayıcı: **Ollama**, Model: `qwen3.5:27b` › **Bağlantıyı test et** › Kaydet.
+4. Uygulamada ⚙ Ayarlar › Sağlayıcı: **Ollama**, Model: `qwen3.8:27b` › **Bağlantıyı test et** › Kaydet.
 5. Chrome "yerel ağdaki cihazlara erişim" izni sorarsa **İzin ver** deyin.
 
 > Sorun mu var? `http://localhost:11434` adresini tarayıcıda açın; "Ollama is running" yazmalı.
