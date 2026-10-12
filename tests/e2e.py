@@ -252,6 +252,42 @@ def main():
         data = json.load(open(path, encoding="utf-8"))
         ok("Dışa aktarma: yedek JSON (soru bankası dahil)", data.get("format") == "defter-studio" and len(data.get("questions", [])) >= 30)
 
+        # --- İndirmeler: podcast WAV, slayt HTML, video
+        def downloads(title_re, button, timeout=30000):
+            open_latest(title_re)
+            try:
+                with pg.expect_download(timeout=timeout) as d:
+                    pg.click(button)
+                return d.value.suggested_filename
+            except Exception as e:
+                return ""
+            finally:
+                close_viewer()
+        f = downloads(r"^Test Bölümü", "text=Ses dosyası (WAV)")
+        ok("İndirme: podcast WAV", f.endswith(".wav"), f)
+        f = downloads(r"Mock Sunu", ".slides-view >> text=HTML")
+        ok("İndirme: slayt HTML", f.endswith(".html"), f)
+        open_latest(r"^Mock Video"); wait_until(lambda: "anlatıcı hazır" in txt(".video-view"), 30)
+        try:
+            with pg.expect_download(timeout=40000) as d:
+                pg.click("text=Videoyu indir")
+            f = d.value.suggested_filename
+        except Exception:
+            f = ""
+        ok("İndirme: video (MP4/WebM, sesli)", f.endswith((".mp4", ".webm")), f)
+        close_viewer()
+
+        # --- Yedekten içe aktar ve defter silme (ana sayfa)
+        pg.goto(APP); pg.wait_for_selector(".nb-card")
+        n_before = len(pg.query_selector_all(".nb-card:not(.new)"))
+        pg.set_input_files("input[type=file][accept='.json']", path); pg.wait_for_timeout(2500)
+        pg.goto(APP); pg.wait_for_selector(".nb-card")
+        ok("İçe aktarma (yedekten)", len(pg.query_selector_all(".nb-card:not(.new)")) == n_before + 1 and "içe aktarıldı" in txt("body"))
+        card = next(c for c in pg.query_selector_all(".nb-card:not(.new)") if "içe aktarıldı" in c.inner_text())
+        card.query_selector("button[aria-label=Sil]").click(); pg.wait_for_timeout(300)
+        pg.click(".modal-foot >> text=Sil"); pg.wait_for_timeout(800)
+        ok("Defter silme", len(pg.query_selector_all(".nb-card:not(.new)")) == n_before)
+
         # --- Öğrenme bilimi sayfası, mobil düzen
         pg.goto(APP + "#/bilim"); pg.wait_for_timeout(800)
         ok("Yöntemler kütüphanesi", "Yöntemler kütüphanesi" in txt("body"))
