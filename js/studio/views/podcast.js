@@ -81,9 +81,14 @@ export function render(root, art, api) {
   const dlBtn = h('button', { class: 'btn ghost small', hidden: true }, icon('download', 16), ' Ses dosyası (WAV)');
   const redoBtn = h('button', { class: 'btn ghost small' }, icon('refresh', 16), ' Sesi yeniden üret');
 
+  const upsell = h('div', { class: 'card voice-up', hidden: true },
+    h('b', {}, 'Gerçek insan sesi ister misiniz? '),
+    'Şu an ücretsiz yerel ses kullanılıyor. ElevenLabs (duygulu, nefesli kadın ve erkek ses) ya da Gemini TTS anahtarı eklerseniz bu podcast gerçek bir stüdyo kaydı gibi seslendirilir. ',
+    h('button', { class: 'btn primary small', onclick: () => api.openSettings?.() }, 'Ses ayarlarını aç'));
   async function prepare() {
     const cfg = await loadTTS();
     const engine = await resolveEngine(cfg);
+    upsell.hidden = !['piper', 'browser'].includes(engine);
     if (engine === 'browser') return goLive('Tarayıcı sesi' + (hasNaturalBrowserVoice(c.lang) ? ' (doğal)' : ' — daha doğal ses için Ayarlar › Seslendirme'));
     status.textContent = `${ENGINES[engine].split(' —')[0].split(' (')[0]} ile seslendiriliyor…`;
     try {
@@ -134,6 +139,7 @@ export function render(root, art, api) {
         playBtn,
         h('button', { class: 'icon-btn', 'aria-label': '10 saniye ileri', onclick: () => skip(10) }, h('span', { class: 'skip' }, '10↻')),
         h('span', { class: 'chip ghosty' }, lines.length + ' replik'))),
+    upsell,
     cast,
     h('div', { class: 'row gap wrap' }, editBtn, redoBtn, dlBtn),
     list));

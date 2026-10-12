@@ -502,3 +502,6 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .ty-legend { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; } .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
 .ty-weak { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 @media (max-width: 760px) { .teach { grid-template-columns: 1fr; } .ty-key { width: 26px; height: 34px; font-size: 12px; } .ty-key.space { width: 160px; } .ty-row { gap: 3px; } .ty-row.r1, .ty-row.r2, .ty-row.r3 { margin-left: 0; } .schulte { grid-template-columns: repeat(5, 52px); } .sc { height: 52px; } }
+.conn { display: grid; gap: 12px; } .conn-steps { display: grid; gap: 10px; padding-left: 20px; margin: 0; } .conn pre { margin: 6px 0; white-space: pre-wrap; word-break: break-all; }
+.err-bar { background: color-mix(in srgb, var(--no) 10%, transparent); border-radius: 12px; padding: 6px 10px; }
+.voice-up { border-color: var(--accent); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

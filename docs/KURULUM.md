@@ -12,7 +12,7 @@ oynatıcıyı, slaytları, testi, kartları, haritayı inceleyebilirsiniz. Yeni 
    ollama pull qwen3.8:27b
    ollama pull bge-m3          # isteğe bağlı: anlamsal arama
    ```
-3. **Siteye izin verin (zorunlu).** Tarayıcıdaki sayfa başka bir adresten Ollama'ya bağlandığı için
+3. **Siteye izin verin (zorunlu).** En kolayı: depodaki `tools/ollama-baglan.bat` dosyasını çift tıklayın. Elle yapmak isterseniz: Tarayıcıdaki sayfa başka bir adresten Ollama'ya bağlandığı için
    Ollama'nın bu siteye izin vermesi gerekir:
    ```powershell
    setx OLLAMA_ORIGINS "https://aseydaaksakal.github.io"
@@ -38,13 +38,14 @@ Anahtar yalnızca bu tarayıcıda saklanır; GitHub'a veya başka bir yere gönd
 
 | Motor | Kalite | Gerekenler |
 |---|---|---|
-| Gemini TTS | En doğal, çok konuşmacılı, Türkçe destekli | aistudio.google.com'dan Gemini API anahtarı |
+| ElevenLabs | Gerçek insan sesi, duygulu (v3 diyalog modeli) | elevenlabs.io API anahtarı (ücretsiz aylık kota). En iyi sonuç için Ses Kütüphanesi'nden Türkçe anadil kadın ve erkek ses ekleyip Ayarlar'da seçin |
+| Gemini TTS | Çok doğal, çok konuşmacılı, Türkçe destekli | aistudio.google.com'dan Gemini API anahtarı |
 | OpenAI TTS | Çok doğal | OpenAI API anahtarı (ücretli) |
 | Lokal sunucu | XTTS-v2 / Chatterbox ile çok doğal | Aşağıdaki yardımcı sunucu + GPU |
 | Tarayıcıda Piper | İyi, ücretsiz, çevrimdışı | İlk kullanımda ~60 MB ses modeli iner |
 | Tarayıcı sesi | Edge'de doğal (Emel/Ahmet), Chrome'da robotik | Hiçbir şey |
 
-Otomatik modda sırasıyla Gemini anahtarı → OpenAI anahtarı → lokal sunucu → tarayıcıda Piper seçilir.
+Otomatik modda sırasıyla ElevenLabs anahtarı → Gemini anahtarı → OpenAI anahtarı → lokal sunucu → tarayıcıda Piper seçilir.
 
 ## 5. Yardımcı sunucu (kaliteli ses, video sesi, ses/YouTube dökümü, web araması)
 

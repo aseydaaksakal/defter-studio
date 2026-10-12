@@ -8,7 +8,7 @@ import { h, icon, toast, modal, confirmBox, promptBox, renderMarkdown, download,
 import { seedDemo } from './demo.js';
 import { getStats, levelOf, xpForLevel, BADGES, updateXpPill, dueMistakes, readiness, sciencePage, resolveMistake } from './learn.js';
 import { typingPage } from './typing.js';
-import { ENGINES, loadTTS, saveTTS, VOICES, hasNaturalBrowserVoice, synthesize } from './tts.js';
+import { ENGINES, loadTTS, saveTTS, VOICES, hasNaturalBrowserVoice, synthesize, listElevenVoices } from './tts.js';
 import * as vMemory from './studio/views/memory.js';
 import * as vTeach from './studio/views/teach.js';
 import * as vSpeed from './studio/views/speedread.js';
@@ -349,6 +349,8 @@ export function askInChat(text) {
 async function paintSummary(box, nb, regenerate) {
   if (nb.summary && !regenerate) return drawSummary(box, nb.summary);
   if (!(await enabledSources(nb.id)).length) return;
+  const st = await checkLLM();
+  if (!st.ok) { put(box, h('div', { class: 'card muted small' }, 'Özet ve öneri soruları için model bağlantısı gerekli. ', h('button', { class: 'link', onclick: () => connectionModal(st.error) }, 'Bağlantıyı kur'))); return; }
   put(box, h('div', { class: 'card muted small' }, 'Kaynak özeti hazırlanıyor…'));
   try {
     const r = await suggestQuestions(nb.id);
@@ -370,11 +372,64 @@ function msgEl(m) {
       h('button', { class: 'icon-btn small', 'aria-label': 'Sil', onclick: async (e) => { await db.messages.delete(m.id); e.target.closest('.msg').remove(); } }, icon('trash', 15))));
 }
 
+// ---------- Model bağlantısı: önceden kontrol ve kurulum yardımcısı ----------
+let connCache = { at: 0, ok: false, error: '' };
+const isNetErr = (m) => /Failed to fetch|NetworkError|Load failed|CORS|ERR_/i.test(String(m));
+async function checkLLM(force = false) {
+  if (!force && Date.now() - connCache.at < 60000) return connCache;
+  const cfg = await loadConfig();
+  try {
+    if (!cfg.model) throw new Error('Model seçilmedi.');
+    if (cfg.provider !== 'anthropic') await listModels(cfg);
+    connCache = { at: Date.now(), ok: true, error: '' };
+  } catch (e) { connCache = { at: Date.now(), ok: false, error: String(e.message || e) }; }
+  return connCache;
+}
+const OLLAMA_PS = `[Environment]::SetEnvironmentVariable("OLLAMA_ORIGINS", "${location.origin},http://localhost:*,http://127.0.0.1:*", "User")
+Get-Process "ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process "$env:LOCALAPPDATA\\Programs\\Ollama\\ollama app.exe"`;
+let connOpen = false;
+async function connectionModal(err) {
+  if (connOpen) return; connOpen = true;
+  const cfg = await loadConfig();
+  const out = h('div', { class: 'small', role: 'status' });
+  const copy = (txt) => h('button', { class: 'btn ghost small', onclick: () => { navigator.clipboard.writeText(txt).then(() => toast('Kopyalandı'), () => toast('Kopyalanamadı; metni seçip kopyalayın', 'error')); } }, icon('copy', 15), ' Kopyala');
+  const gKey = h('input', { class: 'input', type: 'password', placeholder: 'Gemini API anahtarı (aistudio.google.com › Get API key)', autocomplete: 'off' });
+  const isOllama = cfg.provider === 'ollama';
+  const body = h('div', { class: 'conn' },
+    h('p', {}, h('b', {}, 'Yapay zeka modeline bağlanılamadı. '), h('span', { class: 'muted' }, err ? String(err).slice(0, 160) : '')),
+    isOllama ? h('div', { class: 'card' },
+      h('h3', {}, 'Bilgisayarınızdaki Ollama’yı bağlayın (ücretsiz)'),
+      h('ol', { class: 'conn-steps' },
+        h('li', {}, 'Ollama kurulu ve açık olmalı: ', h('a', { href: 'https://ollama.com/download', target: '_blank', rel: 'noopener' }, 'ollama.com/download'), '. Kontrol: ', h('a', { href: 'http://localhost:11434', target: '_blank', rel: 'noopener' }, 'localhost:11434'), ' sayfasında "Ollama is running" yazmalı.'),
+        h('li', {}, 'Bu siteye izin verin. ', h('b', {}, 'Kolay yol: '), h('a', { href: 'https://github.com/aseydaaksakal/defter-studio/raw/main/tools/ollama-baglan.bat' }, 'ollama-baglan.bat'), ' dosyasını indirip çift tıklayın (izni ayarlar, Ollama’yı yeniden başlatır, modeli indirir). ', h('b', {}, 'Ya da '), 'PowerShell’e yapıştırın:',
+          h('pre', { class: 'src-text' }, OLLAMA_PS), copy(OLLAMA_PS)),
+        h('li', {}, `Model indirilmiş olmalı: `, h('code', {}, `ollama pull ${cfg.model || 'qwen3.8:27b'}`), ' ', copy(`ollama pull ${cfg.model || 'qwen3.8:27b'}`)),
+        h('li', {}, 'Chrome "yerel ağ erişimi" izni sorarsa İzin ver deyin.'))) : null,
+    h('div', { class: 'card' }, h('h3', {}, 'Ya da hemen buluta geçin: Gemini (ücretsiz kota)'),
+      h('p', { class: 'muted small' }, 'Anahtar yalnız bu tarayıcıda saklanır. Aynı anahtar doğal Türkçe çok sesli seslendirme için de kullanılır.'),
+      h('div', { class: 'row gap' }, gKey, h('button', { class: 'btn primary', onclick: async () => {
+        const key = gKey.value.trim(); if (!key) return;
+        out.textContent = 'Gemini modelleri alınıyor…';
+        try {
+          const base = PROVIDERS.gemini.baseUrl;
+          const ms = await listModels({ provider: 'gemini', baseUrl: base, apiKey: key });
+          const pick = ms.filter((m) => /flash/.test(m) && !/tts|image|embed|audio|live|lite/.test(m)).sort().pop() || ms.find((m) => /gemini/.test(m));
+          await saveConfig({ ...cfg, provider: 'gemini', baseUrl: base, apiKey: key, model: pick, embedModel: '' });
+          connCache.at = 0; out.textContent = '✓ Gemini bağlandı: ' + pick; updateStatus(); toast('Gemini bağlandı', 'ok');
+        } catch (e) { out.textContent = '✗ ' + e.message; }
+      } }, 'Gemini’ye geç'))),
+    out);
+  modal({ title: 'Model bağlantısı', wide: true, body, onClose: () => (connOpen = false), actions: [
+    { label: 'Ayarlar', run: (c) => { c(); openSettings(); } },
+    { label: 'Tekrar dene', primary: true, run: async (c) => { const r = await checkLLM(true); if (r.ok) { c(); toast('Bağlantı kuruldu', 'ok'); renderChat(true); } else out.textContent = '✗ Hâlâ bağlanılamıyor: ' + r.error; } }] });
+}
+
 function connectionHelp(e) {
   const msg = String(e.message || e);
   const isNet = /Failed to fetch|NetworkError|Load failed/i.test(msg);
   return h('div', {}, h('b', {}, 'Model yanıt vermedi. '), msg,
-    isNet ? h('div', { class: 'small' }, 'Lokal model kullanıyorsanız Ollama’nın çalıştığından ve OLLAMA_ORIGINS ayarının bu siteye izin verdiğinden emin olun (KURULUM.md). ', h('button', { class: 'link', onclick: openSettings }, 'Ayarları aç')) : null);
+    isNet ? h('div', { class: 'small' }, 'Tarayıcı modele ulaşamadı. ', h('button', { class: 'link', onclick: () => connectionModal(msg) }, 'Bağlantı yardımcısını aç')) : null);
 }
 
 async function createNote(title, markdown, refs = []) {
@@ -388,6 +443,10 @@ async function renderStudio() {
   const arts = await db.artifacts.where('notebookId').equals(state.nb.id).reverse().sortBy('createdAt');
   put(pane, 
     h('div', { class: 'pane-head' }, h('h2', {}, 'Studio')),
+    arts.filter((a) => a.status === 'error').length > 1 ? h('div', { class: 'row gap wrap err-bar' },
+      h('span', { class: 'grow small' }, `${arts.filter((a) => a.status === 'error').length} içerik üretilemedi`),
+      h('button', { class: 'btn ghost small', onclick: async () => { const st = await checkLLM(true); if (!st.ok) return connectionModal(st.error); for (const a of arts.filter((x) => x.status === 'error')) runJob(a.id); } }, icon('refresh', 15), ' Tümünü yeniden dene'),
+      h('button', { class: 'btn ghost small', onclick: async () => { for (const a of arts.filter((x) => x.status === 'error')) await deleteArtifact(a.id); renderStudio(); } }, icon('trash', 15), ' Hatalıları sil')) : null,
     h('div', { class: 'tiles' }, Object.entries(TOOLS).map(([k, t]) => h('button', { class: 'tile t-' + k, onclick: () => openCustomize(k) }, icon(t.icon), h('span', {}, t.label)))),
     h('div', { class: 'art-list', role: 'list' }, arts.map(artRow)),
     !arts.length ? h('div', { class: 'empty small muted' }, 'Studio çıktıları burada listelenir. Bir araç seçerek başlayın; tüm geçmiş içerikler burada saklanır, açılır, düzenlenir ve silinir.') : null,
@@ -399,7 +458,7 @@ function artRow(a) {
   if (a.status === 'error') {
     return h('div', { class: 'art-row error', role: 'listitem' }, h('span', { class: 'art-ic' }, '!'),
       h('div', { class: 'art-main' }, h('div', { class: 'art-title' }, `${TYPE_LABEL[a.type]} üretilemedi`), h('div', { class: 'muted small', title: a.error }, a.error?.slice(0, 120))),
-      h('button', { class: 'btn ghost small', onclick: () => runJob(a.id) }, 'Yeniden dene'),
+      h('button', { class: 'btn ghost small', onclick: async () => { const st = await checkLLM(true); if (!st.ok) return connectionModal(st.error); runJob(a.id); } }, 'Yeniden dene'),
       h('button', { class: 'btn ghost small', onclick: async () => { await deleteArtifact(a.id); renderStudio(); } }, 'Sil'));
   }
   if (a.status === 'running' || a.status === 'queued') {
@@ -465,6 +524,8 @@ function openCustomize(type, preset = {}) {
       { label: 'Vazgeç', run: (c) => c() },
       { label: 'Hemen oluştur', primary: true, run: async (c) => {
         if (!srcs.length) { toast('Önce en az bir kaynak seçin.', 'error'); return; }
+        const st = await checkLLM();
+        if (!st.ok) { c(); connectionModal(st.error); return; }
         c();
         const { focus, ...keep } = vals; await setSetting('lastOpts:' + type, keep);
         if (vals.lang) await setSetting('lang', vals.lang);
@@ -503,7 +564,13 @@ async function doJob(id) {
     toast(`${TYPE_LABEL[a.type]} hazır: ${r.title}`, 'ok');
     notify(`${TYPE_LABEL[a.type]} hazır`, r.title);
   } catch (e) {
-    await db.artifacts.update(id, { status: 'error', error: e.name === 'AbortError' ? 'İptal edildi.' : String(e.message || e) });
+    const msg = e.name === 'AbortError' ? 'İptal edildi.' : String(e.message || e);
+    await db.artifacts.update(id, { status: 'error', error: isNetErr(msg) ? 'Modele bağlanılamadı. Bağlantıyı kurup "Yeniden dene"ye basın.' : msg });
+    if (isNetErr(msg)) {
+      connCache = { at: Date.now(), ok: false, error: msg };
+      await db.artifacts.where('status').equals('queued').modify({ status: 'error', error: 'Modele bağlanılamadı; sırada bekleyen iş durduruldu.' });
+      connectionModal(msg);
+    }
   }
   delete aborts[id];
   if (state.nb?.id === a.notebookId) renderStudio();
@@ -555,6 +622,7 @@ function viewerApi(a) {
     regenerate: (extra) => regenerate(a.id, extra),
     editJSON: () => editJSON(a),
     reopen: () => openViewer(a.id),
+    openSettings: () => openSettings(),
     renderEmbedded: async (id, box) => {
       const e = await db.artifacts.get(id);
       if (!e || e.status !== 'done') { box.append(h('p', { class: 'muted' }, 'Gömülü içerik bulunamadı.')); return; }
@@ -641,16 +709,36 @@ async function openSettings() {
   const tGModel = h('input', { class: 'input', value: tts.geminiModel || 'gemini-3.8-flash-tts' });
   const tOKey = h('input', { class: 'input', type: 'password', value: tts.openaiKey || '', autocomplete: 'off' });
   const tOut = h('div', { class: 'small', role: 'status' });
-  const readTTS = () => ({ ...tts, engine: tEngine.value, geminiKey: tGKey.value.trim(), geminiModel: tGModel.value.trim() || 'gemini-3.8-flash-tts', openaiKey: tOKey.value.trim() });
+  const tEKey = h('input', { class: 'input', type: 'password', value: tts.elevenKey || '', placeholder: 'elevenlabs.io › Profil › API Keys', autocomplete: 'off' });
+  const tEModel = h('input', { class: 'input', value: tts.elevenModel || 'eleven_v3', list: 'eleven-models' });
+  const eModels = h('datalist', { id: 'eleven-models' }, ['eleven_v3', 'eleven_v4', 'eleven_multilingual_v2', 'eleven_flash_v2_5'].map((m) => h('option', { value: m })));
+  const vOpt = (v, cur) => h('option', { value: v.id, selected: v.id === cur ? true : null }, `${v.name}${v.gender ? ' · ' + v.gender : ''}${v.lang ? ' · ' + v.lang : ''}`);
+  const tEF = h('select', { class: 'input' }, h('option', { value: tts.elevenF || '' }, tts.elevenF ? 'Seçili kadın sesi' : 'Varsayılan kadın sesi'));
+  const tEM = h('select', { class: 'input' }, h('option', { value: tts.elevenM || '' }, tts.elevenM ? 'Seçili erkek sesi' : 'Varsayılan erkek sesi'));
+  const listV = h('button', { class: 'btn ghost small', onclick: async () => {
+    tOut.textContent = 'Sesler alınıyor…';
+    try {
+      const vs = await listElevenVoices(tEKey.value.trim());
+      const f = vs.filter((v) => !/^male$/i.test(v.gender)), m = vs.filter((v) => !/female/i.test(v.gender));
+      put(tEF, ...f.map((v) => vOpt(v, tts.elevenF))); put(tEM, ...m.map((v) => vOpt(v, tts.elevenM)));
+      tOut.textContent = `${vs.length} ses bulundu. En doğal Türkçe için ElevenLabs Ses Kütüphanesi'nden Türkçe anadil sesleri hesabınıza ekleyip yeniden listeleyin.`;
+    } catch (e) { tOut.textContent = '✗ ' + e.message; }
+  } }, 'Sesleri listele');
+  const readTTS = () => ({ ...tts, engine: tEngine.value, geminiKey: tGKey.value.trim(), geminiModel: tGModel.value.trim() || 'gemini-3.8-flash-tts', openaiKey: tOKey.value.trim(), elevenKey: tEKey.value.trim(), elevenModel: tEModel.value.trim() || 'eleven_v3', elevenF: tEF.value, elevenM: tEM.value });
   const natural = hasNaturalBrowserVoice('Türkçe');
   const ttsBlock = h('div', {},
     h('h3', {}, 'Seslendirme (podcast ve video)'),
-    h('p', { class: 'muted small' }, 'En doğal Türkçe çok sesli sonuç için Gemini TTS (Google’ın podcast’lerine en yakın ses). Ücretsiz ve çevrimdışı seçenek: tarayıcıda Piper (ilk kullanımda ses modeli iner). Tarayıcı sesi için Microsoft Edge doğal Emel/Ahmet seslerini sunar' + (natural ? ' — bu tarayıcıda doğal Türkçe ses bulundu.' : '.')),
+    h('p', { class: 'muted small' }, 'Gerçek insan sesine en yakın sonuç: ElevenLabs (duygulu, nefesli, kadın ve erkek ses; ücretsiz aylık kota). Ücretsiz ve çok doğal alternatif: Gemini TTS (Google’ın podcast’lerine en yakın ses). Ücretsiz ve çevrimdışı seçenek: tarayıcıda Piper (ilk kullanımda ses modeli iner). Tarayıcı sesi için Microsoft Edge doğal Emel/Ahmet seslerini sunar' + (natural ? ' — bu tarayıcıda doğal Türkçe ses bulundu.' : '.')),
     h('div', { class: 'grid2' },
       h('div', { class: 'field' }, h('label', {}, 'Ses motoru'), tEngine),
+      h('div', { class: 'field' }, h('label', {}, 'ElevenLabs API anahtarı'), tEKey),
+      h('div', { class: 'field' }, h('label', {}, 'ElevenLabs modeli'), tEModel),
+      h('div', { class: 'field' }, h('label', {}, 'Kadın sesi (ElevenLabs)'), h('div', { class: 'row gap' }, tEF, listV)),
+      h('div', { class: 'field' }, h('label', {}, 'Erkek sesi (ElevenLabs)'), tEM),
       h('div', { class: 'field' }, h('label', {}, 'Gemini API anahtarı'), tGKey),
       h('div', { class: 'field' }, h('label', {}, 'Gemini TTS modeli'), tGModel),
       h('div', { class: 'field' }, h('label', {}, 'OpenAI API anahtarı (isteğe bağlı)'), tOKey)),
+    eModels,
     h('div', { class: 'row gap' }, h('button', { class: 'btn ghost', onclick: async () => {
       await saveTTS(readTTS()); tOut.textContent = 'Deneniyor…';
       try {

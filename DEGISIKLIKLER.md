@@ -1,5 +1,12 @@
 # Değişiklikler
 
+## 2026-10-12 — 0.2.1
+- Model bağlantısı: üretimden önce bağlantı kontrolü; bağlantı yoksa iş açılmaz, kurulum yardımcısı açılır
+  (Ollama izni için kopyalanabilir komut, tek tıkla `tools/ollama-baglan.bat`, tek tıkla Gemini'ye geçiş).
+- Ağ hatasında kuyruk durur (art arda onlarca hata yerine tek uyarı); "Tümünü yeniden dene" ve "Hatalıları sil".
+- ElevenLabs gerçek insan sesi (v3 diyalog modeli, duygu etiketleri, Türkçe dil kodu, kadın/erkek ses seçimi).
+- Gemini TTS için Türkçe telaffuz/vurgu talimatı; tüm motorlarda Türkçe metin normalleştirme.
+
 ## 2026-10-12 — 0.2.0
 - Seslendirme baştan yazıldı: Türkçe metin normalleştirme (sayılar, yüzdeler, birimler, kısaltmalar), Gemini TTS çok konuşmacılı,
   OpenAI TTS, tarayıcıda Piper (Türkçe 3 ses), lokal sunucu, Edge doğal sesleri. Tek parça WAV, ses dengeleme, doğal duraklamalar.

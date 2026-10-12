@@ -12,6 +12,7 @@ export const langCode = (l) => LANG_CODES[l] || 'tr-TR';
 
 export const ENGINES = {
   auto: 'Otomatik (en iyisini seç)',
+  elevenlabs: 'ElevenLabs — gerçek insan sesi, duygulu (API anahtarı, ücretsiz kota var)',
   gemini: 'Gemini TTS — en doğal, çok konuşmacılı (API anahtarı)',
   openai: 'OpenAI TTS (API anahtarı)',
   server: 'Lokal yardımcı sunucu (XTTS / Chatterbox / Piper)',
@@ -24,8 +25,12 @@ export const VOICES = {
   piper: { f: ['tr_TR-dfki-medium'], m: ['tr_TR-fahrettin-medium', 'tr_TR-fettah-medium'] }
 };
 
+// ElevenLabs hazır sesleri (çok dilli modellerle Türkçe konuşur); Ayarlar › Seslendirme › "Sesleri listele" ile
+// hesabınızdaki ya da Ses Kütüphanesi'nden eklediğiniz Türkçe anadil seslerini seçebilirsiniz.
+export const ELEVEN_DEFAULT = { f: ['EXAVITQu4vr4xnSDxMaL', '21m00Tcm4TlvDq8ikWAM'], m: ['nPczCjzI2devNBz1zQrb', 'pNInz6obpgDQGcFmaJgB'] };
+
 export async function loadTTS() {
-  return { engine: 'auto', geminiKey: '', geminiModel: 'gemini-3.8-flash-tts', openaiKey: '', openaiModel: 'gpt-4o-mini-tts', rate: 1, ...(await getSetting('tts', {})) };
+  return { engine: 'auto', geminiKey: '', geminiModel: 'gemini-3.8-flash-tts', openaiKey: '', openaiModel: 'gpt-4o-mini-tts', elevenKey: '', elevenModel: 'eleven_v3', elevenF: '', elevenM: '', rate: 1, ...(await getSetting('tts', {})) };
 }
 export async function saveTTS(cfg) { await setSetting('tts', cfg); }
 
@@ -34,6 +39,7 @@ export async function resolveEngine(cfg) {
   cfg = cfg || await loadTTS();
   if (cfg.engine !== 'auto') return cfg.engine;
   const llm = await loadConfig();
+  if (cfg.elevenKey) return 'elevenlabs';
   if (cfg.geminiKey || (llm.provider === 'gemini' && llm.apiKey)) return 'gemini';
   if (cfg.openaiKey) return 'openai';
   if (await serverUrl()) return 'server';
@@ -42,8 +48,10 @@ export async function resolveEngine(cfg) {
 const geminiKey = async (cfg) => cfg.geminiKey || ((await loadConfig()).provider === 'gemini' ? (await loadConfig()).apiKey : '');
 
 // Konuşmacılara cinsiyete göre farklı ses ata
-export function assignVoices(speakers, engine) {
-  const pool = VOICES[engine];
+export function assignVoices(speakers, engine, cfg = {}) {
+  const pool = engine === 'elevenlabs'
+    ? { f: [cfg.elevenF, ...ELEVEN_DEFAULT.f].filter(Boolean), m: [cfg.elevenM, ...ELEVEN_DEFAULT.m].filter(Boolean) }
+    : VOICES[engine];
   const used = { f: 0, m: 0 };
   return Object.fromEntries(speakers.map((s) => {
     const g = s.gender === 'm' ? 'm' : 'f';
@@ -72,7 +80,8 @@ async function geminiChunk(lines, voices, speakers, cfg, style) {
   if (!key) throw new Error('Gemini TTS için ayarlara Gemini API anahtarı girin.');
   const names = Object.fromEntries(speakers.map((s) => [s.id, s.name]));
   const ids = [...new Set(lines.map((l) => l.speaker))];
-  const content = lines.map((l) => ({ type: 'text', text: l.text, annotations: [{ type: 'speech_metadata', speaker: names[l.speaker], style: l.tone ? `${style}; ${l.tone}` : style }] }));
+  const TR = 'Türkçe konuş: doğal İstanbul Türkçesi telaffuzu, doğru kelime vurgusu ve cümle tonlaması; gerçek bir insan gibi nefes al, duraksa, robotik olma';
+  const content = lines.map((l) => ({ type: 'text', text: normalizeTR(l.text, { spellAcronyms: true }), annotations: [{ type: 'speech_metadata', speaker: names[l.speaker], style: `${TR}. ${style}${l.tone ? '; ' + l.tone : ''}` }] }));
   const speech = ids.length > 1
     ? { mode: 'conversational', speakers: ids.map((id) => ({ speaker: names[id], voice: voices[id] })) }
     : [{ voice: voices[ids[0]] }];
@@ -89,7 +98,7 @@ async function geminiChunk(lines, voices, speakers, cfg, style) {
   if (res.status !== 404 && res.status !== 400) throw new Error('Gemini TTS: ' + res.status + ' ' + (await res.text()).slice(0, 200));
   // Eski uç nokta (generateContent) ile yeniden dene
   const legacy = cfg.geminiLegacyModel || 'gemini-2.5-flash-preview-tts';
-  const text = `${style}.\n` + lines.map((l) => `${names[l.speaker]}: ${l.text}`).join('\n');
+  const text = `Aşağıdaki Türkçe konuşmayı doğal İstanbul Türkçesiyle, doğru vurgu ve tonlamayla, gerçek insanlar gibi seslendir. ${style}.\n` + lines.map((l) => `${names[l.speaker]}: ${normalizeTR(l.text)}`).join('\n');
   const speechConfig = ids.length > 1
     ? { multiSpeakerVoiceConfig: { speakerVoiceConfigs: ids.slice(0, 2).map((id) => ({ speaker: names[id], voiceConfig: { prebuiltVoiceConfig: { voiceName: voices[id] } } })) } }
     : { voiceConfig: { prebuiltVoiceConfig: { voiceName: voices[ids[0]] } } };
@@ -104,11 +113,46 @@ async function geminiChunk(lines, voices, speakers, cfg, style) {
   return pcmToWav(b64ToBlob(part.inlineData.data, 'audio/l16'), 24000);
 }
 
+const TAG = { meraklı: 'curious', heyecanlı: 'excited', sakin: 'calm', gülerek: 'laughs', neşeli: 'cheerful', şaşkın: 'surprised', ciddi: 'serious', düşünceli: 'thoughtful', sıcak: 'warm', endişeli: 'worried', rahatlamış: 'relieved', kararlı: 'determined', üzgün: 'sad', fısıldayarak: 'whispers', coşkulu: 'excited', sabırlı: 'calm' };
+const tagFor = (tone) => { const t = String(tone || '').toLocaleLowerCase('tr'); const k = Object.keys(TAG).find((x) => t.includes(x)); return k ? `[${TAG[k]}] ` : ''; };
+const usesTags = (m) => /v3|v4/.test(m || '');
+
+async function elevenChunk(lines, voices, cfg) {
+  if (!cfg.elevenKey) throw new Error('ElevenLabs için ayarlara API anahtarı girin.');
+  const model = cfg.elevenModel || 'eleven_v3';
+  const headers = { 'Content-Type': 'application/json', 'xi-api-key': cfg.elevenKey, Accept: 'audio/mpeg' };
+  const prep = (l) => (usesTags(model) ? tagFor(l.tone) : '') + normalizeTR(l.text);
+  const res = await fetch('https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128', {
+    method: 'POST', headers, body: JSON.stringify({ model_id: model, language_code: 'tr', inputs: lines.map((l) => ({ text: prep(l), voice_id: voices[l.speaker] })) })
+  });
+  if (res.ok) return { blob: await res.blob(), whole: true };
+  if (res.status === 401) throw new Error('ElevenLabs anahtarı geçersiz.');
+  // diyalog uç noktası bu modeli desteklemiyorsa satır satır üret
+  const blobs = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voices[l.speaker]}?output_format=mp3_44100_128`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ text: prep(l), model_id: usesTags(model) && res.status !== 400 ? model : 'eleven_multilingual_v2', language_code: 'tr',
+        previous_text: lines[i - 1]?.text?.slice(-100), next_text: lines[i + 1]?.text?.slice(0, 100), voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true } })
+    });
+    if (!r.ok) throw new Error('ElevenLabs: ' + r.status + ' ' + (await r.text()).slice(0, 200));
+    blobs.push(await r.blob());
+  }
+  return { blobs };
+}
+
+export async function listElevenVoices(key) {
+  const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } });
+  if (!r.ok) throw new Error('ElevenLabs: ' + r.status);
+  return (await r.json()).voices.map((v) => ({ id: v.voice_id, name: v.name, gender: v.labels?.gender || '', lang: v.labels?.language || v.labels?.accent || '' }));
+}
+
 async function openaiLine(line, voice, cfg, style) {
   if (!cfg.openaiKey) throw new Error('OpenAI TTS için ayarlara OpenAI API anahtarı girin.');
   const res = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.openaiKey },
-    body: JSON.stringify({ model: cfg.openaiModel || 'gpt-4o-mini-tts', voice, input: line.text, instructions: `${style}${line.tone ? '; ' + line.tone : ''}. Doğal Türkçe telaffuz.`, response_format: 'wav' })
+    body: JSON.stringify({ model: cfg.openaiModel || 'gpt-4o-mini-tts', voice, input: normalizeTR(line.text), instructions: `${style}${line.tone ? '; ' + line.tone : ''}. Doğal Türkçe telaffuz.`, response_format: 'wav' })
   });
   if (!res.ok) throw new Error('OpenAI TTS: ' + res.status);
   return res.blob();
@@ -150,11 +194,11 @@ const STYLE = {
   narration: 'Belgesel anlatıcısı; sıcak, net, merak uyandıran'
 };
 
-function chunkLines(lines, maxChars = 1600) {
+function chunkLines(lines, maxChars = 1600, maxSpeakers = 2) {
   const chunks = []; let cur = [], chars = 0, spk = new Set();
   for (const l of lines) {
     const ns = new Set([...spk, l.speaker]);
-    if (cur.length && (chars + l.text.length > maxChars || ns.size > 2)) { chunks.push(cur); cur = []; chars = 0; spk = new Set(); }
+    if (cur.length && (chars + l.text.length > maxChars || ns.size > maxSpeakers)) { chunks.push(cur); cur = []; chars = 0; spk = new Set(); }
     cur.push(l); chars += l.text.length; spk.add(l.speaker);
   }
   if (cur.length) chunks.push(cur);
@@ -171,14 +215,24 @@ export async function synthesize(artifactId, lines, speakers, lang, { format = '
   const cfg = await loadTTS();
   const engine = await resolveEngine(cfg);
   if (engine === 'browser') return { engine, blob: null, timings: null };
-  const voices = assignVoices(speakers, engine);
+  const voices = assignVoices(speakers, engine, cfg);
   const key = hash(engine + JSON.stringify(voices) + (cfg.geminiModel || '') + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone])));
   const cached = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.key === key).first();
   if (cached) return { engine, blob: cached.blob, timings: cached.timings };
   const style = STYLE[format] || STYLE.deep;
   const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
   const pieces = []; // {blob, lines:[idx...]}
-  if (engine === 'gemini') {
+  if (engine === 'elevenlabs') {
+    const chunks = chunkLines(lines, 1800, 10);
+    let done = 0;
+    for (const ch of chunks) {
+      onProgress(`Gerçek insan sesiyle seslendiriliyor ${done + 1}–${done + ch.length} / ${lines.length}`);
+      const r = await elevenChunk(ch, voices, cfg);
+      if (r.whole) pieces.push({ blob: r.blob, idx: ch.map((l) => lines.indexOf(l)) });
+      else r.blobs.forEach((b, k) => pieces.push({ blob: b, idx: [lines.indexOf(ch[k])] }));
+      done += ch.length;
+    }
+  } else if (engine === 'gemini') {
     const chunks = chunkLines(lines);
     let done = 0;
     for (const ch of chunks) {
