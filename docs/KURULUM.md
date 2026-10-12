@@ -1,8 +1,10 @@
 # Kurulum
 
 ## 1. Hiçbir şey kurmadan deneyin
-Canlı adresi açın. "Örnek: GMDSS" defterinde dokuz Studio içeriğinin hepsi hazırdır; model bağlamadan
-oynatıcıyı, slaytları, testi, kartları, haritayı inceleyebilirsiniz. Yeni içerik üretmek için bir model bağlayın.
+Canlı adresi açın: https://aseydaaksakal.github.io/defter-studio/
+- "Örnek: GMDSS" defterinde Studio içeriklerinin hepsi hazırdır.
+- Model bağlamadan oynatıcıyı, slaytları, testi, kartları ve haritayı inceleyebilirsiniz.
+- Yeni içerik üretmek için bir model bağlayın.
 
 ## 2. Lokal model: Ollama (ücretsiz, önerilen)
 
@@ -10,76 +12,107 @@ oynatıcıyı, slaytları, testi, kartları, haritayı inceleyebilirsiniz. Yeni 
 2. Modelleri indirin (PowerShell):
    ```powershell
    ollama pull qwen3.8:27b
-   ollama pull bge-m3          # isteğe bağlı: anlamsal arama
+   ollama pull bge-m3          # isteğe bağlı: Türkçe anlamsal arama
    ```
-3. **Siteye izin verin (zorunlu).** En kolayı: depodaki `tools/ollama-baglan.bat` dosyasını çift tıklayın. Elle yapmak isterseniz: Tarayıcıdaki sayfa başka bir adresten Ollama'ya bağlandığı için
-   Ollama'nın bu siteye izin vermesi gerekir:
-   ```powershell
-   $o = "https://aseydaaksakal.github.io"
-   [Environment]::SetEnvironmentVariable("OLLAMA_ORIGINS", $o, "User")
-   $env:OLLAMA_ORIGINS = $o
-   Get-Process "ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force
-   Start-Sleep -Seconds 2
-   Start-Process "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
-   ```
-   Üçüncü satır önemlidir: kalıcı ayar, aynı pencereden başlatılan Ollama'ya ancak bu satırla geçer.
-   Hâlâ olmazsa Ollama'yı görev çubuğundan **Quit** ile kapatıp PowerShell'de
-   `$env:OLLAMA_ORIGINS = "https://aseydaaksakal.github.io"; ollama serve` çalıştırın ve pencereyi açık bırakın.
+3. Uygulamayı Ollama'ya bağlayın. İki yol var:
+   - **Yol A — ayarsız (önerilen):** depodaki `server/baslat.bat` dosyasını çalıştırın; ayrıntısı 5. bölümde.
+     - Uygulama `http://localhost:8765` adresinde açılır.
+     - Ollama localhost'a varsayılan olarak izin verdiği için ek ayar gerekmez.
+     - Bu adresteki defterler GitHub Pages'tekilerden ayrıdır. Taşımak için ana sayfada **Yedekle** ve **İçe aktar** kullanın.
+   - **Yol B — GitHub Pages'ten kullanmak:** sayfa başka bir adresten Ollama'ya bağlandığı için Ollama'nın bu siteye izin vermesi gerekir.
+     - En kolayı: `tools/ollama-baglan.bat` dosyasını çift tıklayın.
+     - Elle yapmak isterseniz:
+       ```powershell
+       $o = "https://aseydaaksakal.github.io"
+       [Environment]::SetEnvironmentVariable("OLLAMA_ORIGINS", $o, "User")
+       $env:OLLAMA_ORIGINS = $o
+       Get-Process "ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force
+       Start-Sleep -Seconds 2
+       Start-Process "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
+       ```
+     - Hâlâ olmazsa Ollama'yı görev çubuğundan **Quit** ile kapatın. Sonra PowerShell'de
+       `$env:OLLAMA_ORIGINS = "https://aseydaaksakal.github.io"; ollama serve` çalıştırın ve pencereyi açık bırakın.
 4. Uygulamada ⚙ Ayarlar › Sağlayıcı: **Ollama**, Model: `qwen3.8:27b` › **Bağlantıyı test et** › Kaydet.
+   - **Hızlı model:** isteğe bağlı, örneğin `llama3.1:8b`. **Embedding:** `bge-m3`.
 5. Chrome "yerel ağdaki cihazlara erişim" izni sorarsa **İzin ver** deyin.
 
-> Sorun mu var? `http://localhost:11434` adresini tarayıcıda açın; "Ollama is running" yazmalı.
-> "Failed to fetch" hatası çoğunlukla OLLAMA_ORIGINS ayarının yapılmadığını veya Ollama'nın yeniden başlatılmadığını gösterir.
+> Sorun mu var? `http://localhost:11434` adresini açın; "Ollama is running" yazmalı. "Failed to fetch" hatası çoğunlukla
+> OLLAMA_ORIGINS ayarının yapılmadığını ya da Ollama'nın yeniden başlatılmadığını gösterir. Yol A bu sorunu tamamen ortadan kaldırır.
 
 ### LM Studio kullanmak isterseniz
 Developer sekmesinde sunucuyu başlatın, **Enable CORS** açın. Ayarlar › Sağlayıcı: LM Studio, adres `http://localhost:1234/v1`.
 
 ## 3. Kendi API anahtarınızla (isteğe bağlı)
-Ayarlar › Sağlayıcı: Gemini, Groq, OpenRouter, OpenAI veya Anthropic seçin, anahtarı yapıştırın, **Listele** ile model seçin.
-Anahtar yalnızca bu tarayıcıda saklanır; GitHub'a veya başka bir yere gönderilmez.
+1. Ayarlar › Sağlayıcı'dan birini seçin: Gemini, Groq, OpenRouter, OpenAI, Anthropic, xAI Grok, DeepSeek, Qwen, Mistral, Together, Kimi ya da MiniMax.
+2. Anahtarı yapıştırın.
+3. **Listele** ile model seçin.
 
-## 4. Doğal seslendirme (podcast ve video)
+Anahtar yalnızca bu tarayıcıda saklanır; GitHub'a veya başka bir yere gönderilmez. Bulut modelinde her üretim token harcar.
+Soru bankasını lokal modelle doldurursanız testler token harcamadan oluşur.
+
+## 4. Doğal seslendirme (podcast, video, dinleyerek öğren)
 ⚙ Ayarlar › **Seslendirme** bölümünden motoru seçin ve **Sesi dene** ile kadın + erkek sesi dinleyin.
+Otomatik modda anahtarı olan en iyi motor kullanılır; hata verirse sıradakine geçilir. Ayrıntılı karşılaştırma: [SES.md](SES.md).
 
 | Motor | Kalite | Gerekenler |
 |---|---|---|
-| ElevenLabs | Gerçek insan sesi, duygulu (v3 diyalog modeli) | elevenlabs.io API anahtarı (ücretsiz aylık kota). En iyi sonuç için Ses Kütüphanesi'nden Türkçe anadil kadın ve erkek ses ekleyip Ayarlar'da seçin |
-| Gemini TTS | Çok doğal, çok konuşmacılı, Türkçe destekli | aistudio.google.com'dan Gemini API anahtarı |
-| OpenAI TTS | Çok doğal | OpenAI API anahtarı (ücretli) |
-| Lokal sunucu | XTTS-v2 / Chatterbox ile çok doğal | Aşağıdaki yardımcı sunucu + GPU |
-| Tarayıcıda Piper | İyi, ücretsiz, çevrimdışı | İlk kullanımda ~60 MB ses modeli iner |
-| Tarayıcı sesi | Edge'de doğal (Emel/Ahmet), Chrome'da robotik | Hiçbir şey |
+| ElevenLabs v4 | En gerçekçi, duygulu | elevenlabs.io anahtarı (ayda 10.000 ücretsiz kredi). Türkçe anadil sesleri "Sesleri listele" ile seçin. |
+| Gemini TTS | Çok doğal, 2 konuşmacı tek istekte | **Ücretsiz** anahtar: https://aistudio.google.com/apikey |
+| MiniMax | Türkçe kadın/erkek hazır ses, **ses klonlama**, metinle ses tasarımı | platform.minimax.io anahtarı (ücretli; klon için hesap doğrulaması gerekebilir) |
+| Google Cloud TTS | Chirp 3 HD, çok doğal | Faturalandırma açık Google Cloud projesi + API anahtarı (ayda 1M karakter ücretsiz) |
+| Azure Speech | Emel / Ahmet | Azure Speech kaynağı (F0: ayda 0,5M karakter ücretsiz) + bölge |
+| OpenAI TTS | Doğal, Türkçe aksanı belirgin | OpenAI anahtarı (ücretli) |
+| Lokal sunucu | Chatterbox klonu / edge-tts (Emel/Ahmet) / Piper | 5. bölüm |
+| Tarayıcıda Piper | İyi, ücretsiz, çevrimdışı; **Türkçede yalnız erkek** | İlk kullanımda ~60 MB ses modeli iner |
 
-Otomatik modda sırasıyla ElevenLabs anahtarı → Gemini anahtarı → OpenAI anahtarı → lokal sunucu → tarayıcıda Piper seçilir.
+**Ses klonlama (MiniMax):** Ayarlar › Seslendirme › MiniMax › Ses klonla.
+1. 10 sn – 5 dk kayıt yapın ya da dosya seçin; okunacak örnek metin ekranda.
+2. İzni onaylayın.
+3. **Klonla** deyin. Klon kadın ya da erkek ses olarak seçilir.
 
-## 5. Yardımcı sunucu (kaliteli ses, video sesi, ses/YouTube dökümü, web araması)
+Yalnız kendi sesinizi ya da izin aldığınız bir sesi klonlayın.
 
-Gerekenler: Python 3.11, (GPU için) güncel NVIDIA sürücüsü.
+## 5. Yardımcı sunucu (uygulamayı sunar, kaliteli ses, klonlama, döküm, web)
+
+Gerekenler: Python 3.11 ya da 3.12. GPU özellikleri için güncel NVIDIA sürücüsü.
 
 ```powershell
-cd server
+cd defter-studio\server
 baslat.bat
 ```
-İlk çalıştırmada sanal ortam kurulur ve paketler yüklenir. Ardından uygulamada ⚙ Ayarlar › Lokal yardımcı sunucu
-kutusuna `http://localhost:8765` yazıp **Kontrol et** deyin.
+İlk çalıştırmada sanal ortam kurulur ve paketler yüklenir. Ardından tarayıcıda `http://localhost:8765/` kendiliğinden açılır;
+sunucu adresi ayarı gerekmez. GitHub Pages'ten kullanırken sunucuyu bağlamak için Ayarlar › Lokal yardımcı sunucu kutusuna
+`http://localhost:8765` yazıp **Kontrol et** deyin.
 
-Seslendirme motorunu ortam değişkeniyle seçin:
-
-| `DEFTER_TTS` | Kalite | Kurulum |
-|---|---|---|
-| `piper` (varsayılan) | İyi, çok hızlı, CPU yeter | `pip install piper-tts` (requirements'ta var). Sesler ilk kullanımda iner. |
-| `xtts` | Çok doğal, ses klonlama | `pip install coqui-tts` + PyTorch CUDA. `server/voices/A.wav`, `B.wav` koyarsanız o seslerle konuşur. Lisans: ticari olmayan. |
-| `chatterbox` | Çok doğal, duygu kontrollü | `pip install chatterbox-tts` + PyTorch CUDA |
-| `edge` | Çok doğal Türkçe (Emel/Ahmet) | `pip install edge-tts` — ücretsiz ama çevrimiçi, açık kaynak değil |
-
-RTX 5090 (Blackwell) için PyTorch'un CUDA 12.8+ sürümünü kurun:
+**GPU ile ücretsiz ses klonlama (Chatterbox Multilingual, MIT, Türkçe):**
 ```powershell
-pip install torch --index-url https://download.pytorch.org/whl/cu128
+tools\kur-gpu.bat
 ```
+Bu betik RTX 50xx için PyTorch CUDA 12.8'i ve Chatterbox'ı kurar. Sonra uygulamada Ayarlar › Seslendirme › Lokal sunucu
+bölümünden kadın ve erkek referans sesinizi kaydedin (6–30 sn). Podcast ve video bu seslerle konuşur.
+
+Seslendirme sırası (`DEFTER_TTS=auto`): referans ses varsa Chatterbox → XTTS-v2 → edge-tts → Piper. Belirli bir motoru
+zorlamak için `DEFTER_TTS` ortam değişkenini ayarlayın:
+
+| `DEFTER_TTS` | Ne yapar |
+|---|---|
+| `auto` (varsayılan) | Kurulu ve çalışan ilk motor |
+| `chatterbox` | Klon (referans ses gerekir), duygu ayarı |
+| `xtts` | Klon, çok doğal (`pip install coqui-tts`; lisans ticari olmayan) |
+| `edge` | Emel (kadın) / Ahmet (erkek); ücretsiz ama çevrimiçi ve resmî API değil |
+| `piper` | Çevrimdışı, hızlı; Türkçede yalnız erkek |
+
+Diğer ayarlar:
+- `DEFTER_WHISPER` (döküm modeli, varsayılan `large-v3-turbo`)
+- `DEFTER_DEVICE` (`cuda`/`cpu`)
+- `OLLAMA_HOST`
+- `DEFTER_PROXY_HOSTS` (vekil izin listesi)
+- `DEFTER_OPEN=0` (tarayıcıyı açma)
 
 ## 6. Kendi bilgisayarınızda geliştirme
 ```powershell
 cd defter-studio
-python -m http.server 8080
+python -m http.server 8099
+python tests\mock_llm.py      # ayrı pencerede: sahte model
+python tests\e2e.py           # uçtan uca testler (pip install playwright; playwright install chromium)
 ```
-`http://localhost:8080` adresini açın. Bu adres de yardımcı sunucunun izin listesinde vardır.
