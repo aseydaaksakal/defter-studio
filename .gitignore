@@ -3,3 +3,5 @@ server/voices/
 __pycache__/
 .DS_Store
 
+
+server/models_state.json

@@ -47,7 +47,9 @@ const DEFAULTS = {
   googleKey: '', googleF: '', googleM: '',
   azureKey: '', azureRegion: 'westeurope', azureF: '', azureM: '',
   openaiKey: '', openaiModel: 'gpt-4o-mini-tts',
-  serverF: '', serverM: ''
+  serverF: '', serverM: '', serverModel: '',   // serverModel: lokal model kimliği ('' = otomatik)
+  cast: [],                                    // Ses kadrosu: [{name, gender, voice}] — podcast "Ses kadrom" seçeneği
+  narratorVoice: null                          // Video anlatıcısı için ses kütüphanesinden {name, gender}
 };
 export async function loadTTS() {
   const s = { ...DEFAULTS, ...(await getSetting('tts', {})) };
@@ -101,7 +103,12 @@ export async function voicePool(engine, cfg) {
       return merge(own(cfg.googleF, cfg.googleM), best);
     }
     case 'gemini': return merge(own(cfg.geminiF, cfg.geminiM), VOICES.gemini);
-    case 'server': return { f: [cfg.serverF || 'f'], m: [cfg.serverM || 'm'] };
+    case 'server': {
+      // Ses kütüphanesindeki bütün kayıtlar cinsiyete göre sırayla dağıtılır: 4-5 konuşmacı aynı sesi paylaşmaz
+      const vs = await serverVoices().catch(() => []);
+      const pick = (g, own) => { const l = [...new Set([own, ...vs.filter((v) => v.gender === g).map((v) => v.name)].filter(Boolean))]; return l.length ? l : [g]; };
+      return { f: pick('f', cfg.serverF), m: pick('m', cfg.serverM) };
+    }
     default: return VOICES[engine] || { f: ['f'], m: ['m'] };
   }
 }
@@ -110,7 +117,8 @@ export async function assignVoices(speakers, engine, cfg = {}) {
   const used = { f: 0, m: 0 };
   return Object.fromEntries(speakers.map((s) => {
     const g = s.gender === 'm' ? 'm' : 'f';
-    return [s.id, s.voice || pool[g][used[g]++ % pool[g].length]];
+    // serverVoice: konuşmacıya (Ses kadrosu) özel seçilmiş kütüphane sesi; yalnız lokal sunucuda geçerli
+    return [s.id, (engine === 'server' && s.serverVoice) || s.voice || pool[g][used[g]++ % pool[g].length]];
   }));
 }
 
@@ -340,7 +348,7 @@ async function openaiLine(line, voice, cfg, style) {
 async function serverLine(line, voice, cfg, style, lang, speaker) {
   const base = await serverUrl();
   if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
-  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(line.text), speaker: speaker.id, gender: speaker.gender === 'm' ? 'm' : 'f', voice, tone: line.tone || '', lang: langCode(lang) }) });
+  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(line.text), speaker: speaker.id, gender: speaker.gender === 'm' ? 'm' : 'f', voice, model: cfg.serverModel || '', tone: line.tone || '', lang: langCode(lang) }) });
   if (!r.ok) throw new TTSError('Sunucu TTS: ' + (await r.text()).slice(0, 200), r.status, r.status >= 500);
   return r.blob();
 }
@@ -348,9 +356,9 @@ export async function serverVoices() {
   const base = await serverUrl(); if (!base) return [];
   const r = await fetch(base + '/voices'); return r.ok ? (await r.json()).voices || [] : [];
 }
-export async function uploadServerVoice(name, gender, blob) {
+export async function uploadServerVoice(name, gender, blob, { label = '', text = '' } = {}) {
   const base = await serverUrl(); if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
-  const fd = new FormData(); fd.append('name', name); fd.append('gender', gender); fd.append('file', blob, name + '.wav');
+  const fd = new FormData(); fd.append('name', name); fd.append('gender', gender); fd.append('label', label); fd.append('text', text); fd.append('file', blob, name + '.wav');
   const r = await fetch(base + '/voices', { method: 'POST', body: fd });
   if (!r.ok) throw new TTSError('Sunucu: ' + (await r.text()).slice(0, 200));
   return r.json();
@@ -359,6 +367,18 @@ export async function deleteServerVoice(name) {
   const base = await serverUrl(); if (!base) return;
   await fetch(base + '/voices/' + encodeURIComponent(name), { method: 'DELETE' });
 }
+// Ses kütüphanesi: dinleme adresi, ad/cinsiyet/transkript güncelleme, hazır tasarımlar, yeni ses tasarlama
+export async function serverVoiceUrl(name) { const base = await serverUrl(); return base ? `${base}/voices/${encodeURIComponent(name)}/audio` : ''; }
+async function srvJson(path, opt) {
+  const base = await serverUrl(); if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
+  const r = await fetch(base + path, opt);
+  if (!r.ok) { let m = await r.text(); try { m = JSON.parse(m).detail || m; } catch {} throw new TTSError(String(m).slice(0, 300), r.status); }
+  return r.json();
+}
+const jsonOpt = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export const patchServerVoice = (name, patch) => srvJson('/voices/' + encodeURIComponent(name), jsonOpt('PATCH', patch));
+export const serverPresets = () => srvJson('/voices/presets');
+export const designServerVoice = (spec) => srvJson('/voices/design', jsonOpt('POST', spec));
 
 let piperW = null, piperSeq = 0;
 const piperWaits = {};
@@ -437,7 +457,7 @@ export async function synthesize(artifactId, lines, speakers, lang, { format = '
 
 async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format, onProgress, onPiece) {
   const voices = await assignVoices(speakers, engine, cfg);
-  const model = { gemini: cfg.geminiModel, elevenlabs: cfg.elevenModel, minimax: cfg.minimaxModel, openai: cfg.openaiModel, azure: cfg.azureRegion }[engine] || '';
+  const model = { gemini: cfg.geminiModel, elevenlabs: cfg.elevenModel, minimax: cfg.minimaxModel, openai: cfg.openaiModel, azure: cfg.azureRegion, server: cfg.serverModel }[engine] || '';
   const key = hash(engine + JSON.stringify(voices) + model + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone])));
   const cached = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.key === key).first();
   if (cached) return { engine, blob: cached.blob, timings: cached.timings, cached: true };

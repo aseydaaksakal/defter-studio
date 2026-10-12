@@ -45,6 +45,16 @@ sesi olarak yol haritasındalar.
 `kugelaudio-0-open` (MIT, 7–9B, ~19 GB VRAM) Türkçeyi destekliyor. Ama hazır sesleri Almanca ve İngilizce, klonlaması yok;
 Türkçede önerilmez.
 
+## Ses kütüphanesi, klon ve model yöneticisi (0.4.0)
+
+- **OmniVoice nerede çalışır?** Yalnız lokal sunucuda (PyTorch + GPU). Tarayıcıda çalışmaz. Pages üzerindeki uygulama lokal sunucuya (`localhost:8765`) bağlanınca aynı sesleri kullanır; Chrome yerel ağ izni sorar.
+- **Çok ses:** Ayarlar → Lokal sunucu → "Ses kütüphanesi". 8 hazır tasarım (kadın/erkek, genç/orta yaş/derin/öğretmen…) tek tuşla üretilir. OmniVoice tasarımı yalnız zh/en ile eğitildi; Türkçede kararsız olabilir, klon en kararlı yoldur.
+- **Klon (sınırsız):** Kayıt yükle, ad + cinsiyet + (varsa) transkript gir, izin kutusunu işaretle. Klon kütüphaneye girer; podcast kadrosunda (en fazla 6) ve video anlatıcısında seçilir. Sayı sınırı yoktur, disk yeter.
+- **Kadro:** Podcast seçeneklerinde "Konuşmacı sayısı" (3/4/5) ve "Ses kadrom (Ayarlar)".
+- **Model yöneticisi:** "Lokal modeller" bölümü; 25 MIT model + VoxCPM2 + OmniVoice. İndirmeden önce boyut sorulur. 👍 kalır, 👎 diskten silinir. Komut satırı: `tools/modelleri-indir.bat`.
+- **Çalıştırılabilenler:** Trendyol-TTS, VoxCPM2, Pocket TTS, OmniVoice (+ Bark, KugelAudio dene-dinle). Diğerleri "yalnız indir"; MLX olanlar yalnız Apple.
+- **Lisans/uyarı:** OmniVoice ağırlıkları ticari değil. Gerçek kişi sesi taklit eden modeller (`omersaidd/*`, `emirhanbilgic/*`) yalnız kendi sesiniz/izinli kullanım için.
+
 ## Neden "sadece erkek sesi" çıkıyordu?
 - Tarayıcıda çalışan ücretsiz **Piper**'ın üç Türkçe sesi var (dfki, fahrettin, fettah). Üçü de **erkek**; Türkçe kadın Piper sesi yok.
 - Kullanıcının Chrome'unda (Windows) **hiç Türkçe tarayıcı sesi yok**: 22 ses var, hiçbiri Türkçe değil (2026-10-12 testi).

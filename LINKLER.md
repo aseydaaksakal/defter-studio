@@ -1,6 +1,6 @@
 # Bağlantılar
 
-Son güncelleme: 2026-10-12 · sürüm 0.3.0
+Son güncelleme: 2026-10-13 · sürüm 0.3.0
 
 ## Uygulama
 | | |

@@ -8,7 +8,9 @@ cd /d %~dp0\..\server
 if not exist .venv ( echo Once server\baslat.bat calistirin. & pause & exit /b 1 )
 call .venv\Scripts\activate
 pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128 || goto :hata
-pip install omnivoice pocket-tts || goto :hata
+pip install omnivoice pocket-tts huggingface_hub || goto :hata
+REM Trendyol-TTS / VoxCPM2 icin (Python 3.10-3.12 gerekir; olmazsa bu satir hata verir, digerleri calisir):
+pip install voxcpm
 python -c "import torch; print('CUDA:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 echo.
 echo Kuruldu. server\baslat.bat ile sunucuyu yeniden baslatin; ilk podcastte kadin ve erkek ses bir kez tasarlanir (model iner, birkac dakika).

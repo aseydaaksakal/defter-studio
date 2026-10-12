@@ -40,7 +40,7 @@ export function render(root, art, api) {
   const speedBtn = h('button', { class: 'chip', title: 'Oynatma hızı' }, '1,0×');
   const status = h('span', { class: 'muted small', role: 'status' }, 'Ses hazırlanıyor…');
   const list = h('div', { class: 'transcript' });
-  const cast = h('div', { class: 'row gap wrap' }, speakers.map((s) => h('span', { class: 'chip spk-' + s.id }, h('b', {}, s.name), ` · ${s.role} · ${s.gender === 'm' ? 'erkek' : 'kadın'} sesi`)));
+  const cast = h('div', { class: 'row gap wrap' }, speakers.map((s) => h('span', { class: 'chip spk-' + s.id }, h('b', {}, s.name), ` · ${s.role} · ${s.gender === 'm' ? 'erkek' : 'kadın'} sesi${s.serverVoice ? ' · ' + s.serverVoice : ''}`)));
 
   lines.forEach((l, i) => list.append(h('div', { class: 'tline spk-' + l.speaker, 'data-i': i, onclick: () => { if (!editing) seekLine(i); } },
     h('div', { class: 'tline-who' }, byId[l.speaker]?.name || l.speaker), h('div', { class: 'tline-text' }, l.text))));

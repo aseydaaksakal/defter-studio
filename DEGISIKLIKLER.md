@@ -1,5 +1,8 @@
 # Değişiklikler
 
+## 2026-10-13 — teslim
+- 0.4.0: ses kütüphanesi, 3-5 konuşmacı, klon, TTS model yöneticisi
+
 ## 2026-10-12 — teslim
 - 0.3.2: Gemini kota bekleme ve kaldığı yerden devam, kadın sesi öncelikli motor sırası, lokal OmniVoice + Pocket TTS Türkçe (kotasız kadın/erkek), ustalık sanatı bölümü
 

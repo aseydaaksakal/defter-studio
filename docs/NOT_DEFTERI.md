@@ -5,6 +5,20 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 
 ---
 
+## 2026-10-13 — 0.4.0 — ses kütüphanesi, 3-5 konuşmacı, klon, model yöneticisi
+
+- **İstek:** Birden fazla Türkçe kadın/erkek ses, 3-5 kişilik podcast, 25 MIT TTS modelini seçilebilir yapı, sınırsız klon.
+- **Yapılan:**
+  - `server/model_katalog.json` (27 kayıt), `server/modeller.py` (indir/puan/sil + CLI), `server/adaptorler.py` (VoxCPM/Trendyol, Bark, KugelAudio).
+  - Ses kütüphanesi: her ses = referans wav + json. Tasarlanan ses bir kez üretilip klon referansı olarak saklanır; bütün motorlar aynı sesi kullanır.
+  - Ayarlar'da `js/voice-library.js` (kütüphane, tasarım, klon, kadro) ve `js/model-manager.js` (👍/👎, dene, indir).
+  - Podcast: 3/4/5 konuşmacı, "Ses kadrom". Video: anlatıcı sesi seçilebilir.
+- **Hata:** OmniVoice klonu transkript yoksa tasarlanan sese dönüyordu. **Çözüm:** `ref_text` yoksa gönderilmiyor.
+- **Hata (test):** Liste her işlemden sonra yeniden çizildiği için eski düğüm tutamağı bozuluyordu. **Çözüm:** Satırlara `data-id`, açık "Dene" panelleri `tryBoxes` ile korunuyor; testte yerel `locator` kullanılıyor.
+- **Ders:** Alt dize eşleşmesi `Trendyol/Trendyol-TTS` ile `niobures/Trendyol-TTS` satırlarını karıştırdı; kimlikle seç.
+- **Doğrulanmadı:** GPU adaptörleri (OmniVoice Türkçe tasarım, VoxCPM, Bark, KugelAudio) bu ortamda GPU olmadığından yalnız sahte motorla sınandı.
+- **Not:** OmniVoice ağırlıkları CC-BY-NC (ticari değil). `omersaidd/*` ve `emirhanbilgic/*` gerçek kişileri taklit edebilir. 5 model yalnız Apple MLX.
+
 ## 2026-10-12 — 0.3.2 — kotasız ses, Gemini kota davranışı, ustalık sanatı
 
 - **Belirti:** Gemini kadın+erkek sesi geldi, bir dakika sonra yeniden Piper (erkek) sesine düştü.

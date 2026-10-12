@@ -72,6 +72,8 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 
 ## 6. Sıradaki iş (Faz B, öncelik sırasıyla)
 
+0. **0.4.0 ses kütüphanesi/model yöneticisi kullanıcının PC'sinde doğrulanacak:** `tools/kur-gpu.bat`, `tools/modelleri-indir.bat indir --onerilen`, sonra Ayarlar'da modelleri dinle, beğenmediğini 👎 ile sil. GPU adaptörleri (OmniVoice Türkçe tasarım, VoxCPM/Trendyol, Bark, KugelAudio) gerçek donanımda denenmedi; ilk çalıştırmada düzeltme gerekebilir. Depoyu private yapma ertelendi (Pages için GitHub Pro gerekir).
+
 1. **Lokal sesleri kullanıcının bilgisayarında doğrula** (OmniVoice/Pocket TTS; gerekirse API düzeltmesi). Ardından **NotebookLM ile birebir eşleşme**: video seslendirmeli sunum, arayüz ayrıntıları.
    **Gerçek seslerle doğrulama:** Kullanıcı ücretsiz Gemini anahtarı ekleyince podcast ve video ses kalitesi dinlenir. Varsa MiniMax klonu denenir.
 2. **Yapay zeka görselleri:** slayt, infografik ve video sahnelerine görsel.
@@ -87,7 +89,7 @@ Ayrıntı: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
 ## 7. Çalıştırma ve teslim
 
 ```bash
-python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 36 kontrol
+python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 58 kontrol
 bash tools/teslim.sh "kısa açıklama"                                              # test + günlük + commit + push + bağlantılar
 ```
 

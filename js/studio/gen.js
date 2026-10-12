@@ -4,6 +4,7 @@ import { chat, chatJSON } from '../llm.js';
 import { buildContext, sliceContexts } from '../sources.js';
 import { generateExact, shortNote } from './batch.js';
 import { summarize } from '../verify.js';
+import { loadTTS } from '../tts.js';
 
 export const LANGS = ['Türkçe', 'English', 'Deutsch', 'Français', 'Español', 'العربية', 'Русский', 'Italiano', 'Nederlands', '日本語'];
 
@@ -21,22 +22,27 @@ async function json(system, user, signal, role) {
 }
 const refsOf = (ctx) => ctx.refs.map(({ n, sourceId, title, page, text }) => ({ n, sourceId, title, page, text: text.slice(0, 600) }));
 
-// Biçime göre konuşmacı kadrosu (cinsiyet sesleri ayrı tutulur)
-export function castFor(format, voices = 'fm') {
-  const F = ['Deniz', 'Elif', 'Zeynep'], M = ['Kaan', 'Emre', 'Murat'];
-  const g = voices === 'ff' ? ['f', 'f', 'f'] : voices === 'mm' ? ['m', 'm', 'm'] : ['f', 'm', 'f'];
-  const name = (i) => (g[i] === 'f' ? F[i] : M[i]);
-  const mk = (roles) => roles.map((r, i) => ({ id: 'ABCD'[i], name: name(i), gender: g[i], role: r }));
-  switch (format) {
-    case 'brief': return mk(['anlatıcı']);
-    case 'lecture': return mk(['hoca', 'öğrenci']);
-    case 'consult': return mk(['moderatör', 'uzman 1', 'uzman 2']);
-    case 'munazara': return mk(['moderatör ve hakem', 'lehte konuşmacı', 'aleyhte konuşmacı']);
-    case 'exam': return mk(['sınav görevlisi', 'aday', 'eğitmen']);
-    case 'story': return mk(['anlatıcı', 'karakter']);
-    case 'critique': return mk(['baş eleştirmen', 'ikinci uzman']);
-    default: return mk(['sunucu', 'sunucu']);
-  }
+// Biçime göre konuşmacı kadrosu. count: 'auto' (biçimin kendi kadrosu) ya da 2-6; roster: Ayarlar'daki "Ses kadrosu"
+// ([{name, gender, voice}]); voices === 'cast' ise adlar, cinsiyetler ve kütüphane sesleri oradan gelir.
+const ROLES = {
+  brief: ['anlatıcı'], lecture: ['hoca', 'öğrenci'], consult: ['moderatör', 'uzman 1', 'uzman 2'],
+  munazara: ['moderatör ve hakem', 'lehte konuşmacı', 'aleyhte konuşmacı'], exam: ['sınav görevlisi', 'aday', 'eğitmen'],
+  story: ['anlatıcı', 'karakter'], critique: ['baş eleştirmen', 'ikinci uzman'], deep: ['sunucu', 'sunucu'], debate: ['sunucu', 'sunucu']
+};
+const EXTRA_ROLE = { deep: 'sunucu', debate: 'tartışmacı', lecture: 'öğrenci', consult: 'uzman', munazara: 'jüri üyesi', exam: 'gözlemci', story: 'karakter', critique: 'uzman' };
+export const MAX_SPEAKERS = 6;
+export function castFor(format, voices = 'fm', count = 'auto', roster = []) {
+  const F = ['Deniz', 'Elif', 'Zeynep', 'Ayşe', 'Selin', 'Defne'], M = ['Kaan', 'Emre', 'Murat', 'Can', 'Mert', 'Berk'];
+  const base = ROLES[format] || ROLES.deep;
+  const n = format === 'brief' ? 1 : Math.min(MAX_SPEAKERS, Math.max(base.length, count === 'auto' ? base.length : parseInt(count, 10) || base.length));
+  const roles = Array.from({ length: n }, (_, i) => base[i] || (format === 'consult' ? `uzman ${i}` : `${EXTRA_ROLE[format] || 'konuk'} ${i - base.length + 1}`));
+  const useCast = voices === 'cast' && Array.isArray(roster) && roster.length > 0;
+  return roles.map((role, i) => {
+    const r = useCast ? roster[i] : null;
+    const g = r ? (r.gender === 'm' ? 'm' : 'f') : voices === 'ff' ? 'f' : voices === 'mm' ? 'm' : i % 2 ? 'm' : 'f';
+    const nm = (r?.name || '').trim() || (g === 'f' ? F : M)[i]; // varsayılan adlar eski sürümle aynı (dizine göre)
+    return { id: 'ABCDEF'[i], name: nm, gender: g, role, ...(r?.voice ? { serverVoice: r.voice } : {}) };
+  });
 }
 
 // Sınav türleri: soru tarzı, şık sayısı ve soru başına süre
@@ -110,14 +116,16 @@ export const TOOLS = {
       ] },
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
       { key: 'length', label: 'Uzunluk', type: 'seg', default: 'default', choices: [{ v: 'short', t: 'Kısa' }, { v: 'default', t: 'Varsayılan' }, { v: 'long', t: 'Uzun' }] },
-      { key: 'voices', label: 'Sesler', type: 'seg', default: 'fm', choices: [{ v: 'fm', t: 'Kadın + erkek' }, { v: 'ff', t: 'İki kadın' }, { v: 'mm', t: 'İki erkek' }] },
+      { key: 'count', label: 'Konuşmacı sayısı', type: 'seg', default: 'auto', choices: [{ v: 'auto', t: 'Otomatik' }, { v: '3', t: '3' }, { v: '4', t: '4' }, { v: '5', t: '5' }] },
+      { key: 'voices', label: 'Sesler', type: 'seg', default: 'fm', choices: [{ v: 'fm', t: 'Kadın + erkek' }, { v: 'ff', t: 'Kadın' }, { v: 'mm', t: 'Erkek' }, { v: 'cast', t: 'Ses kadrom (Ayarlar)' }] },
       { key: 'focus', label: 'Yapay zeka sunucuları bu bölümde neye odaklanmalı?', type: 'text', placeholder: 'Örn. Deniz sahaları ve zorunlu cihazlar' }
     ],
     async generate(nb, o, { signal, progress }) {
       const ctx = await buildContext(nb, o.focus);
       const segCount = { short: 2, default: 4, long: 7 }[o.length] || 4;
-      const speakers = castFor(o.format, o.voices);
-      const cast = speakers.map((s) => `${s.id}: ${s.name} (${s.gender === 'm' ? 'erkek' : 'kadın'}, ${s.role})`).join('; ');
+      const speakers = castFor(o.format, o.voices, o.count, (await loadTTS()).cast);
+      const nSp = speakers.length;
+      const cast = speakers.map((s) => `${s.id}: ${s.name} (${s.gender === 'm' ? 'erkek' : 'kadın'}, ${s.role})`).join('; ') + (nSp > 2 ? `. Kadroda ${nSp} konuşmacı var: hepsi birkaç kez söz alsın, birbirlerine doğrudan seslensinler ve aynı anda iki kişi konuşmasın` : '');
       const style = {
         deep: 'Sunucular konuyu merakla, örneklerle ve benzetmelerle derinlemesine işler. Kısa araya girmeler ("Evet, tam olarak", "Dur bir saniye…"), şaşırma ve gülme anları olur.',
         brief: 'Tek anlatıcı kısa ve net bir özet sunar.',
@@ -142,7 +150,7 @@ export const TOOLS = {
         const prev = lines.slice(-4).map((l) => `${l.speaker}: ${l.text}`).join('\n');
         const part = await json(
           `Doğal, akıcı ve konuşma diline uygun podcast senaryoları yazan bir senaristsin. ${BASE_RULES(o.lang)}\n- Metin yüksek sesle okunacak: sayıları ve kısaltmaları ilk geçtiği yerde açık söyle, cümleleri kısa tut.`,
-          `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nKadro: ${cast}\nTarz: ${style}\nBölüm başlığı: ${plan.title}\nŞu an ${i + 1}. / ${segs.length} kısım: ${segs[i].topic}\nİşlenecek noktalar: ${(segs[i].points || []).join('; ')}\n${i === 0 ? 'İlk kısım: dinleyiciyi karşıla, konuşmacılar kendini tanıtsın.' : 'Önceki son replikler:\n' + prev + '\nKaldığın yerden doğal devam et, tekrar selamlama yapma.'}\n${i === segs.length - 1 ? 'Son kısım: ana fikirleri 3 maddede toparla, dinleyiciye kendini test edeceği bir soru bırak ve vedalaş.' : ''}\nYaklaşık 14-20 replik. Her replikte konuşan kişinin kimliğini (${ids.join(', ')}) ve kısa bir ton notu ver (ör. "meraklı", "heyecanlı", "sakin", "gülerek").\nJSON: {"lines": [{"speaker": "${ids[0]}", "tone": "meraklı", "text": "..."}]}`,
+          `${ctxBlock(ctx)}\n${focusLine(o.focus)}\nKadro: ${cast}\nTarz: ${style}\nBölüm başlığı: ${plan.title}\nŞu an ${i + 1}. / ${segs.length} kısım: ${segs[i].topic}\nİşlenecek noktalar: ${(segs[i].points || []).join('; ')}\n${i === 0 ? 'İlk kısım: dinleyiciyi karşıla, konuşmacılar kendini tanıtsın.' : 'Önceki son replikler:\n' + prev + '\nKaldığın yerden doğal devam et, tekrar selamlama yapma.'}\n${i === segs.length - 1 ? 'Son kısım: ana fikirleri 3 maddede toparla, dinleyiciye kendini test edeceği bir soru bırak ve vedalaş.' : ''}\nYaklaşık ${14 + (nSp - 2) * 4}-${20 + (nSp - 2) * 5} replik. Her replikte konuşan kişinin kimliğini (${ids.join(', ')}) ve kısa bir ton notu ver (ör. "meraklı", "heyecanlı", "sakin", "gülerek").\nJSON: {"lines": [{"speaker": "${ids[0]}", "tone": "meraklı", "text": "..."}]}`,
           signal);
         for (const l of part.lines || []) if (l.text) lines.push({ speaker: ids.includes(l.speaker) ? l.speaker : ids[0], tone: l.tone || '', text: String(l.text) });
       }

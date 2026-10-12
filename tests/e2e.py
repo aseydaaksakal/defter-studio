@@ -9,7 +9,8 @@ Defter Studio uçtan uca testi (Playwright + sahte model). Gerçek model ve inte
 Kapsam: ayarlar ve ses bölümü, defter oluşturma, dosya yükleme + metin ekleme, sohbet (kaynak denetimi), tam sayılı test (20),
 bilgi kartı (15), slayt (5 ve 20), podcast (ses dosyası + akış), video (erkek anlatıcı), dinleyerek öğren, soru bankası
 (doldur → bankadan test → istatistik), yeniden adlandırma, sürüm geçmişi + geri yükleme, JSON düzenleme, silme,
-dışa aktarma (indirme), mobil düzen, sayfa hataları.
+dışa aktarma (indirme), ses kütüphanesi + ses tasarımı + 5 konuşmacılı podcast + lokal model yöneticisi (indir, dene, beğen/sil),
+mobil düzen, sayfa hataları.
 """
 import json
 import os
@@ -297,6 +298,81 @@ def main():
         ok("Sohbeti sil", not pg.query_selector(".chat-log .msg.user"))
         pg.click("button[aria-label='Tüm içerikleri sil']"); pg.click(".modal-foot >> text=Hepsini sil"); pg.wait_for_timeout(1200)
         ok("Tüm içerikleri sil", len(pg.query_selector_all(".studio-pane .art-row")) == 0)
+
+        # --- 0.4.0: ses kütüphanesi, ses tasarımı, 5 kişilik kadro, model yöneticisi (sahte yardımcı sunucu)
+        pg.on("dialog", lambda d: d.accept())
+        api = lambda path, post=False: pg.evaluate("([m, p, post]) => fetch(m + p, post ? { method: 'POST' } : {}).then((r) => r.json())", [MOCK, path, post])
+
+        api("/_reset", True)
+
+        def open_settings_section(*summaries):
+            pg.goto(APP); pg.wait_for_selector(".nb-card")
+            pg.click("button[aria-label=Ayarlar]"); pg.wait_for_selector(".voice-settings")
+            for sm in summaries:
+                pg.click(f"summary:has-text('{sm}')"); pg.wait_for_timeout(250)
+
+        open_settings_section("Lokal sunucu", "Ses tasarla")
+        wait_until(lambda: "Sunucu çalışıyor" in txt(".voice-settings"), 10)
+        ok("Ses kütüphanesi: lokal sunucuya bağlandı", "Sunucu çalışıyor" in txt(".voice-settings"), txt(".voice-settings")[:0])
+        pg.click("text=Hazır 8 sesin hepsini oluştur")
+        n = wait_until(lambda: len(pg.query_selector_all(".vl-row")) == 8 and 8, 30)
+        ok("Ses tasarımı: 8 hazır ses kütüphanede", n == 8, f"{len(pg.query_selector_all('.vl-row'))} ses")
+        pg.query_selector(".vl-row").scroll_into_view_if_needed(); pg.screenshot(path=f"{SHOTS}/ses-kutuphanesi.png")
+        pg.query_selector_all(".vl-row")[-1].query_selector("button:text-is('Sil')").click()
+        ok("Ses kütüphanesi: ses silme", wait_until(lambda: len(pg.query_selector_all(".vl-row")) == 7, 8))
+        pg.query_selector_all(".vl-row")[0].query_selector("button:text-is('Adı değiştir')").is_visible()
+        pg.click("summary:has-text('Ses kadrosu')")
+        pg.click("text=Kütüphaneden doldur")
+        ok("Ses kadrosu: kütüphaneden 5 konuşmacı dolduruldu", len(pg.query_selector_all(".cast-i")) == 5)
+        pg.fill(".cast-i >> nth=0 >> xpath=following-sibling::input", "Deniz Hoca")
+        pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(400)
+
+        api("/_log/clear", True)
+        pg.click(".nb-card:not(.new) >> nth=0"); pg.wait_for_selector(".tile")
+        pg.click('.tile >> text="Sesli Özet"'); pg.wait_for_selector(".modal .cust")
+        pg.click('.modal .seg[aria-label="Konuşmacı sayısı"] button[data-v="5"]')
+        pg.click('.modal .seg[aria-label="Sesler"] button[data-v="cast"]')
+        pg.click("text=Hemen oluştur"); pg.wait_for_timeout(300)
+        ok("Podcast (5 konuşmacı, ses kadrosu): üretildi", open_latest(r"^Test Bölümü", 120))
+        wait_until(lambda: "hazır" in txt(".player-row"), 60)
+        ok("Podcast: 5 konuşmacı kartı, özel ad kullanıldı", len(pg.query_selector_all(".chip[class*='spk-']")) == 5 and txt(".chip.spk-A b") == "Deniz Hoca", txt(".chip.spk-A"))
+        log = api("/_log")["log"]
+        used = {x["voice"] for x in log}
+        ok("Podcast: sunucuya 5 farklı kütüphane sesi gitti", len(used) == 5 and not (used & {"f", "m"}), str(sorted(used)))
+        ok("Podcast: konuşmacı kimlikleri A–E", {x["speaker"] for x in log} == set("ABCDE"), str(sorted({x["speaker"] for x in log})))
+        pg.screenshot(path=f"{SHOTS}/podcast5.png"); close_viewer()
+
+        TR = "Trendyol/Trendyol-TTS"
+        row = lambda mid: next((r for r in pg.query_selector_all(".mm-row") if mid in r.inner_text()), None)
+        rl = lambda mid: pg.locator(f'.mm-row[data-id="{mid}"]')  # liste yeniden çizilebilir: tıklamalar her seferinde yeniden çözülür
+        open_settings_section("Lokal sunucu", "Lokal modeller")
+        n = wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 27 and 27, 15)
+        ok("Model yöneticisi: 25 MIT + 2 ek model listeleniyor", n == 27, f"{len(pg.query_selector_all('.mm-row'))} satır")
+        ok("Model yöneticisi: Apple MLX ayrı grupta, uyarıyla", "Apple MLX (5)" in txt(".mm") and "işe yaramaz" in txt(".mm"))
+        ok("Model yöneticisi: gerçek kişi sesi uyarısı", "izinsiz kullanmayın" in txt(".mm"))
+        pg.query_selector(".mm").scroll_into_view_if_needed(); pg.screenshot(path=f"{SHOTS}/modeller.png")
+        rl(TR).locator("button:has-text('İndir')").click()
+        ok("Model indirme: ilerleme çubuğu görünür", wait_until(lambda: row(TR).query_selector(".meter") is not None, 6))
+        ok("Model indirme: bitince 'indirildi'", wait_until(lambda: "indirildi" in row(TR).inner_text(), 25), row(TR).inner_text()[:60])
+        rl(TR).locator("button:has-text('Dene')").click()
+        pg.wait_for_selector(".mm-try textarea"); pg.click(".mm-try >> button:text-is('Konuştur')")
+        ok("Model dene: ses üretildi, istek model kimliğini taşıdı", wait_until(lambda: pg.query_selector(".mm-try audio:not([hidden])") is not None, 15) and api("/_log")["log"][-1]["model"] == TR)
+        rl(TR).locator("button:text-is('Bunu kullan')").click()
+        ok("Model seçimi: 'Kullanılıyor'", "Kullanılıyor" in row(TR).inner_text())
+        pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(400)
+        ok("Model seçimi ayarlara kaydedildi", pg.evaluate("async () => (await (await import('./js/tts.js')).loadTTS()).serverModel") == TR)
+
+        open_settings_section("Lokal sunucu")
+        pg.click("text=Sesi dene (kadın + erkek)")
+        wait_until(lambda: "çalışıyor (dinliyorsunuz)" in txt(".voice-settings"), 20)
+        ok("Podcast sesi: lokal sunucu isteği seçili modelle gitti", any(x["model"] == TR for x in api("/_log")["log"]))
+        pg.click("summary:has-text('Lokal modeller')"); wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 27, 10)
+        rl("alperiox/pocket-tts-turkish").locator("button[aria-label='Beğendim']").click()
+        ok("Beğendim: sunucuda kalıcı", wait_until(lambda: next(m for m in api("/models")["models"] if m["id"] == "alperiox/pocket-tts-turkish")["puan"] == "begen", 5))
+        rl(TR).locator("button[aria-label='Beğenmedim']").click()
+        ok("Beğenmedim: onayla → diskten silindi", wait_until(lambda: "indirildi" not in row(TR).inner_text() and not next(m for m in api("/models")["models"] if m["id"] == TR)["hazir"], 8))
+        pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(400)
+        ok("Silinen modelin seçimi temizlendi (otomatik motor)", pg.evaluate("async () => (await (await import('./js/tts.js')).loadTTS()).serverModel") == "")
 
         # --- Öğrenme bilimi sayfası, mobil düzen
         pg.goto(APP + "#/bilim"); pg.wait_for_timeout(800)

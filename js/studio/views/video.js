@@ -168,7 +168,9 @@ export function render(root, art, api) {
   let narrator = { id: 'A', name: 'Anlatıcı', gender: 'm', role: 'anlatıcı' };
   async function prepare() {
     const cfg = await loadTTS();
-    narrator = { ...narrator, gender: cfg.narrator === 'f' ? 'f' : 'm' };
+    // Ayarlar'da kütüphaneden bir anlatıcı sesi seçildiyse (lokal sunucu) o kullanılır; cinsiyet o sesten gelir
+    const nv = cfg.narratorVoice;
+    narrator = { ...narrator, gender: nv?.gender || (cfg.narrator === 'f' ? 'f' : 'm'), serverVoice: nv?.name || undefined };
     const engine = await resolveEngine(cfg);
     if (engine === 'browser') { live = true; status.textContent = 'Tarayıcı sesiyle anlatım'; return; }
     streaming = true;

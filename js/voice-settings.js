@@ -1,11 +1,11 @@
 // Ayarlar › Seslendirme bölümü: motor seçimi, anahtarlar, kadın/erkek ses seçimi, MiniMax ses klonlama ve tasarımı,
-// lokal sunucuda ücretsiz ses klonlama (Chatterbox/XTTS), "Sesi dene".
-import { h, icon, toast } from './ui.js';
+// lokal sunucuda ses kütüphanesi, tasarım, klonlama ve model yöneticisi (voice-library.js), "Sesi dene".
+import { h, toast } from './ui.js';
 import {
   ENGINES, ENGINE_SHORT, VOICES, loadTTS, saveTTS, synthesize, listElevenVoices, listGoogleVoices, minimaxUpload, minimaxClone,
-  minimaxDesign, newVoiceId, recordVoice, toWav, serverVoices, uploadServerVoice, deleteServerVoice, resolveEngine, femaleOK
+  minimaxDesign, newVoiceId, recordVoice, toWav, resolveEngine, femaleOK
 } from './tts.js';
-import { serverUrl, serverInfo } from './server.js';
+import { voiceLibrary } from './voice-library.js';
 
 const READ_TEXT = 'Merhaba, bu kayıt ses klonlama için hazırlanıyor. Sakin ve net bir sesle, her zamanki konuşma hızımla okuyorum. Bugün hava güzel; denizde rüzgâr hafif, dalgalar küçük. Gemiler limana yaklaşırken telsizden kısa ve açık mesajlar duyuluyor. Öğrenmek, tekrar etmek ve anlamak için bu cümleleri doğal bir tonla seslendiriyorum.';
 const GEMINI_DESC = { Kore: 'kararlı', Aoede: 'ferah', Leda: 'genç', Zephyr: 'parlak', Sulafat: 'sıcak', Despina: 'yumuşak', Achernar: 'yumuşak', Vindemiatrix: 'nazik', Charon: 'bilgilendirici', Puck: 'neşeli', Orus: 'kararlı', Iapetus: 'net', Algenib: 'pürüzlü', Sadaltager: 'bilgili', Alnilam: 'kararlı', Schedar: 'dengeli' };
@@ -158,37 +158,10 @@ export async function voiceSettings() {
 
   const openaiSec = sec('OpenAI TTS', !!cfg.openaiKey, field('API anahtarı', key('openaiKey')), field('Model', inp('openaiModel')));
 
-  // Lokal sunucu ses klonlama
-  const sOut = h('div', { class: 'small' });
-  const sF = sel('serverF', [['', 'Otomatik']]), sM = sel('serverM', [['', 'Otomatik']]);
-  const sList = h('div', { class: 'row gap wrap' });
-  const srvIn = voiceInput();
-  const sName = h('input', { class: 'input', placeholder: 'Ses adı (harf/rakam), örn. benim-sesim' });
-  const sGender = h('select', { class: 'input' }, h('option', { value: 'f' }, 'Kadın sesi'), h('option', { value: 'm' }, 'Erkek sesi'));
-  const sConsent = h('input', { type: 'checkbox' });
-  async function refreshServer() {
-    const u = await serverUrl(true);
-    if (!u) { sOut.textContent = 'Lokal sunucu kapalı. server/baslat.bat ile açın (docs/KURULUM.md).'; return; }
-    const i = serverInfo();
-    sOut.textContent = `✓ Sunucu çalışıyor · seslendirme: ${i?.tts?.engines?.join(', ') || i?.tts || '—'}${i?.tts?.female === false ? ' · kadın sesi için edge-tts ya da bir kadın klonu ekleyin' : ''}`;
-    const vs = await serverVoices();
-    const o = (g) => [['', 'Otomatik'], ...vs.filter((v) => v.gender === g).map((v) => [v.name, v.name])];
-    fill(sF, 'serverF', o('f')); fill(sM, 'serverM', o('m'));
-    sList.replaceChildren(...vs.map((v) => h('span', { class: 'chip' }, `${v.name} · ${v.gender === 'm' ? 'erkek' : 'kadın'}`, h('button', { class: 'icon-btn small', type: 'button', 'aria-label': 'Sil', onclick: async () => { await deleteServerVoice(v.name); refreshServer(); } }, icon('trash', 13)))));
-  }
-  const sUp = h('button', { class: 'btn primary small', type: 'button', onclick: async () => {
-    if (!sConsent.checked) return (sOut.textContent = 'Önce izni onaylayın.');
-    const d = await srvIn.get(); if (!d) return (sOut.textContent = 'Önce kayıt yapın ya da dosya seçin.');
-    if (d.seconds < 6) return (sOut.textContent = 'Kayıt en az 6–10 saniye olmalı.');
-    const name = (sName.value.trim() || 'ses-' + Date.now().toString(36)).toLocaleLowerCase('tr').replace(/[^a-z0-9ığüşöç_-]+/g, '-');
-    try { await uploadServerVoice(name, sGender.value, d.blob); cfg[sGender.value === 'm' ? 'serverM' : 'serverF'] = name; await refreshServer(); sOut.textContent += ' · ✓ ses eklendi ve seçildi'; } catch (e) { sOut.textContent = '✗ ' + e.message; }
-  } }, 'Sunucuya yükle');
-  const serverSec = sec('Lokal sunucu — ücretsiz ses klonlama (Chatterbox / XTTS)', false,
-    field('Kadın sesi', sF), field('Erkek sesi', sM),
-    h('div', { class: 'field span2' }, sOut, sList),
-    h('div', { class: 'field span2 card' }, h('b', {}, 'Lokal ses klonla (ücretsiz, bilgisayarınızda kalır)'), srvIn.el,
-      h('div', { class: 'row gap wrap' }, sName, sGender), h('label', { class: 'row gap small' }, sConsent, 'Bu ses benim ya da sahibinden açık izin aldım.'), h('div', { class: 'row gap' }, sUp)));
-  serverSec.addEventListener('toggle', () => serverSec.open && refreshServer());
+  // Lokal sunucu: ses kütüphanesi, ses tasarımı, klonlama, ses kadrosu ve lokal modeller (js/voice-library.js)
+  const lib = voiceLibrary({ cfg, voiceInput });
+  const serverSec = sec('Lokal sunucu — ses kütüphanesi, tasarım, klonlama, modeller', false, h('div', { class: 'field span2' }, lib.el));
+  serverSec.addEventListener('toggle', () => serverSec.open && lib.refresh());
 
   const testBtn = h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
     await saveTTS(cfg); out.textContent = 'Deneniyor…';

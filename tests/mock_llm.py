@@ -104,6 +104,10 @@ def make(txt):
     }
     for k, v in R.items():
         if k in low:
+            if k == "replik. Her replikte":  # istemdeki konuşmacı kimliklerini (A, B, C…) sırayla kullan
+                ids = re.search(r"kimliğini \(([A-F](?:, [A-F])*)\)", txt)
+                ids = ids.group(1).split(", ") if ids else ["A", "B"]
+                return {"lines": [{"speaker": ids[i % len(ids)], "text": f"{i + 1}. replik: GMDSS konuşması devam ediyor, A1 sahası VHF ile kapsanır.", "tone": "meraklı"} for i in range(max(3, len(ids) * 2))]}
             return v
     if "SORU:" in low:
         return "GMDSS deniz güvenliği için küresel bir haberleşme sistemidir [1]. Sistem bin dokuz yüz doksan dokuzda tam yürürlüğe girmiştir [2]. Bu bilgi uydurma bir kaynağa dayanır [99].\n\nİsterseniz deniz sahalarını karşılaştıralım."
@@ -120,6 +124,39 @@ def tone_wav(text, gender):
     return buf.getvalue()
 
 
+# ---- Sahte lokal sunucunun durumu (ses kütüphanesi, model yöneticisi, /tts kaydı)
+CAT = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server", "model_katalog.json"), encoding="utf-8"))["modeller"]
+PRESETS = [("kadin-genc", "Kadın · genç · canlı", "f"), ("kadin-orta", "Kadın · orta yaş · sakin", "f"), ("kadin-derin", "Kadın · derin sesli", "f"), ("kadin-olgun", "Kadın · olgun · öğretmen", "f"),
+           ("erkek-genc", "Erkek · genç · enerjik", "m"), ("erkek-orta", "Erkek · orta yaş · net", "m"), ("erkek-derin", "Erkek · derin sesli · belgesel", "m"), ("erkek-olgun", "Erkek · olgun · hoca", "m")]
+ST = {"voices": {}, "jobs": {}, "ready": set(), "puan": {}, "log": []}
+
+
+def models_list():
+    out = []
+    for i, m in enumerate(CAT):
+        j = ST["jobs"].get(m["id"])
+        if j and j["state"] == "iniyor":  # her sorguda ilerlesin
+            j["received"] = min(j["total"], j["received"] + j["total"] // 2)
+            if j["received"] >= j["total"]:
+                j["state"] = "bitti"; ST["ready"].add(m["id"])
+        total = (3 + i % 5) * 10 ** 9
+        out.append({**m, "hazir": m["id"] in ST["ready"], "diskte": total if m["id"] in ST["ready"] else 0, "uzak": total, "puan": ST["puan"].get(m["id"]),
+                    "is": ({"state": j["state"], "received": j["received"], "total": j["total"], "msg": ""} if j else None),
+                    "calistirilabilir": bool(m.get("adaptor")), "calistirNot": "",
+                    "sesler": [{"id": f"v2/tr_speaker_{k}", "ad": f"Türkçe konuşmacı {k}"} for k in range(10)] if m.get("adaptor") == "bark" else []})
+    return out
+
+
+def voices_list():
+    return [{"name": n, "gender": v["gender"], "label": v["label"], "source": v["source"], "engine": v.get("engine"), "text": v.get("text"), "hasText": bool(v.get("text")), "textState": "var" if v.get("text") else "otomatik", "seconds": 8.0}
+            for n, v in ST["voices"].items()]
+
+
+def form_field(raw, name):
+    m = re.search(rb'name="' + name.encode() + rb'"\r\n\r\n(.*?)\r\n--', raw, re.S)
+    return m.group(1).decode("utf-8", "replace") if m else ""
+
+
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -131,19 +168,87 @@ class H(http.server.BaseHTTPRequestHandler):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode()
         self.send_response(code); self.cors(); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
+    def raw(self):
+        return self.rfile.read(int(self.headers.get("Content-Length", 0)) or 0)
+
     def do_OPTIONS(self):
         self.send_response(204); self.cors(); self.send_header("Content-Length", "0"); self.end_headers()
 
     def do_GET(self):
-        if self.path.startswith("/health"):
-            return self.send(200, {"ok": True, "version": "mock", "tts": {"engines": ["mock"], "female": True, "clone": False}, "stt": None})
-        if self.path.startswith("/voices"):
-            return self.send(200, {"voices": []})
+        p = self.path.split("?")[0]
+        if p.startswith("/health"):
+            return self.send(200, {"ok": True, "version": "mock", "tts": {"engines": ["mock"], "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "stt": None})
+        if p == "/voices/presets":
+            have = list(ST["voices"])
+            return self.send(200, {"presets": [{"id": i, "label": l, "gender": g, "created": any(h == i or h.startswith(i + "-") for h in have)} for i, l, g in PRESETS], "motors": ["mock"]})
+        m = re.match(r"^/voices/([^/]+)/audio$", p)
+        if m:
+            v = ST["voices"].get(m.group(1))
+            return self.send(200, tone_wav("deneme sesi", v["gender"]), "audio/wav") if v else self.send(404, {"detail": "yok"})
+        if p == "/voices":
+            return self.send(200, {"voices": voices_list()})
+        if p == "/models":
+            return self.send(200, {"models": models_list(), "hf": True, "onbellek": "/mock/hf"})
+        if p == "/_log":
+            return self.send(200, {"log": ST["log"]})
         return self.send(200, {"data": [{"id": "mock"}]})
 
+    def do_PATCH(self):
+        body = json.loads(self.raw() or b"{}")
+        m = re.match(r"^/voices/([^/]+)$", self.path)
+        v = ST["voices"].get(m.group(1)) if m else None
+        if not v:
+            return self.send(404, {"detail": "yok"})
+        for k in ("label", "gender", "text"):
+            if k in body:
+                v[k] = body[k]
+        return self.send(200, {"ok": True})
+
+    def do_DELETE(self):
+        m = re.match(r"^/voices/([^/]+)$", self.path)
+        if m:
+            ST["voices"].pop(m.group(1), None)
+        return self.send(200, {"ok": True})
+
     def do_POST(self):
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-        if self.path.startswith("/tts"):
+        raw = self.raw()
+        p = self.path
+        if p == "/voices":  # çok parçalı form (klon yükleme)
+            n = form_field(raw, "name") or "ses"
+            ST["voices"][n] = {"gender": form_field(raw, "gender") or "f", "label": form_field(raw, "label") or n, "source": "klon", "text": form_field(raw, "text") or None}
+            return self.send(200, {"ok": True, "name": n, "textState": "otomatik"})
+        body = json.loads(raw or b"{}")
+        if p == "/voices/design":
+            pr = next((x for x in PRESETS if x[0] == body.get("preset")), None)
+            if not pr:
+                return self.send(400, {"detail": "Hazır tasarım seçin"})
+            n, k = pr[0], 2
+            while n in ST["voices"]:
+                n, k = f"{pr[0]}-{k}", k + 1
+            ST["voices"][n] = {"gender": pr[2], "label": pr[1], "source": "tasarım", "engine": "mock", "text": "Merhaba, ben bu defterin sesiyim."}
+            return self.send(200, {"ok": True, "name": n, "motor": "mock"})
+        if p == "/models/download":
+            for i in body.get("ids", []):
+                mm = next((x for x in CAT if x["id"] == i), None)
+                if mm and i not in ST["ready"]:
+                    ST["jobs"][i] = {"state": "iniyor", "received": 0, "total": (3 + CAT.index(mm) % 5) * 10 ** 9}
+            return self.send(200, {"started": body.get("ids", [])})
+        if p == "/models/rate":
+            ST["puan"].pop(body.get("id"), None)
+            if body.get("puan"):
+                ST["puan"][body["id"]] = body["puan"]
+            return self.send(200, {"ok": True})
+        if p == "/models/delete":
+            ST["ready"].discard(body.get("id")); ST["jobs"].pop(body.get("id"), None)
+            return self.send(200, {"ok": True, "serbest": 3 * 10 ** 9})
+        if p == "/_reset":  # testler arası yalıtım
+            ST.update(voices={}, jobs={}, ready=set(), puan={}); ST["log"].clear()
+            return self.send(200, {"ok": True})
+        if p == "/_log/clear":
+            ST["log"].clear()
+            return self.send(200, {"ok": True})
+        if p.startswith("/tts"):
+            ST["log"].append({k: body.get(k) for k in ("speaker", "gender", "voice", "model")})
             return self.send(200, tone_wav(body.get("text", ""), body.get("gender", "f")), "audio/wav")
         txt = "\n".join(m.get("content", "") for m in body.get("messages", []) if m.get("role") != "assistant")
         if DELAY:

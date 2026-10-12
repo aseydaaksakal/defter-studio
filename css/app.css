@@ -433,6 +433,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .skip { font-size: 12px; font-weight: 700; }
 .spk-A .tline-who, .chip.spk-A b { color: #8ab4ff; } .spk-B .tline-who, .chip.spk-B b { color: #f6c26b; }
 .spk-C .tline-who, .chip.spk-C b { color: #81c784; } .spk-D .tline-who, .chip.spk-D b { color: #f48fb1; }
+.spk-E .tline-who, .chip.spk-E b { color: #ce93d8; } .spk-F .tline-who, .chip.spk-F b { color: #80cbc4; }
 /* Bugün */
 .today { display: grid; gap: 14px; }
 .today-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
@@ -561,3 +562,14 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .art-tools { margin: 6px 2px -4px; align-items: center; }
 .art-tools .icon-btn:hover, .pane-head .icon-btn:hover { color: var(--no); }
 .mastery .zen { font-size: 18px; font-style: italic; border-left: 4px solid var(--accent); margin: 8px 0 12px; padding: 8px 14px; background: var(--accent-soft); border-radius: 8px; }
+
+/* ===== 0.4.0: ses kütüphanesi, ses kadrosu, lokal model yöneticisi ===== */
+.voice-settings .vsec > .vpad { padding: 0 14px 14px; }
+.vl-audio { width: 100%; height: 36px; }
+.vl-row, .mm-row { display: grid; gap: 8px; }
+.cast-i { width: 22px; text-align: center; }
+.mm-row.dim { opacity: .55; }
+.mm-warn { color: var(--warn); }
+.mm h4 { margin: 14px 0 0; }
+.mm code { word-break: break-all; opacity: .8; }
+.mm-try { border-top: 1px solid var(--line); padding-top: 8px; }

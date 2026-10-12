@@ -98,6 +98,11 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 - Kurulum ve başlatma: `server/baslat.bat|sh`. GPU ile klonlama: `tools/kur-gpu.bat`.
 - Ortam değişkenleri: `DEFTER_TTS`, `DEFTER_WHISPER`, `DEFTER_DEVICE`, `DEFTER_VOICES`, `OLLAMA_HOST`, `DEFTER_PROXY_HOSTS`, `DEFTER_OPEN`.
 
+### 8b. Ses kütüphanesi ve modeller (0.4.0)
+- `server/model_katalog.json` + `server/modeller.py` (indir/puan/sil, CLI) + `server/adaptorler.py` (VoxCPM, Bark, KugelAudio).
+- `server/main.py`: `/voices` (label, text, PATCH, audio), `/voices/presets`, `/voices/design`, `/models*`, `/tts` `model` alanı.
+- `js/voice-library.js` (kütüphane, tasarım, klon, kadro), `js/model-manager.js` (yönetici), `js/tts.js` (`voicePool('server')`, `serverModel`), `gen.js` `castFor` (2-6 konuşmacı).
+
 ## 9. Testler ve teslim
 
 | İş | Yer |
