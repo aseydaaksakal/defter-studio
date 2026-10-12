@@ -560,3 +560,4 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 @media (max-width: 640px) { .voice-settings .grid2 { grid-template-columns: 1fr; } .slide .s-bar { grid-template-columns: 30cqw 1fr 14cqw; } }
 .art-tools { margin: 6px 2px -4px; align-items: center; }
 .art-tools .icon-btn:hover, .pane-head .icon-btn:hover { color: var(--no); }
+.mastery .zen { font-size: 18px; font-style: italic; border-left: 4px solid var(--accent); margin: 8px 0 12px; padding: 8px 14px; background: var(--accent-soft); border-radius: 8px; }

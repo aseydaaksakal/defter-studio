@@ -70,8 +70,12 @@ has = lambda mod: importlib.util.find_spec(mod) is not None  # noqa: E731
 
 def tts_engines():
     e = []
+    if has("omnivoice"):
+        e.append("omnivoice")
     if has("chatterbox"):
         e.append("chatterbox")
+    if has("pocket_tts"):
+        e.append("pocket")
     if has("TTS"):
         e.append("xtts")
     if has("edge_tts"):
@@ -198,7 +202,7 @@ def _exaggeration(tone):
 
 @lru_cache(maxsize=1)
 def _chatterbox():
-    from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # tools/kur-gpu.bat kurar
+    from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # tools/kur-chatterbox.bat kurar
     return ChatterboxMultilingualTTS.from_pretrained(device=DEVICE)
 
 
@@ -220,6 +224,73 @@ def _xtts():
 
 def tts_xtts(text, ref, lang, tone):
     return _wav_bytes(_xtts().tts(text=text, language=lang, speaker_wav=ref), 24000)
+
+
+# ---- OmniVoice (k2-fsa, 600+ dil, referanssız "ses tasarımı": kadın/erkek) — GPU; ağırlıklar ticari olmayan kullanım
+OMNI_DESIGN = {"f": os.getenv("DEFTER_OMNI_F", "female, middle-aged, moderate pitch"), "m": os.getenv("DEFTER_OMNI_M", "male, middle-aged, low pitch")}
+OMNI_SEED_TEXT = "Merhaba, ben bu defterin sesiyim. Bugün konunun en önemli noktalarını sakin ve anlaşılır bir dille birlikte öğreneceğiz."
+
+
+@lru_cache(maxsize=1)
+def _omni():
+    import torch
+    from omnivoice import OmniVoice
+    return OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda:0" if DEVICE == "cuda" else "cpu", dtype=torch.float16 if DEVICE == "cuda" else torch.float32)
+
+
+def _omni_ref(gender):
+    """Her cinsiyet için bir kez ses tasarlanır ve voices/omni-<cinsiyet>.wav olarak saklanır; sonraki satırlar aynı sesle (klon) okunur."""
+    name = "omni-kadin" if gender == "f" else "omni-erkek"
+    path = os.path.join(VOICES_DIR, name + ".wav")
+    if not os.path.exists(path):
+        import soundfile as sf
+        audio = _omni().generate(text=OMNI_SEED_TEXT, instruct=OMNI_DESIGN[gender])
+        os.makedirs(VOICES_DIR, exist_ok=True)
+        sf.write(path, audio[0], 24000)
+        with open(os.path.join(VOICES_DIR, name + ".json"), "w", encoding="utf-8") as fh:
+            json.dump({"gender": gender, "text": OMNI_SEED_TEXT, "engine": "omnivoice"}, fh, ensure_ascii=False)
+    return path, OMNI_SEED_TEXT
+
+
+def _ref_text(ref):
+    try:
+        with open(ref[:-4] + ".json", encoding="utf-8") as fh:
+            return json.load(fh).get("text")
+    except Exception:
+        return None
+
+
+def tts_omni(text, ref, gender):
+    import numpy as np
+    m = _omni()
+    rtext = _ref_text(ref) if ref else None
+    if not ref or not rtext:  # transkripti olmayan referans → tasarlanmış ses
+        ref, rtext = _omni_ref(gender)
+    chunks = []
+    for part in _sentences(text, 300):
+        audio = m.generate(text=part, ref_audio=ref, ref_text=rtext)
+        chunks.append(np.asarray(audio[0], dtype="float32")); chunks.append(np.zeros(int(24000 * 0.15), dtype="float32"))
+    return _wav_bytes(np.concatenate(chunks), 24000)
+
+
+# ---- Pocket TTS Türkçe (alperiox/pocket-tts-turkish, MIT, CPU'da gerçek zamanın 5 katı) — referans ses gerekir
+@lru_cache(maxsize=1)
+def _pocket():
+    from pocket_tts import TTSModel
+    return TTSModel.load_model(os.getenv("DEFTER_POCKET", "alperiox/pocket-tts-turkish"))
+
+
+@lru_cache(maxsize=8)
+def _pocket_voice(ref):
+    return _pocket().get_state_for_audio_prompt(ref)
+
+
+def tts_pocket(text, ref):
+    import numpy as np
+    m = _pocket()
+    t = text.replace("İ", "i").replace("I", "ı").lower()  # model büyük İ/I görmedi
+    audio = m.generate_audio(_pocket_voice(ref), t)
+    return _wav_bytes(np.asarray(audio, dtype="float32"), m.sample_rate)
 
 
 async def tts_edge(text, gender, lang):
@@ -271,6 +342,16 @@ async def tts(req: Request):
     errors = []
     for eng in tts_engines():
         try:
+            if eng == "omnivoice":
+                def run_omni():
+                    with _gpu_lock:
+                        return tts_omni(text, ref, gender)
+                return Response(await asyncio.to_thread(run_omni), media_type="audio/wav", headers={"X-Defter-Engine": eng})
+            if eng == "pocket":
+                pref = ref or (os.path.join(VOICES_DIR, ("omni-kadin" if gender == "f" else "omni-erkek") + ".wav"))
+                if not os.path.exists(pref):
+                    continue
+                return Response(await asyncio.to_thread(tts_pocket, text, pref), media_type="audio/wav", headers={"X-Defter-Engine": eng})
             if eng in ("chatterbox", "xtts"):
                 if not ref:
                     continue  # bu cinsiyette referans ses yok → sıradaki motor
@@ -415,8 +496,8 @@ async def api_proxy(url: str, req: Request):
 def health():
     eng = tts_engines()
     vs = list_voices()
-    clone = any(e in eng for e in ("chatterbox", "xtts"))
-    female = "edge" in eng or (clone and any(v["gender"] == "f" for v in vs))
+    clone = any(e in eng for e in ("chatterbox", "xtts", "pocket", "omnivoice"))
+    female = "edge" in eng or "omnivoice" in eng or (clone and any(v["gender"] == "f" for v in vs))
     return {"ok": True, "version": VERSION, "app": os.path.exists(os.path.join(APP_DIR, "index.html")),
             "tts": {"pref": TTS_PREF, "engines": eng, "female": female, "clone": clone, "voices": len(vs)},
             "stt": f"faster-whisper {WHISPER_MODEL}" if has("faster_whisper") else None, "ollama": OLLAMA}

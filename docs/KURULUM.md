@@ -84,14 +84,18 @@ baslat.bat
 sunucu adresi ayarı gerekmez. GitHub Pages'ten kullanırken sunucuyu bağlamak için Ayarlar › Lokal yardımcı sunucu kutusuna
 `http://localhost:8765` yazıp **Kontrol et** deyin.
 
-**GPU ile ücretsiz ses klonlama (Chatterbox Multilingual, MIT, Türkçe):**
-```powershell
-tools\kur-gpu.bat
-```
-Bu betik RTX 50xx için PyTorch CUDA 12.8'i ve Chatterbox'ı kurar. Sonra uygulamada Ayarlar › Seslendirme › Lokal sunucu
-bölümünden kadın ve erkek referans sesinizi kaydedin (6–30 sn). Podcast ve video bu seslerle konuşur.
+**Kotasız, ücretsiz kadın + erkek ses:**
+- `server\baslat.bat` çalışınca edge-tts ile Emel (kadın) ve Ahmet (erkek) hemen gelir. GPU gerekmez, internet gerekir.
+- **Tamamen lokal sesler için:**
+  ```powershell
+  tools\kur-gpu.bat
+  ```
+  - Kurulanlar: RTX 50xx için PyTorch CUDA 12.8, **OmniVoice** ve **Pocket TTS Türkçe**.
+  - İlk podcastte kadın ve erkek ses bir kez tasarlanıp `server\voices\` klasörüne kaydedilir; sonra hep aynı seslerle okunur. Kayıt gerekmez.
+  - Kendi sesinizi kullanmak isterseniz Ayarlar › Seslendirme › Lokal sunucu bölümünden kaydedin.
+  - Chatterbox isteyenler için: `tools\kur-chatterbox.bat`.
 
-Seslendirme sırası (`DEFTER_TTS=auto`): referans ses varsa Chatterbox → XTTS-v2 → edge-tts → Piper. Belirli bir motoru
+Seslendirme sırası (`DEFTER_TTS=auto`): OmniVoice → Chatterbox (referansla) → Pocket TTS → XTTS-v2 → edge-tts → Piper. Belirli bir motoru
 zorlamak için `DEFTER_TTS` ortam değişkenini ayarlayın:
 
 | `DEFTER_TTS` | Ne yapar |

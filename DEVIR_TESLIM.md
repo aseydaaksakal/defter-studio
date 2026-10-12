@@ -28,7 +28,7 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 | Video: erkek anlatıcı, sesle eşzamanlı sahneler, MP4/WebM indirme | ✅ | e2e (MP4 indirildi) |
 | Slayt "anlatımlı oynat", yeni düzenler (grafik, tablo, zaman çizelgesi, adımlar) | ✅ | e2e |
 | Lokal sunucu v2 (uygulamayı sunar, Ollama ayarsız, klon, edge-tts, vekil) | ✅ | Sandbox'ta uçlar test edildi |
-| Chatterbox/XTTS lokal klon | ⚠️ Kod hazır | GPU olmadığı için sandbox'ta çalıştırılamadı; kullanıcı `tools/kur-gpu.bat` ile kuracak |
+| Lokal ücretsiz kadın+erkek ses: edge-tts, OmniVoice (referanssız tasarım), Pocket TTS Türkçe, Chatterbox | ⚠️ Kod hazır | GPU modelleri sandbox'ta çalıştırılamadı; kullanıcı `server/baslat.bat` + `tools/kur-gpu.bat` ile kuracak. **İlk iş: kullanıcının bilgisayarında doğrula.** |
 | Yeni sağlayıcılar (Grok, DeepSeek, Qwen, Mistral, Together, Kimi, MiniMax) | ✅ | CORS geçti; gerçek anahtarla denenmedi |
 | Öğrenme: yöntemler kütüphanesi, Pomodoro, boşluk doldurma, dikte/gölgeleme | ✅ | e2e |
 | Çoklu sekme güvenliği | ✅ | İkinci sekme açılınca ilk sekmenin işleri bozulmuyor (yavaş sahte modelle test) |
@@ -72,7 +72,8 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 
 ## 6. Sıradaki iş (Faz B, öncelik sırasıyla)
 
-1. **Gerçek seslerle doğrulama:** Kullanıcı ücretsiz Gemini anahtarı ekleyince podcast ve video ses kalitesi dinlenir. Varsa MiniMax klonu denenir.
+1. **Lokal sesleri kullanıcının bilgisayarında doğrula** (OmniVoice/Pocket TTS; gerekirse API düzeltmesi). Ardından **NotebookLM ile birebir eşleşme**: video seslendirmeli sunum, arayüz ayrıntıları.
+   **Gerçek seslerle doğrulama:** Kullanıcı ücretsiz Gemini anahtarı ekleyince podcast ve video ses kalitesi dinlenir. Varsa MiniMax klonu denenir.
 2. **Yapay zeka görselleri:** slayt, infografik ve video sahnelerine görsel.
    - Lokal: ComfyUI + FLUX.1-schnell.
    - Bulut: Gemini/Imagen ya da MiniMax image.

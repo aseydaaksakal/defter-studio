@@ -1,20 +1,20 @@
 @echo off
 chcp 65001 >nul
-REM RTX 50xx (Blackwell) için PyTorch CUDA 12.8 + Chatterbox Multilingual (MIT, Türkçe, ses klonlama) kurulumu.
-REM chatterbox-tts paketi torch 2.6'ya sabitlenmiştir; 2.6 RTX 5090'da çalışmaz. Bu yüzden bağımlılıklar elle kurulur.
+REM Tamamen ücretsiz, lokal, Türkçe KADIN + ERKEK ses (anahtar ve kota yok):
+REM   OmniVoice (k2-fsa, GPU) — referans kayıt gerekmeden kadın ve erkek ses tasarlar, sonra hep aynı sesle okur.
+REM   Pocket TTS Türkçe (MIT, CPU'da da hızlı) — OmniVoice'un tasarladığı ya da sizin kaydettiğiniz sesle konuşur.
+REM RTX 50xx (Blackwell) için PyTorch CUDA 12.8 kurulur. Önce server\baslat.bat bir kez çalışmış olmalı.
 cd /d %~dp0\..\server
 if not exist .venv ( echo Once server\baslat.bat calistirin. & pause & exit /b 1 )
 call .venv\Scripts\activate
 pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128 || goto :hata
-pip install chatterbox-tts --no-deps || goto :hata
-pip install "librosa==0.11.0" s3tokenizer "transformers==5.2.0" "diffusers==0.29.0" "resemble-perth>=1.0.0" "conformer==0.3.2" "safetensors==0.5.3" pyloudnorm omegaconf pykakasi || goto :hata
-pip install spacy-pkuseg 2>nul
+pip install omnivoice pocket-tts || goto :hata
 python -c "import torch; print('CUDA:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 echo.
-echo Kuruldu. Uygulamada Ayarlar ^> Seslendirme ^> Lokal sunucu bolumunden kadin ve erkek referans sesinizi kaydedin.
+echo Kuruldu. server\baslat.bat ile sunucuyu yeniden baslatin; ilk podcastte kadin ve erkek ses bir kez tasarlanir (model iner, birkac dakika).
 pause
 exit /b 0
 :hata
-echo Kurulum hatasi. Yukaridaki mesaji docs/NOT_DEFTERI.md ile karsilastirin.
+echo Kurulum hatasi. docs/NOT_DEFTERI.md ve docs/SES.md'ye bakin.
 pause
 exit /b 1

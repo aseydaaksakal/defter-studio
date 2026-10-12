@@ -5,6 +5,33 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 
 ---
 
+## 2026-10-12 — 0.3.2 — kotasız ses, Gemini kota davranışı, ustalık sanatı
+
+- **Belirti:** Gemini kadın+erkek sesi geldi, bir dakika sonra yeniden Piper (erkek) sesine düştü.
+  - **Neden:** Ücretsiz katmanda dakikalık/günlük TTS sınırına (429) takıldı. `withRetry` 1,5–9 sn bekleyip pes etti ve otomatik sıra Piper'a geçti.
+  - **Çözüm:**
+    - 429'da `retryDelay` kadar bekle (en fazla 6 deneme).
+    - Günlük kotayı (PerDay) ayırt et ve açıkça yaz.
+    - Parça önbelleği (`kind: 'piece'`) ile kaldığı yerden devam et.
+    - Gemini parçalarını 3200 karaktere çıkar.
+    - Kadın konuşmacıda önce `femaleOK` motorları dene.
+- **Kullanıcı isteği:** Tamamen ücretsiz, lokal kadın+erkek ses.
+  - Hugging Face incelemesi:
+    - antalia/ema: tarayıcıda ONNX, ama tek erkek ses.
+    - pocket-tts-turkish: MIT, klon.
+    - OmniVoice: referanssız ses tasarımı.
+    - kugelaudio: Türkçe sesi yok.
+  - **Çözüm:**
+    - Sunucuya OmniVoice (kadın/erkek sesi bir kez tasarlanıp kaydedilir, sonra klonlanır) ve Pocket TTS Türkçe eklendi.
+    - `tools/kur-gpu.bat` artık bunları kuruyor; Chatterbox `tools/kur-chatterbox.bat`'a taşındı.
+  - **Sınır:** GPU modelleri sandbox'ta çalıştırılamadı. Kod, model kartlarındaki API'ye göre yazıldı; ilk gerçek denemede doğrulanmalı.
+- **Ustalık sanatı:** Öğrenme bilimi sayfasına eklenen bölümler:
+  - Shu-Ha-Ri.
+  - Hacker tutumu (E. S. Raymond).
+  - 8 öğrenme kanalı.
+  - Ustaların yolları: hafızlar, İbn Haldun, Mozart, Feynman, havruta…
+  - Günlük ustalık döngüsü.
+
 ## 2026-10-12 — 0.3.1 — kullanıcı geri bildirimi (ekran görüntüleri)
 
 - **Hafıza sarayında "Sesli dinle" robot sesi.**

@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-12 — teslim
+- 0.3.2: Gemini kota bekleme ve kaldığı yerden devam, kadın sesi öncelikli motor sırası, lokal OmniVoice + Pocket TTS Türkçe (kotasız kadın/erkek), ustalık sanatı bölümü
+
+## 2026-10-12 — teslim
 - 0.3.1: hafıza sarayı gerçek ses + durdur, sohbet ve içerik çöp kutuları, sohbet 'Durduruldu' hatası, hızlı sohbet, lokal sunucu kurulum yardımı
 
 ## 2026-10-12 — teslim

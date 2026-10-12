@@ -115,22 +115,38 @@ export async function assignVoices(speakers, engine, cfg = {}) {
 }
 
 // ---------------- Yardımcılar ----------------
-class TTSError extends Error { constructor(msg, status = 0, retry = false) { super(msg); this.status = status; this.retry = retry; } }
+class TTSError extends Error { constructor(msg, status = 0, retry = false, extra = {}) { super(msg); this.status = status; this.retry = retry; Object.assign(this, extra); } }
 const httpErr = async (who, r) => {
-  const t = (await r.text().catch(() => '')).slice(0, 220);
+  const raw = await r.text().catch(() => '');
   const s = r.status;
-  const why = s === 401 || s === 403 ? 'anahtar geçersiz ya da yetkisiz' : s === 429 ? 'kota/hız sınırı' : s === 402 ? 'bakiye yetersiz' : '';
-  return new TTSError(`${who}: ${s}${why ? ' (' + why + ')' : ''} ${t}`, s, s === 429 || s >= 500);
+  // Gemini/Google kota hataları: RESOURCE_EXHAUSTED + retryDelay ("39s") + quotaId (…PerDay… = günlük kota)
+  const delay = +(/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(raw)?.[1] || r.headers.get('retry-after') || 0);
+  const daily = s === 429 && /PerDay|per day|daily/i.test(raw);
+  const why = s === 401 || s === 403 ? 'anahtar geçersiz ya da yetkisiz' : daily ? 'günlük ücretsiz kota doldu; yarın sıfırlanır' : s === 429 ? 'dakikalık hız sınırı' : s === 402 ? 'bakiye yetersiz' : '';
+  return new TTSError(`${who}: ${s}${why ? ' (' + why + ')' : ''} ${raw.slice(0, 160)}`, s, (s === 429 && !daily) || s >= 500, { retryAfter: delay, daily });
 };
-async function withRetry(fn, tries = 3) {
+// Geçici hatalarda bekleyip yeniden dene. Dakikalık kota (429) için sunucunun söylediği süre kadar beklenir;
+// böylece ücretsiz katmanda yarıda başka (erkek) sese düşülmez.
+async function withRetry(fn, tries = 6, onWait) {
   for (let k = 0; ; k++) {
     try { return await fn(); } catch (e) {
       const transient = e.retry || e instanceof TypeError; // TypeError: ağ kesintisi
       if (!transient || k >= tries - 1) throw e;
-      await new Promise((r) => setTimeout(r, [1500, 4000, 9000][k] || 9000));
+      const ms = e.retryAfter ? (e.retryAfter + 1) * 1000 : e.status === 429 ? 20000 * (k + 1) : [1500, 4000, 9000, 15000, 30000][k] || 30000;
+      onWait?.(Math.round(ms / 1000), e);
+      await new Promise((r) => setTimeout(r, Math.min(ms, 70000)));
     }
   }
 }
+// Parça önbelleği: kota ya da hata yüzünden yarıda kalan seslendirme baştan değil kaldığı yerden sürer
+async function cachedPiece(artifactId, key, make) {
+  const hit = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'piece' && b.key === key).first();
+  if (hit) return hit.blob;
+  const blob = await make();
+  await db.blobs.add({ artifactId, kind: 'piece', key, blob });
+  return blob;
+}
+
 function b64ToBlob(b64, type) {
   const bin = atob(b64); const u = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
@@ -405,14 +421,15 @@ const inflight = {};
 export async function synthesize(artifactId, lines, speakers, lang, { format = 'deep', onProgress = () => {}, onPiece, engine: forced } = {}) {
   if (!lines?.length) throw new TTSError('Seslendirilecek metin yok.');
   const cfg = await loadTTS();
-  const order = forced ? [forced] : cfg.engine === 'auto' ? await availableEngines(cfg) : [await resolveEngine(cfg)];
+  let order = forced ? [forced] : cfg.engine === 'auto' ? await availableEngines(cfg) : [await resolveEngine(cfg)];
+  if (order.length > 1 && speakers.some((s) => s.gender !== 'm')) order = [...order.filter(femaleOK), ...order.filter((e) => !femaleOK(e))];
   if (order[0] === 'browser') return { engine: 'browser', blob: null, timings: null };
   let lastErr;
   for (let k = 0; k < order.length; k++) {
     try { return await synthWith(order[k], cfg, artifactId, lines, speakers, lang, format, onProgress, k ? null : onPiece); }
     catch (e) {
       lastErr = e;
-      if (k < order.length - 1) onProgress(`${ENGINE_SHORT[order[k]]} çalışmadı (${String(e.message).slice(0, 90)}). ${ENGINE_SHORT[order[k + 1]]} deneniyor…`);
+      if (k < order.length - 1) onProgress(`${ENGINE_SHORT[order[k]]} ${e.daily ? 'günlük ücretsiz kotası doldu' : 'çalışmadı'} (${String(e.message).slice(0, 80)}). ${ENGINE_SHORT[order[k + 1]]} deneniyor…`);
     }
   }
   throw lastErr;
@@ -431,12 +448,14 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
     const pieces = []; // {blob, idx:[satır no]}
     const emit = (p) => { pieces.push(p); try { onPiece?.(p); } catch {} };
     if (engine === 'elevenlabs' || engine === 'gemini') {
-      const chunks = engine === 'elevenlabs' ? chunkLines(lines, 1800, 10) : chunkLines(lines);
+      const chunks = engine === 'elevenlabs' ? chunkLines(lines, 1800, 10) : chunkLines(lines, 3200); // az istek = ücretsiz kotada daha uzun podcast
+      const wait = (sec, e) => onProgress(`${ENGINE_SHORT[engine]} ${e.status === 429 ? 'hız sınırı' : 'geçici hata'}: ${sec} sn bekleniyor, sonra kaldığı yerden devam…`);
       let done = 0;
       for (const ch of chunks) {
         onProgress(`${ENGINE_SHORT[engine]} ile seslendiriliyor ${done + 1}–${done + ch.length} / ${lines.length}`);
         const idx = ch.map((l) => lines.indexOf(l));
-        if (engine === 'gemini') emit({ blob: await withRetry(() => geminiChunk(ch, voices, speakers, cfg, style)), idx });
+        const pk = hash(engine + model + JSON.stringify(voices) + JSON.stringify(ch.map((l) => [l.speaker, l.text, l.tone])));
+        if (engine === 'gemini') emit({ blob: await cachedPiece(artifactId, pk, () => withRetry(() => geminiChunk(ch, voices, speakers, cfg, style), 6, wait)), idx });
         else {
           const r = await withRetry(() => elevenChunk(ch, voices, cfg));
           if (r.whole) emit({ blob: r.blob, idx }); else r.blobs.forEach((b, n) => emit({ blob: b, idx: [idx[n]] }));
@@ -454,7 +473,9 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
         while (next < lines.length) {
           const i = next++;
           const l = lines[i];
-          results[i] = await withRetry(() => fn(l, voices[l.speaker], cfg, style, lang, byId[l.speaker] || speakers[0], onProgress));
+          const pk = hash(engine + model + voices[l.speaker] + l.text + (l.tone || ''));
+          results[i] = await cachedPiece(artifactId, pk, () => withRetry(() => fn(l, voices[l.speaker], cfg, style, lang, byId[l.speaker] || speakers[0], onProgress), 6,
+            (sec, e) => onProgress(`${ENGINE_SHORT[engine]} ${e.status === 429 ? 'hız sınırı' : 'geçici hata'}: ${sec} sn bekleniyor…`)));
           finished++;
           onProgress(`${ENGINE_SHORT[engine]} ile seslendiriliyor ${finished} / ${lines.length}`);
           deliver();
@@ -464,7 +485,7 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
     }
     onProgress('Ses birleştiriliyor ve dengeleniyor…');
     const { blob, timings } = await mixPieces(pieces, lines);
-    await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix').delete();
+    await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' || b.kind === 'piece').delete();
     await db.blobs.add({ artifactId, kind: 'mix', key, blob, timings, engine });
     return { engine, blob, timings };
   })();

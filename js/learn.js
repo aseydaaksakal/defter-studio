@@ -155,6 +155,7 @@ export function sciencePage() {
       item('🗣️', 'Tartışma ve açıklama', '"Neden?" ve "Nasıl?" sorularıyla bilgiyi kendi cümlelerinle bağlamak anlamayı kalıcılaştırır.', 'İstişare, münazara ve tartışma podcast biçimleri; sohbette "Bunu bana açıkla".'),
       item('😴', 'Uyku ve mola', 'Öğrenilenler uykuda pekişir. 25-50 dakikalık oturumlar ve kısa molalar dikkati korur.', 'Günlük hedef ve seri sistemi her gün az ama düzenli çalışmayı teşvik eder.')
     ),
+    masteryArt(),
     methodsLibrary(),
     h('div', { class: 'card note-myth' }, h('h3', {}, 'Öğrenme piramidi yüzdeleri hakkında'),
       h('p', {}, '"Okuduğumuzun %10’unu, öğrettiğimizin %90’ını hatırlarız" gibi yüzdeler Edgar Dale’in Yaşantı Konisi’ne sonradan eklenmiştir; Dale’in kendisi yüzde vermemiştir ve bu rakamlar kontrollü araştırmalarla desteklenmez. Yine de ana fikir doğru yöndedir: aktif katılım, kendini test etme ve başkasına öğretme pasif okumadan daha kalıcıdır. Uygulama bu yüzden yüzdelere değil, kanıtlanmış tekniklere dayanır.')),
@@ -214,4 +215,61 @@ export function methodsLibrary() {
         h('li', {}, 'Norris, J. M. ve Ortega, L. (2000). Effectiveness of L2 instruction: A research synthesis. Language Learning, 50(3).'),
         h('li', {}, 'Hartshorne, J. K., Tenenbaum, J. B. ve Pinker, S. (2018). A critical period for second language acquisition. Cognition, 177.'),
         h('li', {}, 'Pashler, H. ve ark. (2008). Learning styles: Concepts and evidence. Psychological Science in the Public Interest, 9(3).'))));
+}
+
+// ---------------- Ustalık sanatı: öğrenmenin mimarisi ----------------
+// Kaynak fikirler: Eric S. Raymond, "How To Become A Hacker" (tutum, yaparak öğrenme, usta-çırak ilişkisi);
+// Japon dövüş sanatlarındaki Shu-Ha-Ri; İbn Haldun'un Mukaddime'deki tedrîc (adım adım) ve tekrar ilkesi; hafızlık geleneği;
+// Talmud'daki havruta (eşli tartışmalı çalışma); Sokrates'in soru yöntemi; Feynman; Ericsson'un bilinçli pratik araştırmaları.
+const MASTERY_STAGES = [
+  ['守 Shu — İzle (çırak)', 'Ustaya bak, ustayı izle. Kuralları ve temelleri olduğu gibi, eksiksiz öğren; ezberle, kopyala, tekrar et. Eleştirmeden önce anla.', 'Rapor ve slaytlarla konuyu gör; bilgi kartları ve dikteyle kelimesi kelimesine öğren; hafızlık usulü tekrar.'],
+  ['破 Ha — Kır (kalfa)', 'Ustayla yürü. Kuralları farklı durumlarda dene, nerede işe yaradığını ve nerede yaramadığını keşfet; başka ustaların yollarını karşılaştır.', 'Karışık testler, münazara ve istişare podcastleri, "neden?" sorularıyla sohbet, zor seviyede soru bankası.'],
+  ['離 Ri — Aş (usta)', 'Usta gibi gör, ustalaş. Kurallar artık sendedir; yeni durumlarda kendi çözümünü üretir, başkasına öğretirsin.', 'Öğreterek Öğren (beş yaşındaki bir çocuğa anlat), kendi notlarınla yeni kaynak yaz, deneme sınavında hedefin üstüne çık.']
+];
+const MASTERY_ATTITUDE = [
+  ['Problemler büyüleyicidir', 'Usta, bir problemi çözmekten zevk alır; merak öğrenmenin yakıtıdır. Konuyu sevmenin yolu onunla oynamaktır.'],
+  ['Aynı problem iki kez çözülmez', 'Öğrendiğini kaydet ve paylaş: not, kart, banka sorusu. Bir kez çözdüğün şeyi yeniden keşfetmekle vakit kaybetme.'],
+  ['Sıkıcılık ve tekrar eden angarya kötüdür', 'Mekanik işi araçlara bırak (soru bankası, aralıklı tekrar), zihnini anlamaya ve üretmeye ayır.'],
+  ['Tutum yetkinliğin yerini tutmaz', 'İstek tek başına yetmez; her gün pratik, ölçüm ve geri bildirim gerekir. Puanı değil, gerçekten yapabildiğini ölç.'],
+  ['Yaparak öğren', 'Okuyarak değil, yaparak öğrenilir: soru çöz, anlat, yaz, kendini test et. Okumak yalnız başlangıçtır.'],
+  ['Usta ve topluluk', 'Bir usta bul, çevrene öğrenen insanlar topla, öğrendiğini topluluğa geri ver. Öğretmek ustalığın son basamağıdır.']
+];
+const CHANNELS = [
+  ['✍️ Yazarak', 'Defter tutmak, özet ve kopya çalışması. Benjamin Franklin sevdiği yazıları ezberden yeniden yazıp aslıyla karşılaştırarak üslubunu geliştirdi. Tolstoy ve Leonardo ömür boyu defter ve günlük tuttu.', 'Dikte, notlar, "hatırla ve yaz".'],
+  ['👂 Dinleyerek', 'Bebekler dili binlerce saat dinleyerek edinir. Sözlü gelenekte ve hafızlıkta önce ustadan dinlenir, sonra tekrar edilir. Mozart çocukluğunda babasının ve büyük bestecilerin eserlerini sürekli dinleyip kopyaladı.', 'Podcast, dinleme banyosu, gölgeleme.'],
+  ['🗣️ Konuşarak ve tartışarak', 'Sokrates soru sorarak öğretti. Medrese ve havruta geleneğinde iki öğrenci metni tartışarak çalışır. Münazara bilgiyi savunmayı ve sınamayı öğretir.', 'Münazara/istişare podcasti, sohbette "neden?", sözlü sınav provası.'],
+  ['👁️ Görerek ve gözlemleyerek', 'Sherlock Holmes (kurgusal da olsa) dikkatli gözlemi ve "zihin sarayı"nı simgeler. Mentalist dizisindeki Patrick Jane hafıza sarayı ve gözlem kullanır. Gerçek hafıza şampiyonları da imgelerle çalışır.', 'Zihin haritası, infografik, video, hafıza sarayı.'],
+  ['🛠️ Yaparak', 'Raymond: "Kod yazarak öğrenilir." Usta-çırak ilişkisinde iş başında, gerçek problemle öğrenilir. Agatha Christie eczanede çalışırken öğrendiği zehir bilgisini romanlarına taşıdı.', 'Soru çöz, problem uygula, deneme sınavı.'],
+  ['🧑‍🏫 Öğreterek', 'Feynman: bir şeyi beş yaşındaki bir çocuğa anlatamıyorsan tam anlamamışsındır. Öğretmeye hazırlanmak boşlukları ortaya çıkarır.', 'Öğreterek Öğren aracı.'],
+  ['🔥 Zorlanarak', 'Kolay gelen kalıcı olmaz: kendini test etmek, aralıklı ve karışık çalışmak "istenen zorluklar"dır. Acı çektirmek değil, sınırında çalışmak öğretir.', 'Zor seviye, hata defteri, yalnız yanlışlar testi.'],
+  ['🌿 Huzurla ve uykuyla', 'Akış hâli (Csikszentmihalyi) zorlukla beceri dengelendiğinde gelir. Öğrenilenler uykuda pekişir; mola dikkati korur.', 'Pomodoro, günlük hedef, düzenli uyku.']
+];
+const MASTERS = [
+  ['Hafızlar', 'Her gün az yeni sayfa + yakın sayfaların tekrarı + eski cüzlerin dönüşümlü tekrarı; önce ustadan dinleme, sesli okuma, ustaya sunma. Yüzlerce sayfa yıllarca bozulmadan kalır.', 'Soru bankası "akıllı tekrar", dikte, sesli dinleme.'],
+  ['İbn Haldun', 'Öğretim adım adım (tedrîc) olmalı: önce konunun özü, sonra ayrıntı, sonra derinlik; aynı konu birkaç turda tekrar edilir. Tek seferde her şeyi yüklemek öğrenciyi yorar.', 'Kısa özet → rapor → test → zor test sırası.'],
+  ['Mozart', 'Erken yaşta yoğun dinleme ve kopyalama, babasının sürekli geri bildirimi, binlerce saat bilinçli pratik. "Dâhi" etiketi bu emeği gizler.', 'Her gün düzenli pratik, geri bildirimli test.'],
+  ['Feynman', 'Konuyu sade dille anlat, tıkandığın yeri bul, kaynağa dön, yeniden anlat. Bilmediğini bilmek ustalığın başıdır.', 'Öğreterek Öğren.'],
+  ['Hacker kültürü (E. S. Raymond)', 'Yaparak öğren, ustaların işini oku, topluluğa katkı ver, sorunları sevgiyle çöz, tekrar eden işi otomatikleştir.', 'Banka ve aralıklı tekrar mekanik işi üstlenir.'],
+  ['Tolstoy, Leonardo, Franklin', 'Günlük, defter, kendine kurallar; okuduğunu yazarak işlemek; kendi kendini eğitmek.', 'Notlar, kartlar, hatırla ve yaz.'],
+  ['Hafıza şampiyonları', '"Fotoğrafik hafıza" değil, yöntem: hafıza sarayı, sayı-imge sistemleri, çok tekrar. 40 günlük eğitim sıradan insanların hatırlamasını belirgin artırmıştır.', 'Hafıza Teknikleri aracı.'],
+  ['Havruta ve medrese geleneği', 'İki kişi aynı metni sesli okur, birbirine sorar, itiraz eder; hoca cevap yerine yeni soru verir.', 'Münazara ve sözlü sınav podcastleri, sohbet.']
+];
+export function masteryArt() {
+  return h('div', { class: 'methods mastery' },
+    h('h2', {}, 'Ustalık sanatı: öğrenmenin mimarisi'),
+    h('blockquote', { class: 'zen' }, 'Yolu izlemek için: ustaya bak, ustayı izle, ustayla yürü, usta gibi gör, ustalaş.'),
+    h('p', { class: 'muted' }, 'Hacker kültüründen hafızlığa, Shu-Ha-Ri\'den Feynman\'a kadar ustalık geleneklerinin ortak mimarisi. Her aşama, uygulamadaki bir araçla eşleşir.'),
+    h('section', {}, h('h3', {}, '1. Üç aşama: çıraklık → kalfalık → ustalık'), h('div', { class: 'm-grid' }, MASTERY_STAGES.map(([t, d, how]) => h('div', { class: 'card m-item' }, h('b', {}, t), h('p', {}, d), h('p', { class: 'muted small' }, h('b', {}, 'Uygulamada: '), how))))),
+    h('section', {}, h('h3', {}, '2. Ustanın tutumu'), h('div', { class: 'm-grid' }, MASTERY_ATTITUDE.map(([t, d]) => h('div', { class: 'card m-item' }, h('b', {}, t), h('p', {}, d))))),
+    h('section', {}, h('h3', {}, '3. Öğrenmenin sekiz kanalı (ustalar nasıl öğrendi?)'), h('div', { class: 'm-grid' }, CHANNELS.map(([t, d, how]) => h('div', { class: 'card m-item' }, h('b', {}, t), h('p', {}, d), h('p', { class: 'muted small' }, h('b', {}, 'Uygulamada: '), how))))),
+    h('section', {}, h('h3', {}, '4. Ustaların yolları'), h('div', { class: 'm-grid' }, MASTERS.map(([t, d, how]) => h('div', { class: 'card m-item' }, h('b', {}, t), h('p', {}, d), h('p', { class: 'muted small' }, h('b', {}, 'Uygulamada: '), how))))),
+    h('section', {}, h('h3', {}, '5. Günlük ustalık döngüsü'),
+      h('ol', { class: 'card' },
+        h('li', {}, 'Isın (5 dk): dünkü yanlışlar ve tekrar zamanı gelen sorular (soru bankası › akıllı tekrar).'),
+        h('li', {}, 'Dinle ve gör (15 dk): yeni bölümün podcasti ya da videosu; metne bakmadan dinle.'),
+        h('li', {}, 'Çalış (25 dk Pomodoro): rapor/slayt, sonra kitabı kapat ve hatırladığını yaz.'),
+        h('li', {}, 'Sına (15 dk): yeni konudan 10–20 soru; yanlışlar hata defterine.'),
+        h('li', {}, 'Öğret (10 dk): konuyu beş yaşındaki bir çocuğa anlatır gibi Öğreterek Öğren\'de anlat.'),
+        h('li', {}, 'Dinlen: mola ve uyku öğrenilenleri pekiştirir. Haftada bir deneme sınavı.'))),
+    h('p', { class: 'muted small' }, 'Not: Sherlock Holmes ve Patrick Jane kurgusal karakterlerdir; yöntemleri gerçek hafıza tekniklerine dayandığı için örnek verilmiştir. Kaynaklar: E. S. Raymond, "How To Become A Hacker" (catb.org/~esr/faqs/hacker-howto.html, Türkçe: belgeler.org); İbn Haldun, Mukaddime; K. A. Ericsson ve ark. (1993) bilinçli pratik; Dresler ve ark. (2017).'));
 }

@@ -17,6 +17,34 @@ Fiyatlar ve sıralamalar sık değişir; karar vermeden önce bağlantılardan k
 | **MiniMax** | Speech 2.8 HD (AA ~1173) sıralamada daha geride. Güçlü yanları ses klonlama ve metinle ses tasarımı. Hazır Türkçe sesleri `Turkish_CalmWoman` (kadın) ve `Turkish_Trustworthyman` (erkek). |
 | **Ücretsiz kadın + erkek doğal Türkçe** | 1) Gemini anahtarı (AI Studio, ücretsiz katman). 2) Azure Speech F0: ayda 0,5 milyon karakter (Emel/Ahmet). 3) Google Cloud TTS: Chirp 3 HD ayda 1 milyon karakter ücretsiz (faturalandırma hesabı gerekir). 4) ElevenLabs Free: ayda 10.000 kredi. 5) Lokal sunucuda edge-tts (resmî değil). |
 
+## Kotasız, ücretsiz, lokal kadın + erkek ses (0.3.2)
+
+**Neden Gemini sesi bir dakika sonra Piper'a döndü?**
+- Gemini'nin ücretsiz TTS katmanında dakikalık ve günlük istek sınırı çok düşük.
+- Podcast parça parça seslendirildiği için birkaç istekten sonra 429 (kota) hatası geldi. Uygulama da birkaç saniye bekleyip sıradaki motora, yani erkek Piper'a geçti.
+- 0.3.2'deki düzeltme:
+  - Dakikalık sınırda Google'ın söylediği süre kadar bekleniyor ve kaldığı parçadan devam ediliyor.
+  - Biten parçalar önbellekte tutuluyor; yeniden üretimde yeniden harcanmıyor.
+  - Parçalar 2 kat büyütüldü, böylece daha az istek gidiyor.
+  - Kadın konuşmacı varsa önce kadın sesi verebilen motorlar deneniyor.
+  - Günlük kota bitince bu açıkça yazılıyor.
+
+**Kalıcı ve kotasız çözüm: lokal sunucu**
+
+| Yol | Kurulum | Kadın / erkek | Lisans |
+|---|---|---|---|
+| edge-tts (Emel / Ahmet) | `server\baslat.bat` (GPU gerekmez) | ✅ / ✅ | Ücretsiz Microsoft çevrimiçi sesi; resmî API değil, internet gerekir |
+| **OmniVoice** (k2-fsa, 600+ dil) | `tools\kur-gpu.bat` | ✅ / ✅ — referans kayıt gerekmeden "kadın, orta yaş" / "erkek, orta yaş" sesi bir kez tasarlanır, sonra hep aynı sesle okunur | Kod Apache-2.0, ağırlıklar ticari olmayan (kişisel kullanım serbest) |
+| **Pocket TTS Türkçe** (alperiox, Kyutai tabanlı) | `tools\kur-gpu.bat` | Tasarlanan ya da kendi kaydınızla | MIT; CPU'da gerçek zamanın 5 katı |
+| Chatterbox Multilingual | `tools\kur-chatterbox.bat` (ileri düzey) | Referans kayıtla | MIT |
+
+Hugging Face'teki tarayıcıda çalışan Türkçe modeller (`antalia-mini-web-onnx`, `ema-lightning-web-onnx`) Apache-2.0 lisanslı ve
+çok hafif (~50 MB). Ancak **tek erkek sesleri var** (kart: "one synthetic male voice"). Piper'ın yerine daha iyi bir tarayıcı erkek
+sesi olarak yol haritasındalar.
+
+`kugelaudio-0-open` (MIT, 7–9B, ~19 GB VRAM) Türkçeyi destekliyor. Ama hazır sesleri Almanca ve İngilizce, klonlaması yok;
+Türkçede önerilmez.
+
 ## Neden "sadece erkek sesi" çıkıyordu?
 - Tarayıcıda çalışan ücretsiz **Piper**'ın üç Türkçe sesi var (dfki, fahrettin, fettah). Üçü de **erkek**; Türkçe kadın Piper sesi yok.
 - Kullanıcının Chrome'unda (Windows) **hiç Türkçe tarayıcı sesi yok**: 22 ses var, hiçbiri Türkçe değil (2026-10-12 testi).
