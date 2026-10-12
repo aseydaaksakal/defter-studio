@@ -58,8 +58,9 @@ export async function deleteArtifact(id) {
 }
 
 export async function deleteSource(id) {
-  await db.transaction('rw', db.sources, db.chunks, async () => {
+  await db.transaction('rw', db.sources, db.chunks, db.blobs, async () => {
     await db.chunks.where('sourceId').equals(id).delete();
+    await db.blobs.where('artifactId').equals('src:' + id).delete();
     await db.sources.delete(id);
   });
 }

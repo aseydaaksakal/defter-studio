@@ -166,16 +166,25 @@ async function serverLine(line, speaker, lang) {
   return r.blob();
 }
 
-let piperMod = null;
+let piperW = null, piperSeq = 0;
+const piperWaits = {};
+function piperWorker() {
+  if (piperW) return piperW;
+  piperW = new Worker(new URL('./piper-worker.js', import.meta.url), { type: 'module' });
+  piperW.onmessage = (e) => { const w = piperWaits[e.data.id]; if (!w) return; if (e.data.progress) return w.onInfo?.(e.data.progress); delete piperWaits[e.data.id]; e.data.error ? w.fail(new Error(e.data.error)) : w.ok(e.data.blob); };
+  piperW.onerror = (e) => { for (const k in piperWaits) { piperWaits[k].fail(new Error('Piper ses motoru başlatılamadı: ' + (e.message || 'bilinmeyen hata'))); delete piperWaits[k]; } piperW = null; };
+  return piperW;
+}
 async function piperLine(line, voice, onInfo) {
-  try { piperMod = piperMod || await import('./vendor/piper/piper-tts-web.js'); }
-  catch { throw new Error('Tarayıcıda Piper ses motoru yüklenemedi (internet gerekir). Ayarlar › Seslendirme’den Gemini veya lokal sunucuyu seçebilirsiniz.'); }
+  const id = ++piperSeq;
+  const text = normalizeTR(line.text);
   try {
-    return await piperMod.predict({ text: normalizeTR(line.text), voiceId: voice }, (p) => {
-      if (p?.total && onInfo) onInfo(`Ses modeli indiriliyor %${Math.round((p.loaded / p.total) * 100)} (ilk seferde ~60 MB)`);
+    return await new Promise((ok, fail) => {
+      piperWaits[id] = { ok, fail, onInfo: (p) => { if (p?.total && onInfo) onInfo(`Ücretsiz ses modeli indiriliyor %${Math.round((p.loaded / p.total) * 100)} (yalnız ilk sefer, ~60 MB)`); } };
+      piperWorker().postMessage({ id, text, voiceId: voice });
     });
   } catch (e) {
-    if (/fetch|import|network/i.test(e.message)) throw new Error('Tarayıcıda Piper ses motoru indirilemedi (internet gerekir). Ayarlar › Seslendirme’den Gemini veya lokal sunucuyu seçebilirsiniz.');
+    if (/fetch|import|network|Failed/i.test(e.message)) throw new Error('Ücretsiz Piper sesi indirilemedi (internet gerekir). Ayarlar › Seslendirme’den ElevenLabs veya Gemini seçebilirsiniz.');
     throw e;
   }
 }
@@ -219,6 +228,8 @@ export async function synthesize(artifactId, lines, speakers, lang, { format = '
   const key = hash(engine + JSON.stringify(voices) + (cfg.geminiModel || '') + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone])));
   const cached = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.key === key).first();
   if (cached) return { engine, blob: cached.blob, timings: cached.timings };
+  if (inflight[key]) return inflight[key]; // aynı ses zaten üretiliyorsa onu bekle
+  const job = (async () => {
   const style = STYLE[format] || STYLE.deep;
   const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
   const pieces = []; // {blob, lines:[idx...]}
@@ -256,7 +267,11 @@ export async function synthesize(artifactId, lines, speakers, lang, { format = '
   await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix').delete();
   await db.blobs.add({ artifactId, kind: 'mix', key, blob, timings });
   return { engine, blob, timings };
+  })();
+  inflight[key] = job;
+  try { return await job; } finally { delete inflight[key]; }
 }
+const inflight = {};
 
 // Parçaları birleştir: konuşmacı değişiminde ~0,3 sn doğal duraklama (Google podcast'inde ölçülen ortanca 0,32 sn),
 // ses seviyesini podcast standardına yakın (-16 LUFS civarı) dengele

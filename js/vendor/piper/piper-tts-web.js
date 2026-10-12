@@ -293,7 +293,7 @@ const _TtsSession = class _TtsSession {
     if (ort.env) {
       if ("allowLocalModels" in ort.env) ort.env.allowLocalModels = false;
       if (ort.env.wasm) {
-        ort.env.wasm.numThreads = navigator.hardwareConcurrency;
+        ort.env.wasm.numThreads = (self.crossOriginIsolated ? navigator.hardwareConcurrency : 1);
         ort.env.wasm.wasmPaths = __privateGet(this, _wasmPaths).onnxWasm;
       }
     }

@@ -1,5 +1,13 @@
 # Değişiklikler
 
+## 2026-10-12 — 0.2.2
+- Taranmış (resim) PDF'ler için Türkçe metin tanıma (OCR, Tesseract.js): arka planda sayfa sayfa, ilerleme göstergesi,
+  duraklat/sürdür, sayfa yenilense de kaldığı yerden devam.
+- Ücretsiz Piper sesi arka plan iş parçacığına taşındı: podcast açılırken sayfa donmuyor; ses hazırlanırken tarayıcı sesiyle dinlenebiliyor.
+- Aynı podcast sesinin iki kez üretilmesi engellendi.
+- Ollama bağlantı yardımcısı: "kapalı" ile "çalışıyor ama siteyi engelliyor" durumlarını ayırt ediyor; düzeltilmiş PowerShell komutu
+  (yeni ayarı aynı oturuma da yükler) ve `ollama serve` ile kesin çözüm.
+
 ## 2026-10-12 — 0.2.1
 - Model bağlantısı: üretimden önce bağlantı kontrolü; bağlantı yoksa iş açılmaz, kurulum yardımcısı açılır
   (Ollama izni için kopyalanabilir komut, tek tıkla `tools/ollama-baglan.bat`, tek tıkla Gemini'ye geçiş).

@@ -129,9 +129,9 @@ export async function chunkText(notebookId, sourceId, text) {
   return rows.length;
 }
 
-export async function addSource(notebookId, { title, kind, text, meta = {} }) {
+export async function addSource(notebookId, { title, kind, text, meta = {}, allowEmpty = false }) {
   text = (text || '').trim();
-  if (!text) throw new Error('Kaynakta okunabilir metin yok.');
+  if (!text && !allowEmpty) throw new Error('Kaynakta okunabilir metin yok.');
   const id = await db.sources.add({ notebookId, title, kind, text, chars: text.length, enabled: 1, createdAt: now(), ...meta });
   await chunkText(notebookId, id, text);
   await touchNotebook(notebookId);
@@ -150,6 +150,14 @@ function cosine(a, b) {
   let s = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) { s += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
   return s / (Math.sqrt(na * nb) || 1);
+}
+
+// Kaynak metnini değiştir ve yeniden dizinle (OCR sonrası)
+export async function replaceSourceText(sid, text) {
+  const s = await db.sources.get(sid);
+  await db.chunks.where('sourceId').equals(sid).delete();
+  await db.sources.update(sid, { text, chars: text.length });
+  await chunkText(s.notebookId, sid, text);
 }
 
 export async function enabledSources(notebookId) {

@@ -15,11 +15,16 @@ oynatıcıyı, slaytları, testi, kartları, haritayı inceleyebilirsiniz. Yeni 
 3. **Siteye izin verin (zorunlu).** En kolayı: depodaki `tools/ollama-baglan.bat` dosyasını çift tıklayın. Elle yapmak isterseniz: Tarayıcıdaki sayfa başka bir adresten Ollama'ya bağlandığı için
    Ollama'nın bu siteye izin vermesi gerekir:
    ```powershell
-   setx OLLAMA_ORIGINS "https://aseydaaksakal.github.io"
-   setx OLLAMA_FLASH_ATTENTION 1
-   setx OLLAMA_KV_CACHE_TYPE q8_0
+   $o = "https://aseydaaksakal.github.io"
+   [Environment]::SetEnvironmentVariable("OLLAMA_ORIGINS", $o, "User")
+   $env:OLLAMA_ORIGINS = $o
+   Get-Process "ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force
+   Start-Sleep -Seconds 2
+   Start-Process "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
    ```
-   Ardından görev çubuğundaki Ollama simgesinden **Quit** deyip Ollama'yı yeniden açın.
+   Üçüncü satır önemlidir: kalıcı ayar, aynı pencereden başlatılan Ollama'ya ancak bu satırla geçer.
+   Hâlâ olmazsa Ollama'yı görev çubuğundan **Quit** ile kapatıp PowerShell'de
+   `$env:OLLAMA_ORIGINS = "https://aseydaaksakal.github.io"; ollama serve` çalıştırın ve pencereyi açık bırakın.
 4. Uygulamada ⚙ Ayarlar › Sağlayıcı: **Ollama**, Model: `qwen3.8:27b` › **Bağlantıyı test et** › Kaydet.
 5. Chrome "yerel ağdaki cihazlara erişim" izni sorarsa **İzin ver** deyin.
 

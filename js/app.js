@@ -1,13 +1,14 @@
 // Defter Studio — uygulama kabuğu: defterler, kaynaklar, sohbet, Studio, görüntüleyici, ayarlar
 import { db, now, getSetting, setSetting, saveArtifactContent, deleteArtifact, deleteSource, deleteNotebook, exportNotebook, importNotebook, touchNotebook } from './db.js';
 import { PROVIDERS, loadConfig, saveConfig, listModels, chat } from './llm.js';
-import { addSource, fileToText, urlToText, chunkText, enabledSources } from './sources.js';
+import { addSource, fileToText, urlToText, chunkText, enabledSources, replaceSourceText } from './sources.js';
 import { serverUrl, serverBase, setServerBase, serverInfo } from './server.js';
 import { TOOLS, LANGS, answer, suggestQuestions } from './studio/gen.js';
 import { h, icon, toast, modal, confirmBox, promptBox, renderMarkdown, download, slug, timeAgo } from './ui.js';
 import { seedDemo } from './demo.js';
 import { getStats, levelOf, xpForLevel, BADGES, updateXpPill, dueMistakes, readiness, sciencePage, resolveMistake } from './learn.js';
 import { typingPage } from './typing.js';
+import { looksScanned, runOcr, stopOcr, ocrRunning, onOcrProgress, ocrText } from './ocr.js';
 import { ENGINES, loadTTS, saveTTS, VOICES, hasNaturalBrowserVoice, synthesize, listElevenVoices } from './tts.js';
 import * as vMemory from './studio/views/memory.js';
 import * as vTeach from './studio/views/teach.js';
@@ -194,6 +195,7 @@ async function renderNotebook() {
       h('section', { class: 'pane studio-pane', id: 'studio' }),
       h('section', { class: 'viewer', id: 'viewer', hidden: true })));
   await Promise.all([renderSources(), renderChat(), renderStudio()]);
+  resumeOcrs(nb.id);
   updateStatus();
 }
 
@@ -212,10 +214,33 @@ async function renderSources() {
     srcs.length ? h('label', { class: 'src-all' }, h('span', { class: 'grow' }, 'Tümünü seç'), h('input', { type: 'checkbox', checked: allOn ? true : null, onchange: async (e) => { await db.sources.where('notebookId').equals(state.nb.id).modify({ enabled: e.target.checked ? 1 : 0 }); renderSources(); renderChat(true); } })) : null,
     h('ul', { class: 'src-list' }, srcs.map((s) => h('li', { class: 'src' },
       h('span', { class: 'src-ic ' + s.kind }, { pdf: 'PDF', web: 'WEB', youtube: 'YT', audio: 'SES', docx: 'DOC', text: 'TXT' }[s.kind] || 'TXT'),
-      h('button', { class: 'src-title', title: s.title, onclick: () => viewSource(s) }, s.title),
+      h('button', { class: 'src-title', title: s.title, onclick: () => viewSource(s) }, s.title,
+        !s.ocr && s.kind === 'pdf' && looksScanned(s.text || '', s.pages || 0) ? h('span', { class: 'ocr-chip' }, 'Taranmış PDF: metin tanıma için silip yeniden yükleyin') : null,
+        s.ocr ? h('span', { class: 'ocr-chip', 'data-ocr': s.id }, s.ocr.status === 'done' ? 'OCR tamam' : ocrRunning(s.id) ? `OCR %${Math.round(((s.ocr.done || 0) / (s.ocr.total || 1)) * 100)} · ${s.ocr.done || 0}/${s.ocr.total} sayfa` : s.ocr.status === 'error' ? 'OCR hata' : `OCR ${s.ocr.done || 0}/${s.ocr.total}`) : null),
+      s.ocr && s.ocr.status !== 'done' ? h('button', { class: 'icon-btn small', 'aria-label': ocrRunning(s.id) ? 'OCR duraklat' : 'OCR sürdür', title: ocrRunning(s.id) ? 'Duraklat' : 'Sürdür', onclick: () => { ocrRunning(s.id) ? stopOcr(s.id) : startOcr(s.id); setTimeout(renderSources, 300); } }, icon(ocrRunning(s.id) ? 'pause' : 'play', 14)) : null,
       h('button', { class: 'icon-btn small', 'aria-label': 'Kaynağı sil', onclick: async () => { if (await confirmBox('Kaynak silinsin mi?', s.title)) { await deleteSource(s.id); renderSources(); renderChat(true); } } }, icon('trash', 15)),
       h('input', { type: 'checkbox', 'aria-label': 'Kaynağı kullan', checked: s.enabled ? true : null, onchange: async (e) => { await db.sources.update(s.id, { enabled: e.target.checked ? 1 : 0 }); renderSources(); renderChat(true); } })))),
     !srcs.length ? h('div', { class: 'empty' }, h('p', {}, 'Henüz kaynak yok.'), h('p', { class: 'muted small' }, 'PDF, Word, metin, web sayfası, YouTube veya ses dosyası ekleyin. Kaynaklarınız yalnızca bu tarayıcıda saklanır.')) : null);
+}
+
+// ---------- OCR (taranmış PDF) ----------
+function startOcr(sid) {
+  runOcr(sid, { onPages: async (text, done) => {
+    const src = await db.sources.get(sid);
+    await replaceSourceText(sid, text ?? ocrText(src));
+    if (done) { toast(`${src.title}: metin tanıma tamamlandı`, 'ok'); afterSourcesChanged(); }
+  } }).catch((e) => toast('OCR: ' + e.message, 'error', 7000));
+  renderSources();
+}
+onOcrProgress((sid, st) => {
+  const el = document.querySelector(`[data-ocr="${sid}"]`);
+  if (el) { el.textContent = st.status === 'running' ? `OCR %${Math.round((st.done / st.total) * 100)} · ${st.done}/${st.total} sayfa` : st.status === 'done' ? 'OCR tamam' : st.status === 'error' ? 'OCR hata' : 'OCR duraklatıldı'; }
+  if (st.status !== 'running') renderSources();
+});
+// Sayfa yenilenince yarım kalan OCR'ları sürdür
+async function resumeOcrs(nbId) {
+  const srcs = await db.sources.where('notebookId').equals(nbId).toArray();
+  for (const s of srcs) if (s.ocr && ['running', 'queued'].includes(s.ocr.status) && !ocrRunning(s.id)) startOcr(s.id);
 }
 
 function viewSource(s) {
@@ -242,8 +267,14 @@ function openAddSource() {
       try {
         const r = await fileToText(f, (p) => (status.textContent = `${f.name} okunuyor… %${Math.round(p * 100)}`));
         status.textContent = `${f.name} parçalanıyor ve dizinleniyor…`;
-        await addSource(state.nb.id, { title: f.name.replace(/\.[^.]+$/, ''), kind: r.kind, text: r.text, meta: r.pages ? { pages: r.pages } : {} });
-        toast(`${f.name} eklendi`);
+        const scanned = r.kind === 'pdf' && looksScanned(r.text, r.pages);
+        const sid = await addSource(state.nb.id, { title: f.name.replace(/\.[^.]+$/, ''), kind: r.kind, text: r.text, allowEmpty: scanned, meta: r.pages ? { pages: r.pages } : {} });
+        if (scanned) {
+          await db.blobs.add({ artifactId: 'src:' + sid, kind: 'pdf', blob: f });
+          await db.sources.update(sid, { ocr: { status: 'queued', done: 0, total: r.pages } });
+          toast(`${f.name}: taranmış PDF, ${r.pages} sayfa metin tanıma (OCR) ile okunuyor. İlerleme Kaynaklar listesinde.`, 'info', 8000);
+          startOcr(sid);
+        } else toast(`${f.name} eklendi`);
       } catch (e) { toast(`${f.name}: ${e.message}`, 'error', 6000); }
     }
     status.textContent = '';
@@ -385,9 +416,17 @@ async function checkLLM(force = false) {
   } catch (e) { connCache = { at: Date.now(), ok: false, error: String(e.message || e) }; }
   return connCache;
 }
-const OLLAMA_PS = `[Environment]::SetEnvironmentVariable("OLLAMA_ORIGINS", "${location.origin},http://localhost:*,http://127.0.0.1:*", "User")
+const OLLAMA_PS = `$o = "${location.origin}"
+[Environment]::SetEnvironmentVariable("OLLAMA_ORIGINS", $o, "User")
+$env:OLLAMA_ORIGINS = $o
 Get-Process "ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 2
 Start-Process "$env:LOCALAPPDATA\\Programs\\Ollama\\ollama app.exe"`;
+const OLLAMA_SERVE = `$env:OLLAMA_ORIGINS = "${location.origin}"; ollama serve`;
+// Ollama çalışıyor mu, yoksa çalışıp bu siteyi mi reddediyor? (no-cors isteği CORS'tan bağımsız ulaşır)
+async function probeOllama(base) {
+  try { await fetch(base.replace(/\/$/, '') + '/api/version', { mode: 'no-cors' }); return 'blocked'; } catch { return 'down'; }
+}
 let connOpen = false;
 async function connectionModal(err) {
   if (connOpen) return; connOpen = true;
@@ -396,14 +435,22 @@ async function connectionModal(err) {
   const copy = (txt) => h('button', { class: 'btn ghost small', onclick: () => { navigator.clipboard.writeText(txt).then(() => toast('Kopyalandı'), () => toast('Kopyalanamadı; metni seçip kopyalayın', 'error')); } }, icon('copy', 15), ' Kopyala');
   const gKey = h('input', { class: 'input', type: 'password', placeholder: 'Gemini API anahtarı (aistudio.google.com › Get API key)', autocomplete: 'off' });
   const isOllama = cfg.provider === 'ollama';
+  const probe = isOllama ? await probeOllama(cfg.baseUrl || 'http://localhost:11434') : null;
+  const diag = probe === 'blocked'
+    ? h('div', { class: 'card diag warn' }, h('b', {}, 'Ollama çalışıyor ama bu siteyi engelliyor. '), 'İzin ayarı Ollama’ya ulaşmamış. Sık neden: ayarı yaptıktan sonra Ollama aynı pencereden başlatılınca yeni ayarı görmez. Aşağıdaki komut bunu da düzeltir.')
+    : probe === 'down' ? h('div', { class: 'card diag no' }, h('b', {}, 'Ollama’ya ulaşılamıyor. '), 'Ollama kapalı olabilir ya da Chrome yerel ağ erişimine izin vermemiş olabilir.') : null;
   const body = h('div', { class: 'conn' },
     h('p', {}, h('b', {}, 'Yapay zeka modeline bağlanılamadı. '), h('span', { class: 'muted' }, err ? String(err).slice(0, 160) : '')),
+    diag,
     isOllama ? h('div', { class: 'card' },
       h('h3', {}, 'Bilgisayarınızdaki Ollama’yı bağlayın (ücretsiz)'),
       h('ol', { class: 'conn-steps' },
         h('li', {}, 'Ollama kurulu ve açık olmalı: ', h('a', { href: 'https://ollama.com/download', target: '_blank', rel: 'noopener' }, 'ollama.com/download'), '. Kontrol: ', h('a', { href: 'http://localhost:11434', target: '_blank', rel: 'noopener' }, 'localhost:11434'), ' sayfasında "Ollama is running" yazmalı.'),
-        h('li', {}, 'Bu siteye izin verin. ', h('b', {}, 'Kolay yol: '), h('a', { href: 'https://github.com/aseydaaksakal/defter-studio/raw/main/tools/ollama-baglan.bat' }, 'ollama-baglan.bat'), ' dosyasını indirip çift tıklayın (izni ayarlar, Ollama’yı yeniden başlatır, modeli indirir). ', h('b', {}, 'Ya da '), 'PowerShell’e yapıştırın:',
-          h('pre', { class: 'src-text' }, OLLAMA_PS), copy(OLLAMA_PS)),
+        h('li', {}, 'Bu siteye izin verin. PowerShell’i (yönetici olmasına gerek yok) açıp bu 6 satırı yapıştırın ve Enter’a basın:',
+          h('pre', { class: 'src-text' }, OLLAMA_PS), copy(OLLAMA_PS),
+          h('div', { class: 'muted small' }, 'Ya da ', h('a', { href: 'https://github.com/aseydaaksakal/defter-studio/raw/main/tools/ollama-baglan.bat' }, 'ollama-baglan.bat'), ' dosyasını indirip çift tıklayın.')),
+        h('li', {}, 'Hâlâ olmazsa: görev çubuğundaki Ollama simgesine sağ tıklayıp ', h('b', {}, 'Quit'), ' deyin, sonra PowerShell’de şunu çalıştırın ve pencereyi açık bırakın:',
+          h('pre', { class: 'src-text' }, OLLAMA_SERVE), copy(OLLAMA_SERVE)),
         h('li', {}, `Model indirilmiş olmalı: `, h('code', {}, `ollama pull ${cfg.model || 'qwen3.8:27b'}`), ' ', copy(`ollama pull ${cfg.model || 'qwen3.8:27b'}`)),
         h('li', {}, 'Chrome "yerel ağ erişimi" izni sorarsa İzin ver deyin.'))) : null,
     h('div', { class: 'card' }, h('h3', {}, 'Ya da hemen buluta geçin: Gemini (ücretsiz kota)'),

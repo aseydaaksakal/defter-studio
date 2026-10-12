@@ -16,7 +16,7 @@ export function render(root, art, api) {
   const lines = c.lines || [];
   const speakers = speakersOf(c);
   const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
-  let audio = null, timings = null, idx = 0, liveMode = false, livePlaying = false, rate = 1, editing = false, raf = 0;
+  let disposed = false, audio = null, timings = null, idx = 0, liveMode = false, livePlaying = false, rate = 1, editing = false, raf = 0;
 
   const bar = h('input', { type: 'range', min: 0, max: 1000, value: 0, class: 'seek', 'aria-label': 'Konum' });
   const time = h('span', { class: 'time' }, '00:00 / --:--');
@@ -90,20 +90,28 @@ export function render(root, art, api) {
     const engine = await resolveEngine(cfg);
     upsell.hidden = !['piper', 'browser'].includes(engine);
     if (engine === 'browser') return goLive('Tarayıcı sesi' + (hasNaturalBrowserVoice(c.lang) ? ' (doğal)' : ' — daha doğal ses için Ayarlar › Seslendirme'));
-    status.textContent = `${ENGINES[engine].split(' —')[0].split(' (')[0]} ile seslendiriliyor…`;
+    const name = ENGINES[engine].split(' —')[0].split(' (')[0];
+    // Ses dosyası hazırlanırken beklemeden tarayıcı sesiyle dinlenebilir
+    liveMode = true; playBtn.disabled = false;
+    status.textContent = `${name} ile hazırlanıyor… beklerken ▶ ile dinleyebilirsiniz`;
     try {
-      const r = await synthesize(art.id, lines, speakers, c.lang, { format: c.format, onProgress: (m) => (status.textContent = m) });
+      const r = await synthesize(art.id, lines, speakers, c.lang, { format: c.format, onProgress: (m) => (status.textContent = m + ' · beklerken ▶ ile dinleyebilirsiniz') });
+      if (disposed) return;
       timings = r.timings;
+      const resumeAt = livePlaying ? idx : -1;
+      livePlaying = false; speechSynthesis.cancel(); liveMode = false;
       audio = new Audio(URL.createObjectURL(r.blob));
       audio.playbackRate = rate;
       audio.addEventListener('ended', () => playBtn.replaceChildren(icon('play', 26)));
       playBtn.disabled = false;
       dlBtn.hidden = false;
       dlBtn.onclick = () => download(slug(art.title) + '.wav', r.blob);
-      status.textContent = ENGINES[engine].split(' —')[0].split(' (')[0] + ' · doğal ses';
+      status.textContent = name + ' · ses dosyası hazır';
+      if (resumeAt >= 0 && timings?.[resumeAt]) { audio.currentTime = timings[resumeAt].start; audio.play().catch(() => {}); }
     } catch (e) {
+      if (disposed) return;
       toast(e.message, 'error', 7000);
-      goLive('Ses dosyası üretilemedi, tarayıcı sesine geçildi');
+      goLive('Ses dosyası üretilemedi, tarayıcı sesiyle çalıyor');
     }
   }
   function goLive(msg) { liveMode = true; playBtn.disabled = false; status.textContent = msg; time.textContent = `${lines.length} replik`; }
@@ -146,7 +154,7 @@ export function render(root, art, api) {
   highlight(0);
   prepare();
   raf = requestAnimationFrame(tick);
-  return () => { cancelAnimationFrame(raf); livePlaying = false; speechSynthesis.cancel(); audio?.pause(); };
+  return () => { disposed = true; cancelAnimationFrame(raf); livePlaying = false; speechSynthesis.cancel(); audio?.pause(); };
 }
 
 export function toText(art) {
