@@ -144,3 +144,8 @@ için pratikte sorun olmaz.
 - ElevenLabs modeller: https://elevenlabs.io/docs/overview/models · v4: https://elevenlabs.io/v4
 - MiniMax: T2A https://platform.minimax.io/docs/api-reference/speech-t2a-http · klonlama https://platform.minimax.io/docs/api-reference/voice-cloning-clone · ses tasarımı https://platform.minimax.io/docs/api-reference/voice-design-design · sistem sesleri https://platform.minimax.io/docs/faq/system-voice-id
 - Azure fiyat: https://azure.microsoft.com/pricing/details/speech/ · Google Cloud TTS fiyat: https://cloud.google.com/text-to-speech/pricing
+
+## Ses kilidi (0.5.1)
+- Bir podcast tek motorla seslendirilir; kadın/erkek ses sabit kalır. Motor hata verirse (ör. Gemini günlük kota) otomatik başka motora **geçilmez**, Piper'a hiç düşülmez.
+- Hazır parçalar saklanır; "Kaldığı yerden devam et" yalnız eksik satırları üretir (kota yenilenince ya da başka motor seçilerek).
+- Sınırsız/ücretsiz yol: lokal sunucu motorları (OmniVoice, Pocket TTS, VoxCPM, MOSS-TTS). Tümünü dinlemek için `tools\ses-karsilastir.bat`; sunucu sorunları için `tools\sunucu-tani.bat`.

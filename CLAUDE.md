@@ -50,7 +50,7 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 ```bash
 python3 -m http.server 8099 &        # depo kökünde
 python3 tests/mock_llm.py &          # sahte model (OpenAI uyumlu SSE) + sahte lokal sunucu (/health, /tts) — 8098
-python3 tests/e2e.py [klasör]        # 73 uçtan uca kontrol, ekran görüntüleri klasöre
+python3 tests/e2e.py [klasör]        # 78 uçtan uca kontrol, ekran görüntüleri klasöre
 ```
 Sahte model istemdeki KAYNAKLAR bloğundan istenen sayıda, kaynaktan alıntılı öğe üretir.
 - Yeni bir istem eklersen `tests/mock_llm.py`'ye o isteme özgü bir anahtar ifade ekle.

@@ -1,6 +1,6 @@
 // Çevrimdışı çalışma: önce ağ (her zaman en güncel sürüm), ağ yoksa önbellek.
 // Modüller HTTP önbelleğinden değil, sunucuya sorularak (ETag ile, ucuz) alınır: yeni sürümde eski/yeni dosya karışmaz.
-const CACHE = 'defter-studio-v3';
+const CACHE = 'defter-studio-v4';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
   for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);

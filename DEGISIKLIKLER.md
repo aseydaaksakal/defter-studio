@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-13 — teslim
+- 0.5.1: ses kilidi (motor değişmez, robota düşmez, kaldığı yerden devam), MOSS-TTS adaptörü, ses karşılaştırma ve sunucu tanı araçları
+
+## 2026-10-13 — teslim
 - 0.5.0: yapay zeka görselleri (slayt, infografik, video; Gemini/MiniMax/lokal ComfyUI+FLUX, önbellekli), kur-gpu.bat onarımı (CRLF, adım adım hata), kur-comfyui.bat
 
 ## 2026-10-13 — teslim

@@ -11,14 +11,14 @@ export function speakersOf(c) {
   return cast;
 }
 
-// Kadın konuşmacı varken yalnız erkek sesli motor seçildiyse gösterilen ücretsiz çözüm kartı
+// Kadın + erkek sesi verebilen bir motor yokken gösterilen çözüm kartı
 export function femaleVoiceCard(openSettings) {
   return h('div', { class: 'card voice-up' },
-    h('b', {}, 'Kadın sesi için bir adım kaldı. '),
-    'Tarayıcıda çalışan ücretsiz Piper modelinin Türkçe seslerinin üçü de erkek; bu yüzden kadın konuşmacı da erkek sesle okunuyor. Ücretsiz çözümler: ',
+    h('b', {}, 'Ses motoru için bir adım kaldı. '),
+    'Podcast için kadın ve erkek sesi verebilen bir motor gerekiyor. Robot gibi duyulan tarayıcı Piper sesi (yalnız erkek) artık kendiliğinden kullanılmıyor. Seçenekler: ',
     h('ol', { class: 'small' },
-      h('li', {}, h('b', {}, 'Gemini anahtarı (önerilen, ücretsiz katman): '), h('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener' }, 'aistudio.google.com/apikey'), ' › “Create API key” › anahtarı Ayarlar › Seslendirme’ye yapıştırın. Doğal kadın + erkek Türkçe.'),
-      h('li', {}, h('b', {}, 'Lokal sunucu: '), 'server/baslat.bat ile açın; edge-tts (Emel kadın, Ahmet erkek) ya da Chatterbox ile kendi kaydettiğiniz sesler.'),
+      h('li', {}, h('b', {}, 'Lokal sunucu (önerilen, kotasız): '), 'server\\baslat.bat ile açın; edge-tts (Emel kadın, Ahmet erkek) ya da GPU modelleri (OmniVoice, Trendyol-TTS) kota olmadan, ses podcast boyunca sabit okur.'),
+      h('li', {}, h('b', {}, 'Gemini anahtarı (ücretsiz ama günlük kota küçük, ~10-12 satır): '), h('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener' }, 'aistudio.google.com/apikey'), ' › “Create API key” › anahtarı Ayarlar › Seslendirme’ye yapıştırın.'),
       h('li', {}, h('b', {}, 'Azure (ayda 0,5M karakter ücretsiz) veya Google Cloud TTS (ayda 1M karakter ücretsiz) anahtarı.'))),
     h('button', { class: 'btn primary small', onclick: () => openSettings?.() }, 'Ses ayarlarını aç'));
 }
@@ -154,12 +154,14 @@ export function render(root, art, api) {
       dlBtn.hidden = false;
       dlBtn.onclick = () => download(slug(art.title) + '.wav', r.blob);
       status.textContent = `${ENGINE_SHORT[r.engine] || name} · ses dosyası hazır`;
+      redoBtn.replaceChildren(icon('refresh', 16), ' Sesi yeniden üret');
       if (resume) { audio.currentTime = at; audio.play().catch(() => {}); }
     } catch (e) {
       if (disposed) return;
       streaming = false; sAudio?.pause();
       toast(e.message, 'error', 9000);
-      status.textContent = 'Ses üretilemedi: ' + e.message.slice(0, 120);
+      status.textContent = `Ses durdu${e.doneLines ? ` (${e.doneLines}/${lines.length} satır hazır, saklandı)` : ''}: ` + e.message.slice(0, 140);
+      redoBtn.replaceChildren(icon('refresh', 16), ' Kaldığı yerden devam et');
       if (hasBrowserVoice(c.lang)) { liveMode = true; playBtn.disabled = false; status.textContent += ' · tarayıcı sesiyle dinleyebilirsiniz'; }
     }
   }

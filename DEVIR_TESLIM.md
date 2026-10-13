@@ -1,6 +1,6 @@
 # Devir teslim
 
-Son güncelleme: 2026-10-13 · sürüm **0.5.0** · canlı: https://aseydaaksakal.github.io/defter-studio/
+Son güncelleme: 2026-10-13 · sürüm **0.5.1** · canlı: https://aseydaaksakal.github.io/defter-studio/
 
 Bu belge projeyi devralan kişi ya da yapay zeka içindir: durum, kanıtlar, eksikler, sıradaki iş ve hazır başlangıç istemi.
 Ayrıntı gerektikçe [PROJE_REHBERI.md](PROJE_REHBERI.md) (dosya → görev) ve [docs/NOT_DEFTERI.md](docs/NOT_DEFTERI.md)
@@ -21,7 +21,9 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 | Tam sayılar (test 1–200, kart 1–300, slayt 1–150) | ✅ | e2e: 20 soru, 15 kart, 5 ve 20 slayt tam |
 | Kaynak doğrulama (halüsinasyon denetimi) | ✅ | **Gerçek model:** qwen3.8:27b, 10/10 soru birebir alıntıyla doğrulandı, 0 elenen, 41 sn (2026-10-12, kullanıcının Chrome'u) |
 | Soru bankası (0 token test, arka planda doldurma, kalan/çözülen, sınav tarihi planı) | ✅ | e2e + kullanıcı kendi defterinde 80 soruluk banka kurup 16'sını çözmüş |
-| Ses v3: 8 motor, otomatik sıra + geri düşme, akışlı çalma | ✅ | e2e (sahte sunucu TTS) |
+| Ses v3: motorlar, akışlı çalma | ✅ | e2e (sahte sunucu TTS) |
+| **Ses kilidi (0.5.1):** podcast boyunca tek motor, kadın/erkek sesi değişmez, motorlar arası geri düşme YOK (Piper yalnız elle seçilirse); parçalar IndexedDB'de saklanır, kota bitince durur ve "Kaldığı yerden devam et" yalnız eksik satırları üretir. Sunucu `/tts` `engine` ile kilitlenir; `/health` `tts.plan` | ✅ | e2e 5 yeni test (78/78) + `tests/server_test.py` 26/26 |
+| **MOSS-TTS Local v1.5 (0.5.1):** ayrı sanal ortam (`server/.venv-moss`) + ayrı çalışan süreç (`server/moss_worker.py`), ses klonlama, `tools/kur-moss.bat`; katalog 31 model; `tools/ses-karsilastir.bat` ile tüm sesleri dinleme; `tools/sunucu-tani.bat` | ⚠️ Kod hazır | Kaynak koddan doğrulandı, **GPU'da denenmedi**. MOSS-TTS-v1.5 (8B), MOSS-TTSD, Orpheus TR: yalnız indirme (adaptör yok) |
 | Kadın sesi | ⚠️ Anahtar/sunucu gerekir | Piper'ın Türkçe sesleri yalnız erkek. Oynatıcı ücretsiz çözümleri gösteriyor. Kullanıcıda henüz ses anahtarı yok. |
 | MiniMax TTS + ses klonlama + ses tasarımı (Pages ve lokal) | ✅ Kod hazır | CORS testi geçti (github.io kökeni). **Gerçek anahtarla denenmedi.** |
 | Azure, Google Cloud, ElevenLabs v4, Gemini TTS | ✅ Kod hazır | CORS geçti; gerçek anahtarla denenmedi |
@@ -35,7 +37,7 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 | **Yapay zeka görselleri (0.5.0):** slayt (kapak arka planı + sağ panel), infografik (başlık + kutu), video sahneleri (panel + yakınlaşma); önbellekli; Ayarlar › Görseller | ✅ Kod hazır | e2e: lokal sunucu `/image` ile 5 slayt = 5 istek, video 9:16, infografik hero, **Gemini ve MiniMax istek biçimi sahte `fetch` ile**, önbellek; ComfyUI istemcisi sahte ComfyUI ile (tek dosyalı ve ayrı UNET türü). **Gerçek anahtar ve gerçek GPU ile denenmedi.** |
 | Lokal görsel: ComfyUI + FLUX.1-schnell (`tools/kur-comfyui.bat`, `tools/comfyui-baslat.bat`, `server/gorsel.py`) | ⚠️ Kod hazır | Kullanıcı kuracak; `docs/GORSEL.md` |
 | `tools/kur-gpu.bat` onarımı | ⚠️ Kullanıcıda doğrulanacak | LF/CRLF karışıklığı ve adımsız hata giderildi; kullanıcının hata metni gelmedi (bkz. NOT_DEFTERI 0.5.0) |
-| Testler | ✅ | `tests/e2e.py` 73/73 |
+| Testler | ✅ | `tests/e2e.py` 78/78 |
 | Dokümanlar | ✅ | README, CLAUDE.md, AGENTS.md, bu belge, PROJE_REHBERI, LINKLER, docs/* |
 
 ## 3. Kullanıcının ortamı (2026-10-12)
@@ -93,7 +95,7 @@ Ayrıntı: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
 ## 7. Çalıştırma ve teslim
 
 ```bash
-python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 73 kontrol
+python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 78 kontrol + python3 tests/server_test.py (26)
 bash tools/teslim.sh "kısa açıklama"                                              # test + günlük + commit + push + bağlantılar
 ```
 
@@ -103,9 +105,7 @@ bash tools/teslim.sh "kısa açıklama"                                         
 Defter Studio projesine devam ediyoruz (GitHub: aseydaaksakal/defter-studio, canlı: https://aseydaaksakal.github.io/defter-studio/).
 Önce depodaki DEVIR_TESLIM.md'yi, sonra CLAUDE.md'yi oku; PROJE_REHBERI.md'den yalnız gereken bölümü oku.
 Büyük dosyaları (js/app.js, css/app.css, js/studio/gen.js) baştan sona okuma, grep ile bölüm bul.
-Bu oturumun işi: önce DEVIR_TESLIM.md "Sıradaki iş" 0. madde: [BURAYA PC'DE ÇALIŞTIRDIĞIN SONUCU YAZ: kur-gpu.bat hangi adımda
-hata verdi (son satırlar), tools/kur-comfyui.bat ve Ayarlar › Görseller › Deneme görseli sonucu, hangi sesleri sildin]; gerekli
-düzeltmeleri yap. Sonra 3. madde (Video v2: sahneler arası geçiş, kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile hızlı MP4).
+Bu oturumun işi: önce kullanıcının PC sonuçları: [BURAYA YAZ: tools\sunucu-tani.bat çıktısı, tools\kur-moss.bat sonucu, tools\ses-karsilastir.bat ile hangi sesler iyi/kötü, kur-gpu.bat hatası varsa son satırlar]; gerekli düzeltmeleri yap (özellikle MOSS adaptörü GPU'da denenmedi). İsteğe bağlı: MOSS-TTSD (diyalog) adaptörü. Sonra 3. madde (Video v2: sahneler arası geçiş, kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile hızlı MP4).
 Bitince testleri çalıştır (tests/e2e.py), tools/teslim.sh ile teslim et, DEVIR_TESLIM.md ve docs/NOT_DEFTERI.md'yi güncelle,
 canlı siteyi Chrome'da kontrol et, bana bütün bağlantıları ver ve bir sonraki oturum için yeni başlangıç istemini yaz.
 Word dosyası üretme; arayüz ve iletişim Türkçe.

@@ -125,3 +125,6 @@ python -m http.server 8099
 python tests\mock_llm.py      # ayrı pencerede: sahte model
 python tests\e2e.py           # uçtan uca testler (pip install playwright; playwright install chromium)
 ```
+
+## MOSS-TTS (isteğe bağlı, ~10 GB GPU belleği)
+`tools\kur-moss.bat` ayrı bir sanal ortam (`server\.venv-moss`) kurar; ardından Ayarlar › Modeller'den "MOSS-TTS-Local-Transformer-v1.5"i indirin. Ses klonlama ile çalışır (ses kütüphanesinde kadın ve erkek referans gerekir). GPU'da henüz denenmedi.

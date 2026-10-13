@@ -141,7 +141,7 @@ def tone_wav(text, gender):
 CAT = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server", "model_katalog.json"), encoding="utf-8"))["modeller"]
 PRESETS = [("kadin-genc", "Kadın · genç · canlı", "f"), ("kadin-orta", "Kadın · orta yaş · sakin", "f"), ("kadin-derin", "Kadın · derin sesli", "f"), ("kadin-olgun", "Kadın · olgun · öğretmen", "f"),
            ("erkek-genc", "Erkek · genç · enerjik", "m"), ("erkek-orta", "Erkek · orta yaş · net", "m"), ("erkek-derin", "Erkek · derin sesli · belgesel", "m"), ("erkek-olgun", "Erkek · olgun · hoca", "m")]
-ST = {"voices": {}, "jobs": {}, "ready": set(), "puan": {}, "log": [], "imglog": []}
+ST = {"voices": {}, "jobs": {}, "ready": set(), "puan": {}, "log": [], "imglog": [], "fail_after": None, "calls": 0}
 
 
 def models_list():
@@ -190,7 +190,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         if p.startswith("/health"):
-            return self.send(200, {"ok": True, "version": "mock", "tts": {"engines": ["mock"], "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None})
+            return self.send(200, {"ok": True, "version": "mock", "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None})
         if p == "/voices/presets":
             have = list(ST["voices"])
             return self.send(200, {"presets": [{"id": i, "label": l, "gender": g, "created": any(h == i or h.startswith(i + "-") for h in have)} for i, l, g in PRESETS], "motors": ["mock"]})
@@ -260,13 +260,20 @@ class H(http.server.BaseHTTPRequestHandler):
             ST.update(voices={}, jobs={}, ready=set(), puan={}); ST["log"].clear(); ST["imglog"].clear()
             return self.send(200, {"ok": True})
         if p == "/_log/clear":
-            ST["log"].clear(); ST["imglog"].clear()
+            ST["log"].clear(); ST["imglog"].clear(); ST["calls"] = 0
+            return self.send(200, {"ok": True})
+        if p.startswith("/_tts_fail"):  # ?after=N: N başarılı satırdan sonra /tts 500 verir (motor çökmesi); after yoksa kapanır
+            m = re.search(r"after=(\d+)", p)
+            ST["fail_after"] = int(m.group(1)) if m else None; ST["calls"] = 0
             return self.send(200, {"ok": True})
         if p == "/image":
             ST["imglog"].append({"prompt": body.get("prompt"), "w": body.get("width"), "h": body.get("height")})
             return self.send(200, mock_png(body.get("prompt", ""), body.get("width", 64), body.get("height", 36)), "image/png")
         if p.startswith("/tts"):
-            ST["log"].append({k: body.get(k) for k in ("speaker", "gender", "voice", "model")})
+            ST["log"].append({k: body.get(k) for k in ("speaker", "gender", "voice", "model", "engine")})
+            ST["calls"] += 1
+            if ST["fail_after"] is not None and ST["calls"] > ST["fail_after"]:
+                return self.send(500, {"detail": "mock motor çöktü"})
             return self.send(200, tone_wav(body.get("text", ""), body.get("gender", "f")), "audio/wav")
         txt = "\n".join(m.get("content", "") for m in body.get("messages", []) if m.get("role") != "assistant")
         if DELAY:

@@ -14,18 +14,19 @@ export const langCode = (l) => LANG_CODES[l] || (/^[a-z]{2}-[A-Z]{2}$/.test(l ||
 const MINIMAX_LANG = { tr: 'Turkish', en: 'English', de: 'German', fr: 'French', es: 'Spanish', ar: 'Arabic', ru: 'Russian', it: 'Italian', nl: 'Dutch', ja: 'Japanese' };
 
 export const ENGINES = {
-  auto: 'Otomatik (anahtarı olan en iyi motor; hata olursa sıradakine geçer)',
+  auto: 'Otomatik (kotasız lokal sunucu varsa o, yoksa anahtarı olan en iyi motor; bir podcast boyunca motor ve ses değişmez)',
   elevenlabs: 'ElevenLabs v4 — gerçek insan sesi, duygulu',
   gemini: 'Gemini TTS — çok doğal, ücretsiz katman var',
   minimax: 'MiniMax — Türkçe kadın/erkek, ses klonlama ve tasarım',
   google: 'Google Cloud TTS — Chirp 3 HD (aylık ücretsiz kota)',
   azure: 'Azure Speech — Emel / Ahmet (aylık ücretsiz kota)',
   openai: 'OpenAI TTS',
-  server: 'Lokal sunucu — Chatterbox klon / edge-tts / Piper',
-  piper: 'Tarayıcıda Piper — ücretsiz, çevrimdışı (Türkçede yalnız erkek)',
+  server: 'Lokal sunucu — GPU modelleri (OmniVoice, Trendyol-TTS…) / edge-tts; kota yok',
+  piper: 'Tarayıcıda Piper — robot gibi, yalnız erkek (otomatik sırada yok; yalnız elle seçilirse)',
   browser: 'Tarayıcı sesi (yalnız bu tarayıcıda Türkçe ses varsa)'
 };
-export const ENGINE_SHORT = { elevenlabs: 'ElevenLabs', gemini: 'Gemini TTS', minimax: 'MiniMax', google: 'Google Cloud TTS', azure: 'Azure Speech', openai: 'OpenAI TTS', server: 'Lokal sunucu', piper: 'Piper (tarayıcı)', browser: 'Tarayıcı sesi' };
+export const ENGINE_SHORT = { elevenlabs: 'ElevenLabs', gemini: 'Gemini TTS', minimax: 'MiniMax', google: 'Google Cloud TTS', azure: 'Azure Speech', openai: 'OpenAI TTS', server: 'Lokal sunucu', piper: 'Piper (tarayıcı)', browser: 'Tarayıcı sesi', none: 'Ses motoru yok' };
+export const NO_ENGINE = 'Ses motoru yok. Seçenekler: 1) server\\baslat.bat ile lokal sunucuyu açın (kotasız); 2) Ayarlar › Seslendirme’ye Gemini, MiniMax ya da Azure anahtarı girin; 3) Ayarlar › Ses motoru’ndan Piper’ı elle seçin (yalnız erkek, robot gibi).';
 
 export const VOICES = {
   gemini: { f: ['Kore', 'Aoede', 'Leda', 'Zephyr', 'Sulafat', 'Despina', 'Achernar', 'Vindemiatrix'], m: ['Charon', 'Puck', 'Orus', 'Iapetus', 'Algenib', 'Sadaltager', 'Alnilam', 'Schedar'] },
@@ -60,30 +61,30 @@ export async function saveTTS(cfg) { await setSetting('tts', { ...cfg, schema: 3
 
 const geminiKey = async (cfg) => { if (cfg.geminiKey) return cfg.geminiKey; const l = await loadConfig(); return l.provider === 'gemini' ? l.apiKey : ''; };
 
-// Anahtarı/erişimi olan motorlar, kalite sırasıyla
+// Otomatik sıra. Lokal sunucu (kotasız, ses podcast boyunca sabit) bulut motorlarından önce gelir; bulutlarda günlük kota var
+// (Gemini ücretsizde ~10-12 satır). Piper otomatikte YOK: yalnız erkek ve robot gibi, podcast ortasında ona düşmek sesi bozuyordu.
 export async function availableEngines(cfg) {
   cfg = cfg || await loadTTS();
   const out = [];
+  if (await serverUrl()) { const t = serverInfo()?.tts || {}; if ((t.auto || (t.engines || []).filter((e) => e !== 'piper')).length) out.push('server'); }
   if (cfg.elevenKey) out.push('elevenlabs');
   if (await geminiKey(cfg)) out.push('gemini');
   if (cfg.minimaxKey) out.push('minimax');
   if (cfg.googleKey) out.push('google');
   if (cfg.azureKey) out.push('azure');
   if (cfg.openaiKey) out.push('openai');
-  if (await serverUrl()) out.push('server');
-  out.push('piper');
   return out;
 }
 export async function resolveEngine(cfg) {
   cfg = cfg || await loadTTS();
-  if (cfg.engine === 'browser') return hasBrowserVoice() ? 'browser' : 'piper';
+  if (cfg.engine === 'browser') return hasBrowserVoice() ? 'browser' : 'none';
   if (cfg.engine && cfg.engine !== 'auto') return cfg.engine;
-  return (await availableEngines(cfg))[0];
+  return (await availableEngines(cfg))[0] || 'none';
 }
 // Bu motor Türkçe kadın sesi verebiliyor mu?
 export function femaleOK(engine) {
-  if (engine === 'piper') return false;
-  if (engine === 'server') return serverInfo()?.tts?.female !== false;
+  if (engine === 'piper' || engine === 'none') return false;
+  if (engine === 'server') { const t = serverInfo()?.tts; return t?.plan ? !!t.plan.f : t?.female !== false; }
   if (engine === 'browser') return !!pickBrowserVoice('Türkçe', 'f')?.female;
   return true;
 }
@@ -347,11 +348,17 @@ async function openaiLine(line, voice, cfg, style) {
 
 async function serverLine(line, voice, cfg, style, lang, speaker) {
   const base = await serverUrl();
-  if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
-  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(line.text), speaker: speaker.id, gender: speaker.gender === 'm' ? 'm' : 'f', voice, model: cfg.serverModel || '', tone: line.tone || '', lang: langCode(lang) }) });
-  if (!r.ok) throw new TTSError('Sunucu TTS: ' + (await r.text()).slice(0, 200), r.status, r.status >= 500);
+  if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor. server\\baslat.bat ile başlatın.');
+  const g = speaker.gender === 'm' ? 'm' : 'f';
+  // Motor sabitleme: sunucunun cinsiyet için seçtiği motor her satırda gönderilir; hata olursa sunucu başka motora (robot sese) düşmez
+  const plan = serverInfo()?.tts?.plan;
+  if (plan && !cfg.serverModel && !plan[g]) throw new TTSError(`Lokal sunucuda ${g === 'f' ? 'kadın' : 'erkek'} ses için hazır motor yok. Ses kütüphanesine bir kayıt ekleyin ya da tools\\kur-gpu.bat çalıştırın.`);
+  const lock = cfg.serverModel ? '' : plan?.[g] || '';
+  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(line.text), speaker: speaker.id, gender: g, voice, model: cfg.serverModel || '', engine: lock, tone: line.tone || '', lang: langCode(lang) }) });
+  if (!r.ok) throw new TTSError('Sunucu TTS: ' + (await r.text()).slice(0, 240), r.status, r.status === 502 || r.status === 504);
   return r.blob();
 }
+
 export async function serverVoices() {
   const base = await serverUrl(); if (!base) return [];
   const r = await fetch(base + '/voices'); return r.ok ? (await r.json()).voices || [] : [];
@@ -441,23 +448,28 @@ const inflight = {};
 export async function synthesize(artifactId, lines, speakers, lang, { format = 'deep', onProgress = () => {}, onPiece, engine: forced } = {}) {
   if (!lines?.length) throw new TTSError('Seslendirilecek metin yok.');
   const cfg = await loadTTS();
-  let order = forced ? [forced] : cfg.engine === 'auto' ? await availableEngines(cfg) : [await resolveEngine(cfg)];
-  if (order.length > 1 && speakers.some((s) => s.gender !== 'm')) order = [...order.filter(femaleOK), ...order.filter((e) => !femaleOK(e))];
-  if (order[0] === 'browser') return { engine: 'browser', blob: null, timings: null };
-  let lastErr;
-  for (let k = 0; k < order.length; k++) {
-    try { return await synthWith(order[k], cfg, artifactId, lines, speakers, lang, format, onProgress, k ? null : onPiece); }
-    catch (e) {
-      lastErr = e;
-      if (k < order.length - 1) onProgress(`${ENGINE_SHORT[order[k]]} ${e.daily ? 'günlük ücretsiz kotası doldu' : 'çalışmadı'} (${String(e.message).slice(0, 80)}). ${ENGINE_SHORT[order[k + 1]]} deneniyor…`);
-    }
+  // SES KİLİDİ: bir seslendirme tek bir motorla yapılır. Motor başta seçilir; kota ya da hata olursa başka motora (özellikle robot
+  // Piper'a) GEÇİLMEZ: podcast ortasında ses ve cinsiyet değişiyordu. Biten parçalar saklanır; yeniden açınca kaldığı yerden sürer.
+  let engine = forced || await resolveEngine(cfg);
+  if (!forced && cfg.engine === 'auto' && speakers.some((s) => s.gender !== 'm')) {
+    const av = await availableEngines(cfg);
+    engine = av.find(femaleOK) || av[0] || 'none'; // kadın konuşmacı varsa kadın sesi verebilen ilk motor
   }
-  throw lastErr;
+  if (engine === 'none') throw new TTSError(NO_ENGINE);
+  if (engine === 'browser') return { engine: 'browser', blob: null, timings: null };
+  try { return await synthWith(engine, cfg, artifactId, lines, speakers, lang, format, onProgress, onPiece); }
+  catch (e) {
+    const n = e.doneLines || 0;
+    e.engine = engine;
+    e.message = `${e.message}${/[.!?]$/.test(e.message) ? '' : '.'} ${n ? `İlk ${n}/${lines.length} satır hazır ve kalıcı saklandı; ${e.daily ? 'kota yenilenince' : 'sorun giderilince'} bu podcast’i açmanız yeterli, kaldığı yerden devam eder. ` : ''}Ses aynı kalsın diye başka motora (ör. robot Piper) geçilmedi.`;
+    throw e;
+  }
 }
 
 async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format, onProgress, onPiece) {
+  if (engine === 'server') await serverUrl(true); // taze motor planı (cinsiyet başına kilitlenecek motor)
   const voices = await assignVoices(speakers, engine, cfg);
-  const model = { gemini: cfg.geminiModel, elevenlabs: cfg.elevenModel, minimax: cfg.minimaxModel, openai: cfg.openaiModel, azure: cfg.azureRegion, server: cfg.serverModel }[engine] || '';
+  const model = { gemini: cfg.geminiModel, elevenlabs: cfg.elevenModel, minimax: cfg.minimaxModel, openai: cfg.openaiModel, azure: cfg.azureRegion, server: cfg.serverModel || JSON.stringify(serverInfo()?.tts?.plan || {}) }[engine] || '';
   const key = hash(engine + JSON.stringify(voices) + model + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone])));
   const cached = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.key === key).first();
   if (cached) return { engine, blob: cached.blob, timings: cached.timings, cached: true };
@@ -467,6 +479,7 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
     const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
     const pieces = []; // {blob, idx:[satır no]}
     const emit = (p) => { pieces.push(p); try { onPiece?.(p); } catch {} };
+    try {
     if (engine === 'elevenlabs' || engine === 'gemini') {
       const chunks = engine === 'elevenlabs' ? chunkLines(lines, 1800, 10) : chunkLines(lines, 3200); // az istek = ücretsiz kotada daha uzun podcast
       const wait = (sec, e) => onProgress(`${ENGINE_SHORT[engine]} ${e.status === 429 ? 'hız sınırı' : 'geçici hata'}: ${sec} sn bekleniyor, sonra kaldığı yerden devam…`);
@@ -503,6 +516,7 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
       };
       await Promise.all(Array.from({ length: Math.min(conc, lines.length) }, worker));
     }
+    } catch (e) { e.doneLines = pieces.reduce((a, p) => a + p.idx.length, 0); throw e; } // kaç satır hazır kaldı (kalıcı parça önbelleği)
     onProgress('Ses birleştiriliyor ve dengeleniyor…');
     const { blob, timings } = await mixPieces(pieces, lines);
     await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' || b.kind === 'piece').delete();

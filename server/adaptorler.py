@@ -4,12 +4,17 @@ Defter Studio — ek TTS adaptörleri (yalnız resmî kartında/README'sinde kul
   voxcpm      Trendyol/Trendyol-TTS, openbmb/VoxCPM2 — VoxCPM2 README'si ve Trendyol kartı
   bark        Suno Bark (transformers)               — Türkçe için v2/tr_speaker_0..9 hazır sesleri
   kugelaudio  KugelAudio 0 Open                      — kugelaudio-open README'si (klonlama yok, hazır sesler)
+  moss        MOSS-TTS-Local-Transformer-v1.5        — OpenMOSS/MOSS-TTS deposu, moss_tts_local_v1.5/README.md (ayrı ortam .venv-moss)
 
 OmniVoice ve Pocket TTS main.py içinde. Hepsi (ses dizisi, örnekleme hızı) döndürür; WAV'a main.py çevirir.
 Kodlar sandbox'ta GPU olmadığı için burada çalıştırılamadı: ilk gerçek denemede hata çıkarsa docs/NOT_DEFTERI.md'ye bakın.
 """
 import importlib.util
+import json
 import os
+import subprocess
+import sys
+import threading
 from functools import lru_cache
 
 DEVICE = os.getenv("DEFTER_DEVICE", "cuda")
@@ -28,7 +33,24 @@ SESLER = {  # modeli denemek için seçilebilen hazır sesler
 }
 
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+MOSS_VENV = os.path.join(HERE, ".venv-moss")
+MOSS_WORKER = os.path.join(HERE, "moss_worker.py")  # testler sahte çalışanla değiştirir
+
+
+def moss_python():
+    """MOSS-TTS'in ayrı sanal ortamındaki Python (tools\\kur-moss.bat kurar); yoksa None."""
+    for rel in (("Scripts", "python.exe"), ("bin", "python")):
+        p = os.path.join(MOSS_VENV, *rel)
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def durum(adaptor):
+    if adaptor == "moss":  # ana ortamda paket aranmaz: ayrı ortam + çalışan betiği
+        ok = moss_python() is not None
+        return ok, "" if ok else "Kurulu değil: tools\\kur-moss.bat (ayrı sanal ortam, PyTorch 2.9 + transformers 5)"
     mod, ipucu = GEREK.get(adaptor, (None, ""))
     if not mod:
         return False, "bilinmeyen adaptör"
@@ -109,3 +131,64 @@ def kugel_uret(repo, text, voice=None):
         out = model.generate(**inputs, cfg_scale=3.0)
     audio = out.speech_outputs[0]
     return torch.as_tensor(audio).detach().float().cpu().numpy().squeeze(), 24000  # kart: 24 kHz mono
+
+
+# ---------------------------------------------------------------- MOSS-TTS (ayrı işlem, ayrı sanal ortam)
+_moss = {"proc": None, "n": 0}
+_moss_lock = threading.Lock()
+
+
+def _moss_baslat():
+    py = moss_python()
+    if not py:
+        raise RuntimeError("MOSS-TTS kurulu değil: tools\\kur-moss.bat çalıştırın")
+    p = _moss["proc"]
+    if p is not None and p.poll() is None:
+        return p
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}
+    # stderr devralınır: model yükleme ve hata izleri sunucu konsolunda görünür
+    _moss["proc"] = subprocess.Popen([py, MOSS_WORKER], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      text=True, encoding="utf-8", bufsize=1, env=env, cwd=HERE)
+    return _moss["proc"]
+
+
+def moss_uret(repo, text, ref, language="tr", seed=None):
+    """MOSS-TTS ile klonlanmış sesle bir parça üretir → (float32 mono dizi, örnekleme hızı). Çalışan ilk istekte modeli yükler."""
+    import numpy as np
+    import soundfile as sf
+    with _moss_lock:  # tek işlem, tek istek
+        p = _moss_baslat()
+        _moss["n"] += 1
+        rid = _moss["n"]
+        try:
+            p.stdin.write(json.dumps({"id": rid, "repo": repo, "text": text, "ref": ref, "language": language, "seed": seed}, ensure_ascii=False) + "\n")
+            p.stdin.flush()
+            line = p.stdout.readline()
+        except (BrokenPipeError, OSError):
+            line = ""
+        if not line:
+            _moss["proc"] = None
+            raise RuntimeError("MOSS çalışanı kapandı (bellek yetmemiş olabilir: Ollama modelini boşaltın, sunucu konsolundaki hata izine bakın)")
+    r = json.loads(line)
+    if not r.get("ok"):
+        raise RuntimeError(r.get("error") or "MOSS hatası")
+    try:
+        a, sr = sf.read(r["wav"], dtype="float32")
+    finally:
+        try:
+            os.remove(r["wav"])
+        except OSError:
+            pass
+    return np.asarray(a, dtype="float32").squeeze(), int(sr)
+
+
+def moss_kapat():
+    """MOSS çalışanını durdurur: GPU belleği (≈10 GB) hemen boşalır."""
+    p = _moss["proc"]
+    _moss["proc"] = None
+    if p is not None and p.poll() is None:
+        try:
+            p.stdin.close()  # çalışan stdin kapanınca çıkar
+            p.wait(timeout=20)
+        except Exception:
+            p.kill()

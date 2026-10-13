@@ -5,7 +5,7 @@
 ```bash
 python3 -m http.server 8099 &      # depo kökünde
 python3 tests/mock_llm.py &        # sahte model + sahte sunucu (8098)
-python3 tests/e2e.py ./shots       # 73 kontrol + ekran görüntüleri
+python3 tests/e2e.py ./shots       # 78 kontrol + ekran görüntüleri
 ```
 
 | Alan | Kontrol |

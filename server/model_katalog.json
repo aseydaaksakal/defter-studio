@@ -1,7 +1,7 @@
 {
   "surum": 1,
-  "kaynak": "Hugging Face: pipeline_tag=text-to-speech, language=tr, license=mit, hardware=rtx-5090-mobile (25 model, 2026-10-13 ekran görüntüsü) + iki ek model",
-  "alanlar": "id=HF deposu · aile · param · platform(cuda/mlx/gguf) · platformKesin=false ise platform yalnız addan çıkarıldı · adaptor=Defter Studio'nun çalıştırabildiği motor (null = yalnız indirilebilir) · oneri=önerilen set · ek=MIT listesi dışında",
+  "kaynak": "Hugging Face: pipeline_tag=text-to-speech, language=tr, license=mit, hardware=rtx-5090-mobile (25 model, 2026-10-13 ekran görüntüsü) + Türkçe filtreli ekran görüntüsündeki (160 model) dört ek model ve iki ek model",
+  "alanlar": "id=HF deposu · aile · param · platform(cuda/mlx/gguf) · platformKesin=false ise platform yalnız addan çıkarıldı · adaptor=Defter Studio'nun çalıştırabildiği motor (null = yalnız indirilebilir) · oneri=önerilen set · ek=MIT listesi dışında · ek_depo=bu modelle birlikte inmesi gereken diğer depolar",
   "modeller": [
     {"id": "Trendyol/Trendyol-TTS", "ad": "Trendyol-TTS", "aile": "VoxCPM2 + Türkçe LoRA", "param": "2B", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "mit", "adaptor": "voxcpm", "oneri": true,
      "not": "VoxCPM2 tabanlı, yalnız Türkçe için ince ayarlı. Kartı net kullanım kodu veriyor. Kadın/erkek ses sayısını kart belirtmiyor; ses kütüphanesindeki kayıtlarla klonlanabilir (VoxCPM2 özelliği, bu ince ayarla denenmedi)."},
@@ -61,6 +61,15 @@
      "not": "Trendyol-TTS'in tabanı. 30 dil (Türkçe dahil), metinle ses tasarımı, tohumla tekrarlanabilir ses ve klonlama. Kod ve ağırlıklar Apache-2.0. MIT filtresinde çıkmadığı için ek olarak eklendi."},
     {"id": "k2-fsa/OmniVoice", "ad": "OmniVoice", "aile": "OmniVoice", "param": "0.6B", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "cc-by-nc-4.0", "adaptor": "omnivoice", "oneri": true, "ek": true,
      "uyari": "Ağırlıklar ticari olmayan kullanım içindir (CC-BY-NC).",
-     "not": "Şu an lokal sunucunun ilk motoru. 600+ dil; klonlama en kararlı modu, ses tasarımı yalnız Çince/İngilizce verisiyle eğitilmiş ve Türkçede kararsız olabilir."}
+     "not": "Şu an lokal sunucunun ilk motoru. 600+ dil; klonlama en kararlı modu, ses tasarımı yalnız Çince/İngilizce verisiyle eğitilmiş ve Türkçede kararsız olabilir."},
+    {"id": "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5", "ad": "MOSS-TTS Local v1.5", "aile": "MOSS-TTS", "param": "4B (kart 5B yazıyor)", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "apache-2.0", "adaptor": "moss", "ek": true,
+     "ek_depo": ["OpenMOSS-Team/MOSS-Audio-Tokenizer-v2"],
+     "not": "Qwen3-4B tabanlı, 31 dil (Türkçe dahil), referans sesle klonlama, 48 kHz çıkış. Kod yolu resmî README'den alındı ama GPU'da denenmedi. Ayrı ortamda çalışır: tools\\kur-moss.bat. Hazır sesi yok: ses kütüphanesinden bir referans (kadın/erkek) ister, böylece ses podcast boyunca sabit kalır. Yaklaşık 10 GB VRAM beklenir (kartta yazmıyor): Ollama modeli açıkken sığmayabilir; çalışan 10 dk boşta kalınca belleği bırakır."},
+    {"id": "OpenMOSS-Team/MOSS-TTS-v1.5", "ad": "MOSS-TTS v1.5 (8B)", "aile": "MOSS-TTS", "param": "8B", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "apache-2.0", "adaptor": null, "ek": true,
+     "not": "Ailenin 8B Delay mimarisi (24 kHz, 32 RVQ katmanı); Türkçe dahil 31 dil, klonlama var. Kod yolu Local sürümden farklı ve doğrulanmadı: yalnız indirilebilir. 8B bf16 ≈ 16-17 GB VRAM."},
+    {"id": "OpenMOSS-Team/MOSS-TTSD-v1.0", "ad": "MOSS-TTSD v1.0 (diyalog, 8B)", "aile": "MOSS-TTS", "param": "8B", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "apache-2.0", "adaptor": null, "ek": true,
+     "not": "Podcast için tasarlanmış çok konuşmacılı (1-5) diyalog modeli: [S1] [S2] etiketleri, 3-10 sn referansla klon, Türkçe listede. Tek parçada bütün diyaloğu üretir; Defter Studio'nun satır satır akışına bağlanması sonraki oturumun işi (bkz. DEVIR_TESLIM.md)."},
+    {"id": "Cosmobillian/turkish_orpheus_tts", "ad": "Orpheus Türkçe (Cosmobillian)", "aile": "Orpheus 3B", "param": "3B", "platform": "cuda", "platformKesin": true, "tur": "türev", "lisans": "apache-2.0", "adaptor": null, "ek": true,
+     "not": "Karayakar/Orpheus-TTS-Turkish-PT-5000 üzerine ince ayar (SNAC 24 kHz). Kart ses sayısı ve cinsiyetini belirtmiyor; kartın örneği Flask betiği + referans wav/txt çifti kullanıyor. Çalıştırıcı yok: yalnız indirilebilir."}
   ]
 }

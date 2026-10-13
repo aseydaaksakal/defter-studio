@@ -115,6 +115,6 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 | İş | Yer |
 |---|---|
 | Sahte model + sahte sunucu | `tests/mock_llm.py`. Yeni istem → yeni anahtar ifade. |
-| Uçtan uca | `tests/e2e.py` (73 kontrol) |
+| Uçtan uca | `tests/e2e.py` (78 kontrol + 26 sunucu kontrolü) |
 | Teslim | `tools/teslim.sh` |
 | Elle test listesi | `docs/TEST_PLANI.md` |

@@ -407,8 +407,8 @@ def main():
         row = lambda mid: next((r for r in pg.query_selector_all(".mm-row") if mid in r.inner_text()), None)
         rl = lambda mid: pg.locator(f'.mm-row[data-id="{mid}"]')  # liste yeniden çizilebilir: tıklamalar her seferinde yeniden çözülür
         open_settings_section("Lokal sunucu", "Lokal modeller")
-        n = wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 27 and 27, 15)
-        ok("Model yöneticisi: 25 MIT + 2 ek model listeleniyor", n == 27, f"{len(pg.query_selector_all('.mm-row'))} satır")
+        n = wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 31 and 31, 15)
+        ok("Model yöneticisi: 25 MIT + 6 ek model listeleniyor", n == 31, f"{len(pg.query_selector_all('.mm-row'))} satır")
         ok("Model yöneticisi: Apple MLX ayrı grupta, uyarıyla", "Apple MLX (5)" in txt(".mm") and "işe yaramaz" in txt(".mm"))
         ok("Model yöneticisi: gerçek kişi sesi uyarısı", "izinsiz kullanmayın" in txt(".mm"))
         pg.query_selector(".mm").scroll_into_view_if_needed(); pg.screenshot(path=f"{SHOTS}/modeller.png")
@@ -427,13 +427,46 @@ def main():
         pg.click("text=Sesi dene (kadın + erkek)")
         wait_until(lambda: "çalışıyor (dinliyorsunuz)" in txt(".voice-settings"), 20)
         ok("Podcast sesi: lokal sunucu isteği seçili modelle gitti", any(x["model"] == TR for x in api("/_log")["log"]))
-        pg.click("summary:has-text('Lokal modeller')"); wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 27, 10)
+        pg.click("summary:has-text('Lokal modeller')"); wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 31, 10)
         rl("alperiox/pocket-tts-turkish").locator("button[aria-label='Beğendim']").click()
         ok("Beğendim: sunucuda kalıcı", wait_until(lambda: next(m for m in api("/models")["models"] if m["id"] == "alperiox/pocket-tts-turkish")["puan"] == "begen", 5))
         rl(TR).locator("button[aria-label='Beğenmedim']").click()
         ok("Beğenmedim: onayla → diskten silindi", wait_until(lambda: "indirildi" not in row(TR).inner_text() and not next(m for m in api("/models")["models"] if m["id"] == TR)["hazir"], 8))
         pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(400)
         ok("Silinen modelin seçimi temizlendi (otomatik motor)", pg.evaluate("async () => (await (await import('./js/tts.js')).loadTTS()).serverModel") == "")
+
+        # --- Ses kilidi: bir podcast boyunca motor/ses sabit; kota ya da hata olursa başka motora (robot Piper) düşülmez
+        api("/_log/clear", True)
+        LOCK = """async ([n, k]) => { const t = await import('./js/tts.js');
+          const lines = Array.from({ length: n }, (_, i) => ({ speaker: i % 2 ? 'B' : 'A', text: 'Deneme satırı numara ' + i + ' ' + k }));
+          const sp = [{ id: 'A', name: 'Deniz', gender: 'f' }, { id: 'B', name: 'Kaan', gender: 'm' }];
+          try { const r = await t.synthesize('kilit-' + k, lines, sp, 'Türkçe', {}); return { ok: true, engine: r.engine }; }
+          catch (e) { return { ok: false, msg: e.message, done: e.doneLines || 0, engine: e.engine }; } }"""
+        piper_req = []
+        pg.on("request", lambda r: piper_req.append(r.url) if re.search(r"piper|huggingface\.co/rhasspy", r.url) else None)
+        r0 = pg.evaluate(LOCK, [4, "tam"])
+        ok("Ses kilidi: sunucu motoru her satırda sabit gönderildi", r0["ok"] and all(x.get("engine") == "mock" for x in api("/_log")["log"]) and len(api("/_log")["log"]) == 4, str(api("/_log")["log"][:1]))
+        api("/_log/clear", True); api("/_tts_fail?after=3", True)
+        r1 = pg.evaluate(LOCK, [6, "yarim"])
+        ok("Ses kilidi: motor 3. satırdan sonra çökünce başka motora düşülmedi", (not r1["ok"]) and r1["done"] == 3 and "geçilmedi" in r1["msg"] and "kalıcı saklandı" in r1["msg"] and not piper_req, str(r1)[:160])
+        n_before = len(api("/_log")["log"])
+        api("/_tts_fail", True); api("/_log/clear", True)
+        r2 = pg.evaluate(LOCK, [6, "yarim"])
+        ok("Kaldığı yerden devam: yalnız eksik 3 satır yeniden üretildi", r2["ok"] and len(api("/_log")["log"]) == 3, f"çökmeden önce {n_before} istek, devamda {len(api('/_log')['log'])}")
+        # Gemini günlük kota: kota dolunca robot sese düşmeden net hata
+        pg.route("https://generativelanguage.googleapis.com/**", lambda route: route.fulfill(status=429, headers={"access-control-allow-origin": "*", "content-type": "application/json"},
+                 body=json.dumps({"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded", "details": [{"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel"}]}]}})))
+        pg.evaluate("""async () => { const d = await import('./js/db.js'); await d.setSetting('serverUrl', ''); await d.setSetting('tts', { engine: 'auto', geminiKey: 'sahte', narrator: 'm', schema: 3 }); }""")
+        pg.evaluate("async () => { await import('./js/server.js').then((m) => m.serverUrl(true)); }")
+        r3 = pg.evaluate(LOCK, [4, "gemini"])
+        ok("Gemini günlük kota doldu: net hata, robot Piper'a düşülmedi", (not r3["ok"]) and r3["engine"] == "gemini" and "günlük" in r3["msg"] and "geçilmedi" in r3["msg"] and not piper_req, str(r3)[:160])
+        pg.unroute("https://generativelanguage.googleapis.com/**")
+        # Hiç motor yokken Piper kendiliğinden devreye girmez
+        pg.evaluate("""async () => { const d = await import('./js/db.js'); await d.setSetting('tts', { engine: 'auto', narrator: 'm', schema: 3 }); }""")
+        eng_none = pg.evaluate("async () => (await import('./js/tts.js')).resolveEngine()")
+        r4 = pg.evaluate(LOCK, [2, "yok"])
+        ok("Motor yokken: 'Ses motoru yok' denir, Piper kendiliğinden kullanılmaz", eng_none == "none" and (not r4["ok"]) and "Ses motoru yok" in r4["msg"] and not piper_req, f"{eng_none} · {r4['msg'][:60]}")
+        pg.evaluate("async (m) => { const d = await import('./js/db.js'); await d.setSetting('serverUrl', m); }", MOCK)
 
         # --- Öğrenme bilimi sayfası, mobil düzen
         pg.goto(APP + "#/bilim"); pg.wait_for_timeout(800)

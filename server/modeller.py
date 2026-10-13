@@ -90,7 +90,13 @@ def repo_path(model_id):
     return os.path.join(cache_dir(), "models--" + model_id.replace("/", "--"))
 
 
-def local_size(model_id):
+def _repos(model_id):
+    """Ana depo + (varsa) birlikte inmesi gereken ek depolar (katalogda ek_depo)."""
+    m = entry(model_id)
+    return [model_id] + list((m or {}).get("ek_depo") or [])
+
+
+def _local_size_one(model_id):
     blobs = os.path.join(repo_path(model_id), "blobs")
     total = 0
     if os.path.isdir(blobs):
@@ -101,17 +107,25 @@ def local_size(model_id):
     return total
 
 
-def is_ready(model_id):
-    """Tamamen inmiş mi? Yarım indirme (.incomplete) ya da çalışan iş varsa hayır."""
-    j = _jobs.get(model_id)
-    if j and j["state"] in ("kuyrukta", "iniyor"):
-        return False
+def local_size(model_id):
+    return sum(_local_size_one(r) for r in _repos(model_id))
+
+
+def _ready_one(model_id):
     base = repo_path(model_id)
     snaps = os.path.join(base, "snapshots")
     blobs = os.path.join(base, "blobs")
     if not os.path.isdir(snaps) or not any(files for _, _, files in os.walk(snaps)):
         return False
     return not (os.path.isdir(blobs) and any(f.endswith(".incomplete") for f in os.listdir(blobs)))
+
+
+def is_ready(model_id):
+    """Tamamen inmiş mi (ek depolar dahil)? Yarım indirme (.incomplete) ya da çalışan iş varsa hayır."""
+    j = _jobs.get(model_id)
+    if j and j["state"] in ("kuyrukta", "iniyor"):
+        return False
+    return all(_ready_one(r) for r in _repos(model_id))
 
 
 def snapshot_path(model_id):
@@ -131,8 +145,10 @@ def remote_size(model_id):
     size = None
     if h:
         try:
-            info = h.HfApi().model_info(model_id, files_metadata=True)
-            size = sum((s.size or 0) for s in (info.siblings or []))
+            size = 0
+            for rid in _repos(model_id):
+                info = h.HfApi().model_info(rid, files_metadata=True)
+                size += sum((s.size or 0) for s in (info.siblings or []))
         except Exception:
             size = None
     _sizes[model_id] = (time.time(), size)
@@ -194,7 +210,8 @@ def start_download(model_id):
         threading.Thread(target=watch, daemon=True).start()
         try:
             j["state"] = "iniyor"
-            h.snapshot_download(repo_id=model_id)
+            for rid in _repos(model_id):
+                h.snapshot_download(repo_id=rid)
             j.update(state="bitti", received=local_size(model_id), msg="")
         except Exception as e:
             j.update(state="hata", msg=str(e)[:300])
@@ -220,8 +237,9 @@ def delete_model(model_id):
                     scan.delete_revisions(*[r.commit_hash for r in repo.revisions]).execute()
         except Exception:
             pass
-    if os.path.isdir(repo_path(model_id)):
-        shutil.rmtree(repo_path(model_id), ignore_errors=True)
+    for rid in _repos(model_id):
+        if os.path.isdir(repo_path(rid)):
+            shutil.rmtree(repo_path(rid), ignore_errors=True)
     _jobs.pop(model_id, None)
     return freed
 

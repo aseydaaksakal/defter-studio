@@ -181,6 +181,6 @@ export async function voiceSettings() {
     h('div', { class: 'grid2' }, field('Ses motoru', engine), field('Video anlatıcısı', narrator)),
     elevenSec, geminiSec, minimaxSec, googleSec, azureSec, openaiSec, serverSec,
     h('div', { class: 'row gap' }, testBtn, out));
-  resolveEngine(cfg).then((e) => { now.textContent = `Şu an kullanılacak motor: ${ENGINE_SHORT[e]}.${femaleOK(e) ? '' : ' Bu motorda Türkçe kadın sesi yok — ücretsiz Gemini anahtarı ekleyin ya da lokal sunucuyu açın.'}`; });
+  resolveEngine(cfg).then((e) => { now.textContent = e === 'none' ? 'Şu an ses motoru yok: server\\baslat.bat ile lokal sunucuyu açın (kotasız) ya da bir anahtar girin. Piper otomatik kullanılmaz.' : `Şu an kullanılacak motor: ${ENGINE_SHORT[e]} (bir podcast boyunca değişmez).${femaleOK(e) ? '' : ' Bu motorda Türkçe kadın sesi yok — lokal sunucuyu açın ya da bir anahtar ekleyin.'}`; });
   return { el, read: () => ({ ...cfg }) };
 }

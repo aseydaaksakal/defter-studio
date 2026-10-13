@@ -264,3 +264,10 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 - **Belirti:** Artifact yayınlanamıyor (ESC/kontrol karakteri). **Çözüm:** Paket ve vendor dosyalarındaki kontrol karakterleri kaçışlandı.
 - **Belirti:** Depo oluşturma ve Pages API'si oturum vekilinde engelli. **Çözüm:** Kullanıcının onayıyla Chrome üzerinden yapıldı.
 - **Güvenlik:** Kullanıcının sohbete yapıştırdığı GitHub belirteci yalnız geçici ortam değişkeni olarak kullanıldı; hiçbir dosyaya yazılmadı. Kullanıcıya iptal etmesi önerildi.
+
+## 2026-10-13 — 0.5.1 — ses kilidi ve MOSS-TTS
+
+- **Belirti:** Podcastte 10–12 satırdan sonra ses robota dönüyor, "kota bitti" deniyor. **Neden:** Gemini ücretsiz TTS günlük kotası çok küçük; kota bitince `synthesize` motor listesinde ilerleyip Piper'a (tarayıcıda, yalnız erkek, robot) düşüyordu; sunucu `/tts` de satır başına sessizce motor değiştiriyordu. **Çözüm:** "Ses kilidi": bir sentez tek motorla yapılır, geri düşme yok, Piper otomatik seçilmez; parçalar IndexedDB'de saklanır, hata olunca "Kaldığı yerden devam et" yalnız eksikleri üretir. Sunucu `engine` verilirse kilitler (409/500, geri düşmez).
+- **Not:** GitHub Pages statiktir; 4–18 GB modeller orada çalışamaz (dosya sınırı 100 MB, GPU yok). Modeller yalnız lokal sunucuda (RTX 5090) çalışır. Sınırsız ses için: lokal motorlar (OmniVoice, Pocket, VoxCPM, MOSS).
+- **MOSS-TTS Local v1.5:** transformers 5.0 / torch 2.9.1 sabitler, ana ortamla çakışır; bu yüzden ayrı venv + JSON satır protokollü çalışan süreç. Referans ses soundfile ile okunur (torchaudio/FFmpeg gerekmez). GPU'da denenmedi.
+- **Süreç:** `pkill -f` desenini aynı komutta kullanma (kabuk ölür, 144).

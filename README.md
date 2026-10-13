@@ -19,8 +19,8 @@ hızlı okuma ve dinleyerek öğren** araçlarıyla sınava hazırlanın.
 
 - **Doğal Türkçe çok sesli podcast**
   - Kadın ve erkek ses, 9 biçim: ayrıntılı inceleme, özet, eleştiri, tartışma, hoca anlatımı, istişare, münazara, sözlü sınav, hikâye.
-  - 8 ses motoru: ElevenLabs v4, Gemini TTS, MiniMax, Google Cloud, Azure, OpenAI, lokal sunucu, Piper.
-  - Otomatik motor seçimi ve hata olursa sıradakine geçiş.
+  - 9 ses motoru: ElevenLabs v4, Gemini TTS, MiniMax, Google Cloud, Azure, OpenAI, lokal sunucu (OmniVoice, Pocket, VoxCPM, MOSS-TTS), isteğe bağlı Piper.
+  - "Ses kilidi": podcast boyunca tek motor, kadın/erkek sesi değişmez; kota bitince robota düşmez, durur ve kaldığı yerden devam eder.
   - Ses hazırlanırken hazır bölümler hemen çalar.
 - **Ses klonlama**
   - MiniMax ile tarayıcıdan, hem GitHub Pages'te hem lokalde.

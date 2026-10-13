@@ -5,8 +5,10 @@ Uygulamayı http://localhost:8765 adresinde sunar (bu adresten açınca Ollama i
 tarayıcının tek başına yapamadığı işleri bilgisayarınızda yapar:
   GET  /              uygulamanın kendisi (depo kökündeki dosyalar)
   GET  /health        hangi motorların hazır olduğunu söyler
-  POST /tts           metni sese çevirir: OmniVoice → VoxCPM2/Trendyol-TTS → Chatterbox → Pocket → XTTS-v2 → edge-tts → Piper
-                      ("model" verilirse yalnız o model, hata verirse sessizce başkasına düşmez)
+  POST /tts           metni sese çevirir: OmniVoice → VoxCPM2/Trendyol-TTS → Chatterbox → Pocket → XTTS-v2 → edge-tts
+                      ("model" ya da "engine" verilirse yalnız o, hata verirse sessizce başkasına düşmez; uygulama podcast
+                      boyunca /health'teki "plan" motorunu "engine" olarak göndererek ses ve cinsiyetin değişmesini önler).
+                      Piper (robot, yalnız erkek) otomatik sırada yoktur; yalnız DEFTER_TTS=piper ile seçilir.
   GET/POST/PATCH/DELETE /voices   ses kütüphanesi: klonlar ve tasarlanan sesler (voices/<ad>.wav + <ad>.json)
   GET  /voices/<ad>/audio · GET /voices/presets · POST /voices/design   dinleme, hazır tasarımlar, yeni ses tasarlama
   GET/POST /models…   Hugging Face ses modelleri: katalog, indir, beğen, sil (modeller.py)
@@ -44,7 +46,7 @@ import adaptorler
 import gorsel
 import modeller
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
@@ -106,6 +108,31 @@ def tts_engines():
     if has("piper"):
         e.append("piper")
     return e if TTS_PREF in ("auto", "") else [x for x in [TTS_PREF] if x in e] + [x for x in e if x != TTS_PREF]
+
+
+def tts_auto():
+    """Otomatik sıra: Piper yok. Türkçe Piper sesleri yalnız erkek ve robot gibi; podcast ortasında ona düşmek sesi bozuyordu."""
+    return [x for x in tts_engines() if x != "piper" or TTS_PREF == "piper"]
+
+
+def _engine_can(eng, gender):
+    """Bu motor, bu cinsiyette (ek ayar gerekmeden) hemen konuşabilir mi?"""
+    if eng in ("omnivoice", "voxcpm", "edge"):
+        return True
+    if eng == "piper":
+        return gender == "m"
+    if eng in ("chatterbox", "xtts"):
+        return ref_for(gender) is not None
+    if eng == "pocket":
+        return ref_for(gender) is not None or os.path.exists(os.path.join(VOICES_DIR, ("omni-kadin" if gender == "f" else "omni-erkek") + ".wav"))
+    return False
+
+
+def tts_plan():
+    """Cinsiyet başına kilitlenecek motor: uygulama bunu her satırda 'engine' olarak gönderir, böylece bir podcast boyunca
+    aynı motor ve aynı ses kullanılır; hata olursa başka motora düşülmez, gerçek hata gösterilir."""
+    eng = tts_auto()
+    return {g: next((x for x in eng if _engine_can(x, g)), None) for g in ("f", "m")}
 
 
 # ---------------------------------------------------------------- Lokal ses referansları (klonlama)
@@ -514,6 +541,15 @@ def _gpu_synth(eng, text, gender, lang, ref, j, repo=None):
             if not ref:
                 raise LookupError("referans ses yok")  # bu cinsiyette referans ses yok → sıradaki motor
             return (tts_chatterbox if eng == "chatterbox" else tts_xtts)(text, ref, lang, j.get("tone"))
+        if eng == "moss":  # MOSS-TTS-Local-Transformer-v1.5: ayrı ortamdaki çalışan; yalnız klonla (referans ses şart) → ses sabit kalır
+            if not ref:
+                raise LookupError("referans ses yok (MOSS ses klonlamayla konuşur)")
+            import numpy as np
+            chunks, sr = [], 48000
+            for part in _sentences(text, 280):
+                a, sr = adaptorler.moss_uret(repo, part, ref, lang, seed=zlib.crc32((os.path.basename(ref) + part).encode()))
+                chunks.append(a); chunks.append(np.zeros(int(sr * 0.15), dtype="float32"))
+            return _wav_bytes(np.concatenate(chunks), sr)
         if eng in ("bark", "kugelaudio"):  # yalnız dinleme testi için: hazır seslerle konuşur, klon yok
             import numpy as np
             fn = adaptorler.bark_uret if eng == "bark" else adaptorler.kugel_uret
@@ -560,8 +596,15 @@ async def tts(req: Request):
     ref = ref_for(gender, j.get("voice"))
     if j.get("model"):
         return await _tts_model(j["model"], j, text, gender, lang, ref)
+    want = (j.get("engine") or "").strip().lower()  # kilitli motor: yalnız o denenir, başkasına düşülmez
+    if want:
+        if want not in tts_engines():
+            raise HTTPException(503, f"Kilitli motor '{want}' bu sunucuda hazır değil (kurulu: {', '.join(tts_engines()) or 'yok'}).")
+        order = [want]
+    else:
+        order = tts_auto()
     errors = []
-    for eng in tts_engines():
+    for eng in order:
         try:
             if eng in ("omnivoice", "voxcpm", "pocket", "chatterbox", "xtts"):
                 data = await asyncio.to_thread(_gpu_synth, eng, text, gender, lang, ref, j)
@@ -571,9 +614,15 @@ async def tts(req: Request):
             if eng == "piper":
                 data = await asyncio.to_thread(tts_piper, text, gender, lang)
                 return Response(data, media_type="audio/wav", headers={"X-Defter-Engine": eng})
-        except Exception as e:  # motor kurulmamış/çevrimdışı olabilir → sıradaki
+        except LookupError as e:  # eksik referans ses
+            if want:
+                raise HTTPException(409, f"{eng}: {e}. Ses kütüphanesine bir kayıt ekleyin ya da bir ses tasarlayın.")
             errors.append(f"{eng}: {e}")
-    raise HTTPException(500, "Hiçbir seslendirme motoru çalışmadı. " + " | ".join(errors) if errors else "Seslendirme motoru kurulu değil (pip install edge-tts piper-tts)")
+        except Exception as e:  # motor kurulmamış/çevrimdışı olabilir
+            if want:  # kilitliyse sessizce başka sese geçme: gerçek hatayı göster
+                raise HTTPException(500, f"{eng} çalışmadı: {e}")
+            errors.append(f"{eng}: {e}")
+    raise HTTPException(500, "Hiçbir seslendirme motoru çalışmadı. " + " | ".join(errors) if errors else "Seslendirme motoru kurulu değil. tools\\kur-gpu.bat ile OmniVoice/Pocket TTS ya da pip install edge-tts kurun.")
 
 
 # ---------------------------------------------------------------- Ses dökümü
@@ -714,8 +763,9 @@ def health():
     clone = any(e in eng for e in ("chatterbox", "xtts", "pocket", "omnivoice", "voxcpm"))
     female = "edge" in eng or "omnivoice" in eng or "voxcpm" in eng or (clone and any(v["gender"] == "f" for v in vs))
     ready = [m["id"] for m in modeller.catalog() if m.get("adaptor") and modeller.is_ready(m["id"])]
+    plan = tts_plan()
     return {"ok": True, "version": VERSION, "app": os.path.exists(os.path.join(APP_DIR, "index.html")),
-            "tts": {"pref": TTS_PREF, "engines": eng, "female": female, "clone": clone, "voices": len(vs), "models": ready, "design": design_motors()},
+            "tts": {"pref": TTS_PREF, "engines": eng, "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs), "models": ready, "design": design_motors()},
             "stt": f"faster-whisper {WHISPER_MODEL}" if has("faster_whisper") else None, "ollama": OLLAMA, "image": gorsel.durum()}
 
 
