@@ -2,7 +2,7 @@
 import { db, now, getSetting, setSetting, saveArtifactContent, deleteArtifact, deleteSource, deleteNotebook, exportNotebook, importNotebook, touchNotebook } from './db.js';
 import { PROVIDERS, loadConfig, saveConfig, listModels, chat } from './llm.js';
 import { addSource, fileToText, urlToText, chunkText, enabledSources, replaceSourceText } from './sources.js';
-import { serverUrl, serverBase, setServerBase, serverInfo } from './server.js';
+import { serverUrl, serverBase, setServerBase, serverInfo, updateCheck, updateApply } from './server.js';
 import { TOOLS, LANGS, answer, suggestQuestions } from './studio/gen.js';
 import { h, icon, toast, modal, confirmBox, promptBox, renderMarkdown, download, slug, timeAgo } from './ui.js';
 import { seedDemo } from './demo.js';
@@ -52,7 +52,7 @@ async function boot() {
   if (!(await db.notebooks.count()) && !(await getSetting('demoSeeded'))) { await seedDemo(); await setSetting('demoSeeded', true); }
   window.addEventListener('hashchange', route);
   route();
-  serverUrl().then(updateStatus);
+  serverUrl().then((u) => { updateStatus(); const up = serverInfo()?.update; if (u && up?.available) toast(`Yardımcı sunucuya güncelleme var (${up.latest}). Ayarlar › Lokal yardımcı sunucu › Sunucuyu güncelle`); });
   // Yarıda kalan soru bankası doldurmayı sürdür (yalnız kullanıcı başlatmışsa ve model erişilebilirse)
   db.settings.where('key').startsWith('bank:').filter((r) => r.value?.status === 'running').count()
     .then(async (n) => { if (n && (await checkLLM()).ok) resumeBankFills(); }).catch(() => {});
@@ -788,6 +788,23 @@ async function openSettings() {
   const out = h('div', { class: 'small', role: 'status' });
   const srvIn = h('input', { class: 'input', value: await serverBase(), placeholder: 'http://localhost:8765' });
   const srvOut = h('div', { class: 'small' });
+  const updOut = h('div', { class: 'small' });
+  const showUpd = (u) => {
+    if (!u) { updOut.textContent = 'Sunucuya ulaşılamadı.'; return; }
+    if (u.error && !u.latest) { updOut.textContent = `Güncelleme denetlenemedi (internet?): ${u.error}`; return; }
+    if (!u.available) { updOut.textContent = `✓ Sunucu güncel (${u.current}).`; return; }
+    put(updOut, h('span', {}, `Yeni sürüm var: ${u.current} → ${u.latest} (${u.n} dosya${u.pip ? ', paketler' : ''}). `),
+      h('button', { class: 'btn small', onclick: async () => {
+        updOut.textContent = 'Güncelleniyor…';
+        try {
+          const r = await updateApply();
+          if (r.hatalar?.length) { updOut.textContent = '⚠ ' + r.hatalar.join(' · '); return; }
+          if (r.restart === 'auto') { updOut.textContent = `✓ ${r.yazilan.length} dosya yazıldı; sunucu yeniden başlıyor…`; setTimeout(async () => { await serverUrl(true); updateStatus(); updOut.textContent = '✓ Güncellendi ve yeniden başladı.'; }, 6000); }
+          else if (r.restart === 'manual') updOut.textContent = `✓ ${r.yazilan.length} dosya yazıldı. Sunucu penceresini kapatıp yeniden açın (tools\\kur.bat ile kurduysanız kendiliğinden açılır).`;
+          else updOut.textContent = '✓ Güncellendi (yeniden başlatma gerekmedi).';
+        } catch (e) { updOut.textContent = 'Güncellenemedi: ' + e.message; }
+      } }, 'Sunucuyu güncelle'));
+  };
   const keyRow = h('div', { class: 'field' }, h('label', {}, 'API anahtarı'), key);
   const sync = () => { const p = PROVIDERS[prov.value]; hint.textContent = p.hint; keyRow.hidden = !p.needsKey && prov.value !== 'custom'; };
   prov.onchange = () => { const p = PROVIDERS[prov.value]; base.value = p.baseUrl; model.value = p.model; embedM.value = p.embedModel; sync(); };
@@ -824,12 +841,11 @@ async function openSettings() {
       await setServerBase(srvIn.value.trim()); const u = await serverUrl(true); const i = serverInfo();
       if (u) srvOut.textContent = `✓ Çalışıyor · Ses: ${i?.tts?.engines?.join(', ') || 'motor kurulu değil'}${i?.tts?.female ? ' (kadın sesi var)' : ''} · Döküm: ${i?.stt || '—'}`;
       else put(srvOut, h('div', { class: 'card stack small' }, h('b', {}, '✗ Sunucu bulunamadı: bilgisayarınızda yardımcı sunucu çalışmıyor.'),
-        h('ol', {}, h('li', {}, 'Python 3.11 ya da 3.12 kurun (python.org; kurulumda "Add to PATH" işaretli olsun).'),
-          h('li', {}, 'Projeyi indirip açın: ', h('a', { href: 'https://github.com/aseydaaksakal/defter-studio/archive/refs/heads/main.zip' }, 'defter-studio-main.zip'), '.'),
-          h('li', {}, h('code', {}, 'server\\baslat.bat'), ' dosyasını çift tıklayın (ilk kurulum birkaç dakika). Pencere açık kalsın.'),
+        h('ol', {}, h('li', {}, 'Tek seferlik kurulum dosyasını indirip çalıştırın: ', h('a', { href: 'https://github.com/aseydaaksakal/defter-studio/raw/main/tools/kur.bat' }, 'kur.bat'), ' (Python yoksa kendisi sorar; sunucu sonradan kendini günceller, zip indirmeniz gerekmez).'),
           h('li', {}, 'Tekrar "Kontrol et"e basın; Chrome yerel ağ izni sorarsa İzin ver deyin. Ya da doğrudan ', h('a', { href: 'http://localhost:8765/', target: '_blank', rel: 'noopener' }, 'localhost:8765'), ' adresini kullanın.'))));
       updateStatus();
-    } }, 'Kontrol et')), srvOut,
+      if (u) updateCheck(true).then(showUpd).catch(() => {});
+    } }, 'Kontrol et')), srvOut, updOut,
     h('h3', {}, 'Veriler'),
     h('p', { class: 'muted small' }, 'Tüm defterler bu tarayıcının IndexedDB veritabanında saklanır. ', est ? `Kullanılan alan: ${(est.usage / 1048576).toFixed(1)} MB / ${(est.quota / 1073741824).toFixed(1)} GB.` : ''),
     h('div', { class: 'row gap wrap' },

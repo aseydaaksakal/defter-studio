@@ -15,6 +15,7 @@ Son güncelleme: 2026-10-13 · sürüm 0.6.0
 | GitHub deposu | https://github.com/aseydaaksakal/defter-studio |
 | Son değişiklikler | https://github.com/aseydaaksakal/defter-studio/commits/main |
 | Pages yayın durumu | https://github.com/aseydaaksakal/defter-studio/actions |
+| **Tek seferlik kurulum (kur.bat)** | https://github.com/aseydaaksakal/defter-studio/raw/main/tools/kur.bat |
 | Ollama bağlama aracı | https://github.com/aseydaaksakal/defter-studio/raw/main/tools/ollama-baglan.bat |
 
 ## Dokümanlar

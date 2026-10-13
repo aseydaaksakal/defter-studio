@@ -1,9 +1,11 @@
 @echo off
 chcp 65001 >nul
-REM Defter Studio: yardimci sunucuyu kurar (ilk sefer) ve baslatir; uygulama http://localhost:8765 adresinde acilir.
-REM Bu adresten acinca Ollama icin OLLAMA_ORIGINS ayari gerekmez.
-REM 0.6.0: Her acilista edge-tts guncellenir (Microsoft eski surumleri 403 ile reddediyor) ve eksik paketler tamamlanir.
+REM Defter Studio yardimci sunucusu. 0.7.0: kendini gunceller. Her acilista siteyle karsilastirir, YALNIZ degisen dosyalari indirir;
+REM paketler yalniz requirements.txt degistiyse kurulur. Arayuzdeki "Sunucuyu guncelle" dugmesi sunucuyu kapatip bu dongu ile yeniden acar.
+REM "baslat.bat sessiz" = tarayici acmaz, pencere kapaninca beklemez (otomatik baslatma icin).
 cd /d %~dp0
+set DEFTER_LAUNCHER=1
+if /i "%~1"=="sessiz" set DEFTER_OPEN=0
 if not exist .venv (
   echo Ilk kurulum yapiliyor, birkac dakika surebilir...
   py -3.12 -m venv .venv 2>nul || py -3.11 -m venv .venv 2>nul || python -m venv .venv
@@ -12,9 +14,9 @@ if not exist .venv (
   pip install -r requirements.txt
 ) else (
   call .venv\Scripts\activate
-  echo Paketler denetleniyor ^(edge-tts guncelleniyor^)...
-  pip install -q -U edge-tts
-  pip install -q -r requirements.txt
 )
+:dongu
+python guncelle.py --sync --quiet
 python main.py
-pause
+if errorlevel 75 goto dongu
+if /i not "%~1"=="sessiz" pause

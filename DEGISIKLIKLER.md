@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-13 — teslim
+- 0.7.0: kendini güncelleyen sunucu (tek seferlik kur.bat, değişen dosyaları indirme, otomatik başlatma, arayüzde Sunucuyu güncelle)
+
+## 2026-10-13 — teslim
 - 0.6.0: Edge 403 onarımı, Pocket TTS Türkçe, kayıtlı podcast sesi, Piper kalıcı oturum, Fish Audio, motor tanısı, Video v2
 
 ## 2026-10-13 — 0.6.0 — ses güvenilirliği, kayıtlı podcast sesi, Video v2

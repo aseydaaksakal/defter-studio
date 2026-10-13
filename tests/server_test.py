@@ -357,6 +357,93 @@ ok("Motor tanısı: ortam bilgisi (VRAM/Ollama/edge sürümü) döner", "vramFre
 one = client.get("/tts/selftest?engines=edge").json()
 ok("Motor tanısı: engines= ile yalnız seçilen motor denenir", [r["engine"] for r in one["results"]] == ["edge"])
 
+# ---- Kendini güncelleme (0.7.0): yalnız değişenler indirilir, bozuk/güvensiz dosya yazılmaz
+import hashlib, http.server, json as _json, threading as _th  # noqa: E402
+import guncelle  # noqa: E402
+
+site = tempfile.mkdtemp(); root = tempfile.mkdtemp(); sayac = []
+
+
+def site_yaz(files, extra=None):
+    for y, v in files.items():
+        os.makedirs(os.path.dirname(os.path.join(site, y)), exist_ok=True)
+        open(os.path.join(site, y), "wb").write(v)
+    man = {"version": "1.2.3", "files": {y: hashlib.sha256(v).hexdigest() for y, v in files.items()}, "kabuk": {}}
+    man.update(extra or {})
+    os.makedirs(os.path.join(site, "server"), exist_ok=True)
+    open(os.path.join(site, "server", "manifest.json"), "w").write(_json.dumps(man))
+    return man
+
+
+class _H(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k): super().__init__(*a, directory=site, **k)
+    def log_message(self, *a): sayac.append(self.path.split("?")[0])
+
+
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _H); _th.Thread(target=srv.serve_forever, daemon=True).start()
+BASE = f"http://127.0.0.1:{srv.server_port}/"
+os.environ["DEFTER_UPDATE_URL"] = BASE; guncelle.BASE = BASE
+guncelle.STATE = os.path.join(root, "state.json")
+guncelle._pip = lambda *a, log=print: True  # testte gerçek pip çalışmasın
+A, B = b"print('a')\n", b"x = 1\n"
+m = site_yaz({"server/a.py": A, "server/b.py": B, "server/requirements.txt": b"fastapi\n", "tools/c.bat": b"@echo off\r\n"})
+r = guncelle.uygula(m, root, BASE, log=lambda *a: None)
+ok("Güncelleme: ilk eşitleme tüm dosyaları yazar, tüm özetler tutar", len(r["yazilan"]) == 4 and not r["hatalar"] and open(os.path.join(root, "server", "a.py"), "rb").read() == A, str(r["yazilan"]))
+ok("Güncelleme: requirements.txt ilk kez geldi → pip çalıştı", r["pip"] is True)
+sayac.clear()
+r = guncelle.uygula(guncelle.manifest(BASE), root, BASE, log=lambda *a: None)
+ok("Güncelleme: hiçbir şey değişmediyse HİÇBİR dosya indirilmez ve pip çalışmaz", r["yazilan"] == [] and r["pip"] is False and [u for u in sayac if not u.endswith("manifest.json")] == [], str(sayac))
+m = site_yaz({"server/a.py": b"print('yeni')\n", "server/b.py": B, "server/requirements.txt": b"fastapi\n", "tools/c.bat": b"@echo off\r\n"})
+sayac.clear()
+r = guncelle.uygula(m, root, BASE, log=lambda *a: None)
+ok("Güncelleme: yalnız değişen dosya indirilir (a.py), pip çalışmaz", r["yazilan"] == ["server/a.py"] and r["py"] and not r["pip"] and sorted(u for u in sayac if not u.endswith("manifest.json")) == ["/server/a.py"], str(r) + str(sayac))
+m = site_yaz({"server/a.py": b"print('yeni')\n", "server/b.py": B, "server/requirements.txt": b"fastapi\nhttpx\n", "tools/c.bat": b"@echo off\r\n"})
+r = guncelle.uygula(m, root, BASE, log=lambda *a: None)
+ok("Güncelleme: requirements.txt değişince pip yeniden çalışır", r["pip"] is True and r["yazilan"] == ["server/requirements.txt"])
+bozuk = site_yaz({"server/a.py": b"print('yeni')\n", "server/z.py": b"z=1\n"}); bozuk["files"]["server/z.py"] = "0" * 64
+r = guncelle.uygula(bozuk, root, BASE, log=lambda *a: None)
+ok("Güncelleme: özeti tutmayan dosya yazılmaz, hata bildirilir", r["hatalar"] and not os.path.exists(os.path.join(root, "server", "z.py")) and not os.path.exists(os.path.join(root, "server", "z.py.yeni")))
+zararli = {"version": "9", "files": {"../disari.py": "0" * 64, "/etc/x": "0" * 64, "server/../../k.py": "0" * 64, "C:/x.py": "0" * 64, "app.js": "0" * 64}, "kabuk": {}}
+ok("Güncelleme: .., mutlak yol ve server/ tools/ dışı yollar reddedilir", guncelle.plan(zararli, root)["degisen"] == [])
+m2 = site_yaz({"server/a.py": b"print('yeni')\n"}, {"kabuk": {"server/baslat.bat": hashlib.sha256(b"yeni").hexdigest()}})
+open(os.path.join(site, "server", "baslat.bat"), "wb").write(b"yeni")
+r = guncelle.uygula(m2, root, BASE, log=lambda *a: None)
+ok("Güncelleme: kabuk dosyaları (baslat.bat) kendiliğinden ezilmez, yalnız bildirilir", r["kabuk"] == ["server/baslat.bat"] and not os.path.exists(os.path.join(root, "server", "baslat.bat")))
+r = guncelle.uygula(m2, root, BASE, kabuk=True, log=lambda *a: None)
+ok("Güncelleme: --kabuk (kur.bat) ile kabuk dosyaları yazılır", "server/baslat.bat" in r["yazilan"])
+os.makedirs(os.path.join(root, ".git"), exist_ok=True)
+try:
+    guncelle.uygula(m2, root, BASE, log=lambda *a: None); gitok = False
+except RuntimeError:
+    gitok = True
+ok("Güncelleme: git deposunda (geliştirme kopyası) otomatik güncelleme kapalı", gitok)
+ok("Güncelleme: çevrimdışıyken CLI hata vermeden 0 döner (sunucu yine açılır)", guncelle.main(["--sync", "--quiet", "--base", "http://127.0.0.1:9/"]) == 0)
+# gerçek manifest: depodaki dosyalar özetleriyle tutuyor mu
+import subprocess  # noqa: E402
+subprocess.run([sys.executable, os.path.join(os.path.dirname(SERVER), "tools", "uret-manifest.py")], check=True, capture_output=True)
+gm = _json.load(open(os.path.join(SERVER, "manifest.json")))
+ok("Manifest: depodaki her dosyanın özeti tutuyor; main.py sürümüyle aynı sürüm", gm["version"] == main.VERSION and all(guncelle._yerel_sha(os.path.dirname(SERVER), y) == h for y, h in {**gm["files"], **gm["kabuk"]}.items()) and "server/guncelle.py" in gm["files"] and "server/baslat.bat" in gm["kabuk"])
+ok("Manifest: .bat dosyaları CRLF (özet Windows'taki dosyayla tutsun)", b"\r\n" in open(os.path.join(SERVER, "baslat.bat"), "rb").read() and b"\r\n" in open(os.path.join(os.path.dirname(SERVER), "tools", "kur.bat"), "rb").read())
+# uç noktalar
+main._UPD.update(at=0.0, plan=None)
+guncelle_man = guncelle.manifest
+main.guncelle.manifest = lambda base=None: {"version": "9.9.9", "files": {"server/main.py": "0" * 64}, "kabuk": {}}
+ck = client.get("/update/check?force=true").json()
+ok("/update/check: yeni sürümü ve değişen dosyaları bildirir", ck["available"] and ck["latest"] == "9.9.9" and ck["current"] == main.VERSION and "server/main.py" in ck["files"], str(ck)[:160])
+ok("/health: update.available döner (arayüz bildirim göstersin)", client.get("/health").json()["update"]["available"] is True)
+main.guncelle.uygula = lambda m, root, log=None, **k: {"yazilan": ["server/main.py"], "hatalar": [], "py": True, "pip": False, "kabuk": [], "surum": "9.9.9"}
+exits = []
+_Timer = main.threading.Timer
+main.threading.Timer = lambda t, fn: type("T", (), {"start": lambda self: exits.append(t)})()
+os.environ["DEFTER_LAUNCHER"] = "1"
+ap = client.post("/update/apply").json()
+ok("/update/apply: .py değişti ve başlatıcı varsa kendini yeniden başlatır (çıkış 75)", ap["restart"] == "auto" and len(exits) == 1, str(ap))
+os.environ["DEFTER_LAUNCHER"] = "0"; exits.clear()
+ap = client.post("/update/apply").json()
+ok("/update/apply: başlatıcı yoksa kapanmaz, elle yeniden başlatma ister", ap["restart"] == "manual" and not exits, str(ap))
+main.threading.Timer = _Timer; main.guncelle.manifest = guncelle_man
+srv.shutdown()
+
 n = sum(results)
 print(f"\n{n}/{len(results)} sunucu kontrolü geçti")
 sys.exit(0 if n == len(results) else 1)

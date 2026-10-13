@@ -74,6 +74,13 @@ Yalnız kendi sesinizi ya da izin aldığınız bir sesi klonlayın.
 
 ## 5. Yardımcı sunucu (uygulamayı sunar, kaliteli ses, klonlama, döküm, web)
 
+**Önerilen (0.7.0): tek seferlik kurulum.** [kur.bat](https://github.com/aseydaaksakal/defter-studio/raw/main/tools/kur.bat) dosyasını indirip bir kez çalıştırın.
+Python'u (yoksa), sunucuyu, paketleri ve isteğe bağlı Pocket TTS Türkçe'yi kurar; isterseniz bilgisayar açılınca arka planda başlatır.
+Sonrasında zip indirmeniz ya da bat çalıştırmanız gerekmez: sunucu her açılışta siteyle karşılaştırıp **yalnız değişen dosyaları** indirir, paketleri yalnız gereksinimler değişirse kurar.
+Ayarlar › Lokal yardımcı sunucu'ya bir kez `http://localhost:8765` yazın. Güncelleme olunca aynı yerde **Sunucuyu güncelle** düğmesi çıkar. Kaldırmak için `tools\otomatik-baslat-kaldir.bat` ve `%LOCALAPPDATA%\DefterStudio` klasörünü silin.
+Aşağıdaki zip yöntemi yedek yoldur.
+
+
 Gerekenler: Python 3.11 ya da 3.12. GPU özellikleri için güncel NVIDIA sürücüsü.
 
 ```powershell

@@ -1,0 +1,35 @@
+{
+ "version": "0.7.0",
+ "files": {
+  "server/.guncel.json": "4f35bae9ff4ca9dae686af3c1f12921eb513bf4378d0661fb6879cf254145d27",
+  "server/adaptorler.py": "ab52a1f41c22d3286a694b0ba0d831bbafa8d349075b3094ba04f24fad529a5b",
+  "server/gorsel.py": "b69b4c2155fd03c7becfc10c589609483395c558585cb9229d882cc93ac4f660",
+  "server/guncelle.py": "cc8f57019d5012d27baaa054b08edd730bfcf6cf03c3516c102beb9c199ab6c9",
+  "server/karsilastir.py": "5515e751976a553fb95ee040f7b3bfa6016797440a005b02202fccf7a5dd3a5b",
+  "server/main.py": "619454bd915b6bb20e7d87f62f676b65cf7a00f9cd064f23dfdebe4490b7c806",
+  "server/model_katalog.json": "adc14f07beebc9b594c4d5a581715e2097d30a77a2cc6ba7960617c8c25a2ba3",
+  "server/modeller.py": "b21b7f2e0b71742949f4d4368401e4e4ce3ed2f9cc91e00ac19bd3c424ee86e4",
+  "server/moss_worker.py": "696e46ca0aea54057c284f36f4ffd31db38a8c442a00819c3541cb12fbea5935",
+  "server/requirements-pocket.txt": "27eaa769dbf44664dfd0967b7c05b5e1b40f578f1afdb5fcc6d1ba676fe27a93",
+  "server/requirements.txt": "ca1d13d0400f7df175b2f7c0ccd7b8e42270dbf6bb0a0a73b99aabf905438627",
+  "tools/comfyui-baslat.bat": "58f53c72f9b7fb6594cbb5d7bbf6ca793d9a18f94c02ed4f5ab6002474d707dd",
+  "tools/kur-chatterbox.bat": "89c72e84b08b56f752c8ed8101ec24dfbf17b03b213a7f8d895dfe9c0bc76688",
+  "tools/kur-comfyui.bat": "9b6ab334f6cc3da68d920fd98489725ab34a346967e64f9e58932350a2902a74",
+  "tools/kur-gpu.bat": "a8aee14316178ec75cd6a734660c76f9a0c6b83a801a486c5d2ac56bbf228c23",
+  "tools/kur-moss.bat": "34440f14707e54d428b2ffcecbb023de754d1f14c092a7932c4ec3c92d9383ef",
+  "tools/kur-pocket-tr.bat": "e022de2cb709458987b17d48439f6e8f67679918cfb0dbd05f4a78569d3055c3",
+  "tools/modelleri-indir.bat": "edc350fe9d715f64c7d76afee4dfbb03a52f97b6e4d18d79bc2591f64ead8e56",
+  "tools/ollama-baglan.bat": "85a040e308157fe3dcf19d56d9856736039001af9a4177af8bbdef9a0b227737",
+  "tools/onizleme.sh": "ca6f1f42d006fa14c0c9689d71add293d4905f0ef804ea2f61fc8671c5c0aad1",
+  "tools/otomatik-baslat-kaldir.bat": "7c45f587f4bb330f559c8096b6148c72c59d3cba25e0ab1c0f8f095143c0a8aa",
+  "tools/ses-karsilastir.bat": "537450335a6279744281861d7597f238c7c765b4c23140784105a9f3b9633906",
+  "tools/sunucu-tani.bat": "40e2be5f464c6c52678916ef34c8b059b26528252e4539def4c76b612d4ee6d8",
+  "tools/teslim.sh": "4343c505c7cb4c4881db28460390c0780813512f6604f60da1b0a6634a93dccd",
+  "tools/uret-manifest.py": "15c74819b46e24f555ddba74b1af03403abc29bdca1aedd0e2e048419519756c"
+ },
+ "kabuk": {
+  "server/baslat.bat": "ced156e803120293828f03709acfde5db98ba1962de169770d1ca43fe5b4896a",
+  "server/baslat.sh": "60513fbcf9f2b35b3656037704a808a38d0cbfe0a24a89f880b1d04bcfbcfaad",
+  "server/gizli-baslat.vbs": "aa293f8b1049294da86c380461a083acecfa548b641050ff46195028f6e2aa71"
+ }
+}

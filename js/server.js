@@ -24,3 +24,16 @@ export async function serverUrl(force = false) {
 }
 export function serverInfo() { return cache.info; }
 export const servedByHelper = () => !!sameOrigin() && cache.url === sameOrigin() && cache.ok;
+
+// Sunucu kendini güncelleyebilir (server/guncelle.py): siteyle karşılaştırır, yalnız değişen dosyaları indirir.
+export async function updateCheck(force = true) {
+  const base = await serverUrl(); if (!base) return null;
+  const r = await fetch(`${base}/update/check${force ? '?force=true' : ''}`, { signal: AbortSignal.timeout(20000) });
+  return r.ok ? r.json() : null;
+}
+export async function updateApply() {
+  const base = await serverUrl(); if (!base) throw new Error('Sunucu çalışmıyor.');
+  const r = await fetch(`${base}/update/apply`, { method: 'POST', signal: AbortSignal.timeout(300000) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+  return r.json();
+}

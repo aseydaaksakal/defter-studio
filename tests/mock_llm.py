@@ -196,7 +196,10 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         if p.startswith("/health"):
-            return self.send(200, {"ok": True, "version": "mock", "ffmpeg": True, "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None})
+            return self.send(200, {"ok": True, "version": "mock", "ffmpeg": True, "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None, "update": {"available": not ST.get("upd_applied"), "latest": "9.9.9", "n": 2}})
+        if p.startswith("/update/check"):
+            av = not ST.get("upd_applied")
+            return self.send(200, {"current": "mock", "latest": "9.9.9", "available": av, "n": 2 if av else 0, "files": ["server/main.py", "server/guncelle.py"], "pip": False, "kabuk": [], "error": None, "launcher": True})
         if p.startswith("/tts/selftest"):
             return self.send(200, {"info": {"vramFreeGb": 3.1, "vramTotalGb": 24.0, "ollamaLoaded": ["qwen3.8:27b"], "edge": "7.2.8", "torch": "2.9.1+cu128", "cuda": True, "gpu": "NVIDIA GeForce RTX 5090 Laptop GPU", "capability": "sm_120"},
                                    "results": [{"engine": "edge", "ok": True, "seconds": 1.2, "f": {"ok": True}, "m": {"ok": True}},
@@ -244,6 +247,9 @@ class H(http.server.BaseHTTPRequestHandler):
             n = form_field(raw, "name") or "ses"
             ST["voices"][n] = {"gender": form_field(raw, "gender") or "f", "label": form_field(raw, "label") or n, "source": "klon", "text": form_field(raw, "text") or None}
             return self.send(200, {"ok": True, "name": n, "textState": "otomatik"})
+        if p == "/update/apply":
+            ST["upd_applied"] = True
+            return self.send(200, {"yazilan": ["server/main.py", "server/guncelle.py"], "hatalar": [], "py": True, "pip": False, "kabuk": [], "surum": "9.9.9", "restart": "auto"})
         if p == "/video/start":  # sahte hızlı MP4: gelen ses ve kareleri sayar
             ST["video"] = {"frames": 0, "batches": 0, "jpeg_ok": True, "audio": len(form_file(raw)), "fps": form_field(raw, "fps"), "w": form_field(raw, "width"), "h": form_field(raw, "height"), "finished": False}
             return self.send(200, {"id": "mockvid"})

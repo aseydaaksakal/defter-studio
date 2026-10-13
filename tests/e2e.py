@@ -115,6 +115,11 @@ def main():
         ok("Ayarlar: otomatik motor lokal sunucuyu seçiyor", "Lokal sunucu" in txt(".voice-settings p.small"), txt(".voice-settings p.small")[:90])
         pg.click(".settings summary:has-text('Görseller (slayt')")
         ok("Ayarlar: görseller bölümü, lokal (ComfyUI) sağlayıcı hazır", wait_until(lambda: "Hazır: Lokal" in txt(".settings"), 8), txt(".settings")[-200:].replace("\n", " ")[:90])
+        # Sunucu kendini günceller: bat çalıştırmadan düğmeyle
+        pg.click(".settings >> text=Kontrol et")
+        ok("Sunucu güncelleme: yeni sürüm bildirilir", wait_until(lambda: "Yeni sürüm var" in txt(".settings"), 8), txt(".settings")[-300:].replace("\n", " ")[:120])
+        pg.click(".settings >> text=Sunucuyu güncelle")
+        ok("Sunucu güncelleme: düğme uygular ve yeniden başlatılacağını söyler", wait_until(lambda: "yeniden başlıyor" in txt(".settings"), 8))
         pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(300)
 
         # --- Defter + kaynaklar (dosya yükleme ve yapıştırma)

@@ -3,3 +3,4 @@
 *.bat -text
 *.cmd -text
 *.sh text eol=lf
+*.vbs -text

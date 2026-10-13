@@ -45,13 +45,14 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 - **localhost:** Kullanıcı açıkça istemedikçe tarayıcı localhost'a istek atmaz (Chrome yerel ağ izni sorar).
   - Sunucu adresi boşsa `serverUrl()` yalnız uygulama zaten localhost'tan açılmışsa aynı kökene sorar.
 - **Belge çıktısı:** Word (.docx) üretme; belge çıktıları PDF/Markdown/HTML olur. Kullanıcının kalıcı tercihi budur.
+- **Sunucu dosyaları:** `server/` ya da `tools/*.bat` değişince `tools/teslim.sh` `server/manifest.json`'u yeniden üretir (elle üretmek: `python3 tools/uret-manifest.py`). Kullanıcı sunucusu kendini bu manifestle günceller; yeni gerekli paketi `server/requirements.txt`'e ekle (değişince kullanıcıda pip otomatik çalışır). Kabuk dosyalarını (`baslat.bat/.sh`, `gizli-baslat.vbs`) sabit tut. Kullanıcıdan zip indirmesini ya da bat çalıştırmasını isteme; tek istisna ilk kurulum (`tools/kur.bat`).
 - **Gizli bilgiler:** API anahtarlarını, GitHub belirteçlerini ve kullanıcı ses kayıtlarını asla dosyaya, commit'e, dokümana ya da teste yazma.
 
 ## Test
 ```bash
 python3 -m http.server 8099 &        # depo kökünde
 python3 tests/mock_llm.py &          # sahte model (OpenAI uyumlu SSE) + sahte lokal sunucu (/health, /tts) — 8098
-python3 tests/e2e.py [klasör]        # 95 uçtan uca kontrol (+ python3 tests/server_test.py: 56), ekran görüntüleri klasöre
+python3 tests/e2e.py [klasör]        # 97 uçtan uca kontrol (+ python3 tests/server_test.py: 73), ekran görüntüleri klasöre
 ```
 Sahte model istemdeki KAYNAKLAR bloğundan istenen sayıda, kaynaktan alıntılı öğe üretir.
 - Yeni bir istem eklersen `tests/mock_llm.py`'ye o isteme özgü bir anahtar ifade ekle.

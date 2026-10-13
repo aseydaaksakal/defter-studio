@@ -1,6 +1,6 @@
 # Devir teslim
 
-Son güncelleme: 2026-10-13 · sürüm **0.6.0** · canlı: https://aseydaaksakal.github.io/defter-studio/
+Son güncelleme: 2026-10-13 · sürüm **0.7.0** · canlı: https://aseydaaksakal.github.io/defter-studio/
 
 Bu belge projeyi devralan kişi ya da yapay zeka içindir: durum, kanıtlar, eksikler, sıradaki iş ve hazır başlangıç istemi.
 Ayrıntı gerektikçe [PROJE_REHBERI.md](PROJE_REHBERI.md) (dosya → görev) ve [docs/NOT_DEFTERI.md](docs/NOT_DEFTERI.md)
@@ -44,7 +44,8 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 | Fish Audio motoru (`fish`) | ⚠️ Kod hazır | **Gerçek anahtarla denenmedi** (sohbette paylaşılan anahtarlar kullanılmadı) |
 | Motor tanısı: `/tts/selftest` + Ayarlar › "Motorları sına", VRAM koruması | ✅ Kod hazır | server_test; gerçek GPU'da denenecek |
 | **Video v2:** sahneler arası geçiş, kelime altyazısı, ffmpeg ile hızlı MP4 | ✅ | Piksel testleri, gerçek ffmpeg sunucu testi, arayüz indirme testi |
-| Testler | ✅ | `tests/e2e.py` 95/95, `tests/server_test.py` 56/56 |
+| **Kendini güncelleyen sunucu (0.7.0):** `tools/kur.bat` bir kez; sonra siteyle özet karşılaştırması, yalnız değişen dosyalar iner, pip yalnız requirements değişince, Windows açılışında gizli başlatma, arayüzde "Sunucuyu güncelle" | ⚠️ Kod hazır | server_test (yerel HTTP sunucusuyla gerçek indirme/özet/pip koşulu), e2e düğme akışı. **`kur.bat` Windows'ta denenmedi** |
+| Testler | ✅ | `tests/e2e.py` 97/97, `tests/server_test.py` 73/73 |
 | Dokümanlar | ✅ | README, CLAUDE.md, AGENTS.md, bu belge, PROJE_REHBERI, LINKLER, docs/* |
 
 ## 3. Kullanıcının ortamı (2026-10-12)
@@ -84,6 +85,7 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 
 ## 6. Sıradaki iş (Faz B, öncelik sırasıyla)
 
+000. **`tools\\kur.bat`'ı kullanıcı bir kez çalıştırsın** (indirme bağlantısı LINKLER.md'de); hata verirse son satırları iste. Sonra sunucunun kendiliğinden başladığını ve "Sunucuyu güncelle" akışını doğrulat. Bundan sonra kullanıcıdan ZIP indirmesini/bat çalıştırmasını isteme.
 00. **Önce kullanıcıdan iste:** Ayarlar › Seslendirme › "Motorları sına" çıktısı + `tools\kur-pocket-tr.bat` sonucu (Edge 403 düzeldi mi, Pocket TR sesleri, Trendyol/VoxCPM/OmniVoice gerçek hata metni). Podcast'te kayıtlı sesin ağsız çaldığını doğrulat.
 0. **Kullanıcının PC'sinde doğrulanacaklar (ben yapamam: Windows/GPU yok):**
    - `tools/kur-gpu.bat` (0.5.0'da yeniden yazıldı; hata verirse artık adım adını yazar, o satırları yapıştır) ve `tools/modelleri-indir.bat indir --onerilen`.
@@ -104,7 +106,7 @@ Ayrıntı: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
 ## 7. Çalıştırma ve teslim
 
 ```bash
-python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 95 kontrol + python3 tests/server_test.py (56)
+python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 97 kontrol + python3 tests/server_test.py (73)
 bash tools/teslim.sh "kısa açıklama"                                              # test + günlük + commit + push + bağlantılar
 ```
 
@@ -112,9 +114,9 @@ bash tools/teslim.sh "kısa açıklama"                                         
 
 ```
 Defter Studio projesine devam ediyoruz (GitHub: aseydaaksakal/defter-studio, canlı: https://aseydaaksakal.github.io/defter-studio/).
-Önce depodaki DEVIR_TESLIM.md'yi, sonra CLAUDE.md'yi oku; PROJE_REHBERI.md'den yalnız gereken bölümü oku (8d: 0.6.0 ses/video).
+Önce depodaki DEVIR_TESLIM.md'yi, sonra CLAUDE.md'yi oku; PROJE_REHBERI.md'den yalnız gereken bölümü oku (8d: 0.6.0 ses/video, 8e: kendini güncelleme).
 Büyük dosyaları (js/app.js, css/app.css, js/studio/gen.js) baştan sona okuma, grep ile bölüm bul.
-Bu oturumun işi: önce PC sonuçlarım: [BURAYA YAZ: Ayarlar › Seslendirme › "Motorları sına" çıktısı, tools\kur-pocket-tr.bat sonucu, Edge sesi 403 veriyor mu, podcast kayıtlı sesi ağsız çalıyor mu, video "hızlı MP4" sonucu]; gerekli düzeltmeleri yap.
+Bu oturumun işi: önce PC sonuçlarım: [BURAYA YAZ: tools\kur.bat kurulumu sorunsuz bitti mi (hata varsa son satırlar), sunucu açılışta kendiliğinden başladı mı, Sunucuyu güncelle düğmesi; Ayarlar › Seslendirme › "Motorları sına" çıktısı, tools\kur-pocket-tr.bat sonucu, Edge sesi 403 veriyor mu, podcast kayıtlı sesi ağsız çalıyor mu, video "hızlı MP4" sonucu]; gerekli düzeltmeleri yap.
 Sonra istediğim iş: [BURAYA YAZ: ör. FSRS-5 zamanlayıcı, qwen3-vl OCR, Pocket TR için HF Space, qwen3-tts-tiny-tr adaptörü].
 Bitince testleri çalıştır (tests/e2e.py ve tests/server_test.py), tools/teslim.sh ile teslim et, DEVIR_TESLIM.md ve docs/NOT_DEFTERI.md'yi güncelle,
 canlı siteyi Chrome'da kontrol et, bana bütün bağlantıları ver ve bir sonraki oturum için yeni başlangıç istemini yaz.

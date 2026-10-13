@@ -1,0 +1,1 @@
+pocket-tts-turkish   # Pocket TTS Türkçe (6 ses); yalnız kuruluysa güncellenir

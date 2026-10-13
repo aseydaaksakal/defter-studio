@@ -25,6 +25,9 @@ if [ "${TESTSIZ:-0}" != "1" ]; then
   [ "$STATIC" != 0 ] && kill "$STATIC"; [ "$MOCK" != 0 ] && kill "$MOCK"
 fi
 
+# 1b) Kendini güncelleyen sunucu için dosya özetleri (server/manifest.json)
+python3 tools/uret-manifest.py
+
 # 2) Gizli bilgi taraması (API anahtarı, GitHub belirteci) — bulunursa dur
 git add -A
 if git diff --cached -U0 | grep -E '^\+' | grep -vE '^\+\+\+' | grep -qE '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{32,}|AIza[0-9A-Za-z_-]{30,}|xox[baprs]-[A-Za-z0-9-]{10,})'; then

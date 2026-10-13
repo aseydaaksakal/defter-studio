@@ -5,6 +5,20 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 
 ---
 
+## 2026-10-13 — 0.7.0 — "zip indir, bat çalıştır" döngüsünü bitiren kendini güncelleyen sunucu
+
+- **İstek:** Her sürümde zip indirip `baslat.bat`/`kur-pocket-tr.bat` çalıştırmak yorucu; değişmeyen yer için hiçbir şey indirilmesin/çalışmasın.
+- **Çözüm (3 katman):**
+  1. `tools/kur.bat`: **bir kez** çalışır (Python yoksa winget önerir). `%LOCALAPPDATA%\DefterStudio` altına kurar, sanal ortamı ve paketleri hazırlar, isteğe bağlı Pocket TR kurar, isteğe bağlı Windows oturum açılışında sunucuyu **gizli** başlatır (`gizli-baslat.vbs`, Başlangıç klasörü kısayolu).
+  2. `server/guncelle.py` (yalnız standart kütüphane) + `server/manifest.json` (her dosyanın SHA-256 özeti; `tools/uret-manifest.py` üretir, `teslim.sh` her teslimde çalıştırır): yerel dosya özeti manifestle tutmuyorsa **yalnız o dosya** indirilir, özet doğrulanır, atomik yazılır. `requirements.txt` değişmediyse pip çalışmaz; edge-tts günde en çok bir kez yükseltilir. `baslat.bat/.sh` her açılışta `guncelle.py --sync` çağırır ve çıkış kodu 75 ile yeniden başlatma döngüsü kurar.
+  3. Arayüz: Ayarlar › Lokal yardımcı sunucu › "Sunucuyu güncelle" (`/update/check`, `/update/apply`); açılışta `/health.update.available` varsa bildirim. Python dosyası değişince sunucu kendini `exit(75)` ile kapatır, döngü yeniden açar.
+- **Pages tarafı** zaten her push'ta kendiliğinden güncel: sekmeyi yenilemek yeterli. Zip artık yalnız yedek yoldur.
+- **Güvenlik:** adres yalnız sunucu yapılandırmasından (`DEFTER_UPDATE_URL`, varsayılan resmî Pages); yollar `server/` ve `tools/` altında olmalı, `..`/mutlak yol reddedilir, özeti tutmayan dosya yazılmaz. Git deposu olan klasörde (geliştirme) otomatik güncelleme kapalıdır.
+- **Kabuk dosyaları** (`baslat.bat`, `baslat.sh`, `gizli-baslat.vbs`) çalışırken ezilmesin diye otomatik yazılmaz; değişirlerse yalnız bildirilir, `kur.bat` yeniden çalıştırılınca (`--kabuk`) yenilenir. Bu dosyaları mümkün olduğunca sabit tut; mantığı `guncelle.py`/`main.py`'ye koy.
+- **Doğrulama:** server_test 73/73 (yalnız değişen dosyanın indirilmesi, pip'in koşullu çalışması, bozuk/güvensiz yol, git koruması, uç noktalar, manifest özetleri), e2e 97/97 (düğme akışı). **Windows'ta `kur.bat` çalıştırılamadı** (yalnız Linux sandbox): ilk gerçek kurulum kullanıcının PC'sinde doğrulanacak.
+
+---
+
 ## 2026-10-13 — 0.5.0 — yapay zeka görselleri + kur-gpu.bat onarımı
 
 - **İstek:** (1) `tools/kur-gpu.bat` "Kurulum hatası" verdi. (2) Slayt, infografik, video sahnelerine yapay zeka görseli.

@@ -32,6 +32,7 @@ import os
 import re
 import random
 import tempfile
+import time
 import threading
 import wave
 import zlib
@@ -44,10 +45,11 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 import adaptorler
+import guncelle
 import gorsel
 import modeller
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
@@ -990,6 +992,57 @@ async def api_proxy(url: str, req: Request):
     return await _relay(req.method, url, headers, await req.body())
 
 
+# ---------------------------------------------------------------- Kendini güncelleme (0.7.0)
+# Site yeni sürüm yayınlayınca bat çalıştırmadan güncellenir: yalnız değişen dosyalar indirilir, paketler yalnız requirements.txt değişirse kurulur.
+_UPD = {"at": 0.0, "latest": None, "n": 0, "error": None, "plan": None}
+_UPD_LOCK = threading.Lock()
+
+
+def update_check(force=False):
+    with _UPD_LOCK:
+        if not force and time.time() - _UPD["at"] < 6 * 3600 and _UPD["plan"] is not None:
+            return _UPD
+        try:
+            m = guncelle.manifest()
+            p = guncelle.plan(m, APP_DIR)
+            _UPD.update(at=time.time(), latest=m.get("version"), n=len(p["degisen"]), error=None, plan=m,
+                        pip=p["pip"], kabuk=p["kabuk"], files=p["degisen"])
+        except Exception as e:
+            _UPD.update(at=time.time(), error=str(e)[:200])
+        return _UPD
+
+
+def _update_public():
+    u = _UPD
+    return {"current": VERSION, "latest": u.get("latest"), "available": bool(u.get("n")) or bool(u.get("pip")) , "n": u.get("n", 0),
+            "files": (u.get("files") or [])[:30], "pip": bool(u.get("pip")), "kabuk": u.get("kabuk") or [], "error": u.get("error"),
+            "launcher": os.getenv("DEFTER_LAUNCHER") == "1", "checkedAt": u.get("at")}
+
+
+@app.get("/update/check")
+async def update_check_ep(force: bool = False):
+    await asyncio.to_thread(update_check, force)
+    return _update_public()
+
+
+@app.post("/update/apply")
+async def update_apply_ep():
+    """Siteyle farklı dosyaları indirir (adres yalnız sunucu yapılandırmasından gelir). Python dosyası değiştiyse ve başlatıcı (baslat.bat/.sh) varsa kendini yeniden başlatır."""
+    def work():
+        m = guncelle.manifest()
+        return guncelle.uygula(m, APP_DIR, log=lambda *a, **k: None)
+    try:
+        r = await asyncio.to_thread(work)
+    except Exception as e:
+        raise HTTPException(502, f"Güncelleme alınamadı: {e}")
+    await asyncio.to_thread(update_check, True)
+    restart = bool(r["py"] or r["pip"])
+    auto = restart and os.getenv("DEFTER_LAUNCHER") == "1" and not r["hatalar"]
+    if auto:
+        threading.Timer(1.2, lambda: os._exit(75)).start()  # baslat.bat/.sh döngüsü yeniden açar
+    return {**r, "restart": "auto" if auto else ("manual" if restart else "none")}
+
+
 @app.get("/health")
 def health():
     eng = tts_engines()
@@ -1002,6 +1055,7 @@ def health():
             "tts": {"pref": TTS_PREF, "engines": eng, "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs) + len(builtin_voices()), "models": ready, "design": design_motors(),
                     "edgeVersion": _edge_version(), "pocketTr": has("pocket_tts_turkish")},
             "ffmpeg": bool(ffmpeg_exe()),
+            "update": {"available": bool(_UPD.get("n")) or bool(_UPD.get("pip")), "latest": _UPD.get("latest"), "n": _UPD.get("n", 0)},
             "stt": f"faster-whisper {WHISPER_MODEL}" if has("faster_whisper") else None, "ollama": OLLAMA, "image": gorsel.durum()}
 
 
@@ -1137,6 +1191,7 @@ if __name__ == "__main__":
     import uvicorn
     url = f"http://localhost:{PORT}/"
     print(f"Defter Studio {VERSION}: {url}  ·  TTS={','.join(tts_engines()) or 'yok'}  ·  Whisper={WHISPER_MODEL}/{DEVICE}  ·  Ollama={OLLAMA}")
+    threading.Thread(target=update_check, args=(True,), daemon=True).start()  # güncelleme var mı (arka planda; /health bildirir)
     if os.getenv("DEFTER_OPEN", "1") != "0":
         import webbrowser
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()

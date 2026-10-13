@@ -117,11 +117,15 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 - `js/piper-worker.js`: ses başına kalıcı oturum; `js/vendor/piper/*`: ORT ve fonemleştirici yerel; `sw.js` `IMMUTABLE` önbellek-öncelikli.
 - Ayrıntı: `docs/SES_ALTYAPI.md`.
 
+### 8e. 0.7.0: kendini güncelleme
+- `server/guncelle.py` (CLI + modül): `manifest`, `plan`, `uygula`; `--sync/--check/--kabuk/--nopip/--root/--base`. `server/manifest.json`: `tools/uret-manifest.py` üretir. `server/main.py`: `/update/check`, `/update/apply`, `/health.update`, çıkış kodu 75 = başlatıcı döngüsü yeniden açsın.
+- `tools/kur.bat` (tek seferlik kurulum + otomatik başlatma), `server/gizli-baslat.vbs`, `tools/otomatik-baslat-kaldir.bat`. Arayüz: `js/server.js` `updateCheck/updateApply`, `js/app.js` ayarlar bölümü (`showUpd`).
+
 ## 9. Testler ve teslim
 
 | İş | Yer |
 |---|---|
 | Sahte model + sahte sunucu | `tests/mock_llm.py`. Yeni istem → yeni anahtar ifade. |
-| Uçtan uca | `tests/e2e.py` (95 kontrol) + `tests/server_test.py` (56) |
+| Uçtan uca | `tests/e2e.py` (97 kontrol) + `tests/server_test.py` (73) |
 | Teslim | `tools/teslim.sh` |
 | Elle test listesi | `docs/TEST_PLANI.md` |
