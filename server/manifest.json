@@ -5,7 +5,7 @@
   "server/gorsel.py": "b69b4c2155fd03c7becfc10c589609483395c558585cb9229d882cc93ac4f660",
   "server/guncelle.py": "2f196ae35c735beb1534be70f6c514d24406866fc74e107a1eab5b800982d31c",
   "server/karsilastir.py": "5515e751976a553fb95ee040f7b3bfa6016797440a005b02202fccf7a5dd3a5b",
-  "server/main.py": "8299fc0a8d5de1381251c2d7c3b13050027c9cf607673150be8fab3acc58b9d8",
+  "server/main.py": "deab2e4f9a04df9953ea349f3f2ac9154baed05e33a4c8a5f2272d57e7714eb1",
   "server/model_katalog.json": "adc14f07beebc9b594c4d5a581715e2097d30a77a2cc6ba7960617c8c25a2ba3",
   "server/modeller.py": "f93a544d5234528231546969651903b9639807146ba003daaa13faa76d05638c",
   "server/moss_worker.py": "696e46ca0aea54057c284f36f4ffd31db38a8c442a00819c3541cb12fbea5935",
@@ -31,8 +31,8 @@
   "tools/veri-seti-hazirla.py": "0110f0541e8a314047124baf5a3d594f823c29dd7a5d6d2cf4f4c9ae9ccbd469"
  },
  "kabuk": {
-  "server/baslat.bat": "ced156e803120293828f03709acfde5db98ba1962de169770d1ca43fe5b4896a",
-  "server/baslat.sh": "60513fbcf9f2b35b3656037704a808a38d0cbfe0a24a89f880b1d04bcfbcfaad",
+  "server/baslat.bat": "712239dd544dd2b714a8ed242ab01a97ba181e5ddfb54cbee4e4c859e4dc1e1e",
+  "server/baslat.sh": "7a59bbe2113310f3df2d1d09c38af2c52ca764b8e80116fc77db919bb62a45e3",
   "server/gizli-baslat.vbs": "aa293f8b1049294da86c380461a083acecfa548b641050ff46195028f6e2aa71"
  },
  "app": {
@@ -55,7 +55,7 @@
   "js/ocr.js": "ba32b2eaef960b9b8d99d57926694c17ad07b41e5f08ee1ecb144f68bcd0205d",
   "js/piper-worker.js": "d520e585cb9698285b55b0a9e8b15ae59156c8f97b1bb82517fede1bbc82495c",
   "js/pomodoro.js": "bd6dc620d49ddd778bf5832cd879dda846993ef68121ae610f0a09b1f2286187",
-  "js/server.js": "023a4acc43c0b7d1564c93ffe96914d59612273665c4529eba95049d9e596c54",
+  "js/server.js": "64dd15c3334d09bfa9be03fd9884e4186a68bdfdf1eb84c8a89b9600ef0de70f",
   "js/sources.js": "85faf2b4dd5dcb84e4b9b68ff891897ec7bc25adf4822651003682ed94bc976d",
   "js/tabs.js": "e42e12da0ff71dc968064f30894e5cf4038fc7885e1b4c4bc6f85ce58725fbc9",
   "js/textnorm.js": "3b5ee6a4410b30db8dd9a2379cf16626d0e5ed59a7bf6848f5d71b9573a8dd09",

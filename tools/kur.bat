@@ -113,12 +113,13 @@ echo [6/9] Sunucu baslatiliyor...
 start "" wscript.exe "%HEDEF%\server\gizli-baslat.vbs"
 
 set "ADIM=7/9 sunucunun acilmasini bekleme (/health)"
-echo [7/9] Sunucunun acilmasi bekleniyor ^(en cok 90 sn^)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; for($i=0;$i -lt 90;$i++){ try{ $r=Invoke-RestMethod -Uri '%YEREL%health' -TimeoutSec 2; if($r.ok){$ok=$true;break} }catch{}; Start-Sleep 1 }; if($ok){exit 0}else{exit 1}"
+echo [7/9] Sunucunun acilmasi bekleniyor ^(en cok 120 sn^)...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; for($i=0;$i -lt 120;$i++){ try{ $r=Invoke-RestMethod -Uri '%YEREL%health' -TimeoutSec 2; if($r.ok){$ok=$true;break} }catch{}; Start-Sleep 1 }; if($ok){exit 0}else{exit 1}"
 if errorlevel 1 (
   echo.
-  echo Sunucu 90 sn icinde acilmadi. Hata ayrintisi:
+  echo Sunucu 120 sn icinde acilmadi. Hata ayrintisi:
   pushd "%HEDEF%\server"
+  if exist "%HEDEF%\server\sunucu.log" powershell -NoProfile -Command "Get-Content -Tail 25 '%HEDEF%\server\sunucu.log'"
   "%VPY%" -c "import ctypes; ctypes.windll.kernel32.SetErrorMode(0x8003); import main"
   popd
   goto :hata

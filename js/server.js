@@ -55,8 +55,9 @@ export function engineStatus(info = serverInfo()) {
   const run = (t.engines || []).filter((e) => e !== 'piper');
   const errs = t.engineErrors || {};
   const inst = new Set([...(t.installed || []), ...Object.keys(errs)]);
+  const chk = new Set(t.probing || []);
   const bad = {};
-  for (const e of inst) if (!run.includes(e) && e !== 'piper') bad[e] = errs[e] || 'paket var ama motor başlamadı';
+  for (const e of inst) if (!run.includes(e) && e !== 'piper') bad[e] = chk.has(e) ? 'kontrol ediliyor… (ilk açılışta bir dakika sürebilir)' : (errs[e] || 'paket var ama motor başlamadı');
   const off = ['pockettr', 'omnivoice', 'voxcpm', 'edge'].filter((e) => !run.includes(e) && !(e in bad));
   return { run, bad, off, known: Array.isArray(t.installed) || !!t.engineErrors };
 }

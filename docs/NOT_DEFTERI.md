@@ -318,3 +318,7 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 ## 0.8.1b (2026-10-14) — OmniVoice ses üretiyor ama seslendirmede "indirilmemiş"
 - **Kök neden:** 0.8.1'deki %50 boyut eşiği, motorun kendi HF önbelleğine indirdiği (modeller klasöründe ~1 MB görünen) çalışan modeli "hazır değil" saydı; `_tts_model` 409 verdi.
 - **Çözüm/önlem:** `modeller.kanitli()`: motorla tasarlanmış/klonlanmış ses varsa ya da bir üretim başarılıysa (`models_kanit.json`) model hazır sayılır. Kural: hazırlık, disk boyutundan değil çalışma kanıtından gelir; boyut yalnız kanıt yokken kullanılır.
+
+## 0.8.1c (2026-10-14) — kur.bat "Sunucu 90 sn içinde açılmadı"
+- **Kök neden:** `/health` ilk çağrıda motor denetimini (torch/omnivoice/voxcpm importları, Windows'ta soğuk açılışta dakikalarca) BEKLİYORDU; kur.bat'ın 2 sn'lik isteği hep zaman aşımına düştü. Hata ayrıntısı da boştu (günlük yoktu).
+- **Önlem:** `/health` asla beklemez: denetim arka planda, sonuç `server/veri/probe.json`'a yazılır (yeniden başlatmada anında), bekleyenler `tts.probing`; arayüz "kontrol ediliyor…" yazar. Sunucu çıktısı `server/sunucu.log`; kur.bat başarısızlıkta son 25 satırı gösterir, 120 sn bekler. Kural: sağlık ucu hiçbir zaman yavaş işe bağlanmaz.

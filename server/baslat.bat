@@ -17,6 +17,6 @@ if not exist .venv (
 )
 :dongu
 python guncelle.py --sync --quiet
-python main.py
+python main.py >> sunucu.log 2>&1
 if errorlevel 75 goto dongu
 if /i not "%~1"=="sessiz" pause

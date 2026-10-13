@@ -616,11 +616,30 @@ esrv.shutdown()
 # ---- Gerçek yüklenebilirlik: /health engines yalnız import edilebilenler
 ok("Alt süreç denetimi: var olan modül None, olmayan modül ModuleNotFoundError", ORIG_PROBE("json") is None and "ModuleNotFoundError" in (ORIG_PROBE("yok_boyle_modul_xyz") or ""))
 DLL = "OSError: [WinError 127] Belirtilen yordam bulunamadı. Error loading \"C:\\\\x\\\\torch\\\\lib\\\\c10_cuda.dll\" or one of its dependencies."
+def warm():
+    """Arka plan denetimi bitene dek bekler (/health artık beklemez; sonuç gelene dek 'probing')."""
+    main.engine_errors()
+    for _i in range(100):
+        if not main._probe_bg["busy"]: break
+        _t.sleep(0.05)
+    main.engine_errors()
+    for _i in range(100):
+        if not main._probe_bg["busy"]: break
+        _t.sleep(0.05)
+
+
 probe_calls = []
 main._probe_run = lambda mod: (probe_calls.append(mod), DLL if mod == "omnivoice" else None)[1]
 _inst = main.tts_installed
 main.tts_installed = lambda: ["pockettr", "omnivoice", "edge", "piper"]
 main.tts_engines = ORIG_ENGINES; main.probe_reset(); main.TTS_PREF = "auto"
+main.PROBE_FILE = os.path.join(tempfile.mkdtemp(), "probe.json")
+_slow = _th.Event()
+main._probe_run = lambda mod: (_slow.wait(5), probe_calls.append(mod), DLL if mod == "omnivoice" else None)[2]
+_t0 = _t.time(); _h0 = client.get("/health").json()["tts"]
+ok("/health beklemez: denetim sürerken hemen döner, motorlar 'probing' (çalışıyor denmez)", _t.time() - _t0 < 2 and "omnivoice" in _h0["probing"] and "omnivoice" not in _h0["engines"] and _h0["engineErrors"] == {}, str(_h0.get("probing")))
+_slow.set(); warm()
+main._probe_run = lambda mod: (probe_calls.append(mod), DLL if mod == "omnivoice" else None)[1]
 h = client.get("/health").json()["tts"]
 ok("/health: engines yalnız gerçekten import edilebilenler (omnivoice DLL hatası → yok)", h["engines"] == ["pockettr", "edge", "piper"], str(h["engines"]))
 ok("/health: installed paketi diskte olanların hepsi", h["installed"] == ["pockettr", "omnivoice", "edge", "piper"], str(h["installed"]))
@@ -635,7 +654,7 @@ for _i in range(30):
     if not main._probe_bg["busy"]: break
     _t.sleep(0.1)
 ok("TTL: bayat hata arka planda yeniden denenir, düzelince engines'e girer", "omnivoice" in main.tts_engines() and main.engine_errors() == {}, str(main.tts_engines()))
-main._probe_run = lambda mod: DLL if mod == "omnivoice" else None; main.probe_reset()
+main._probe_run = lambda mod: DLL if mod == "omnivoice" else None; main.probe_reset(); warm()
 r = tts(engine="omnivoice")
 ok("/tts: çalışmayan kilitli motor 503 + Türkçe neden (ham DLL metni yok)", r.status_code == 503 and "kur.bat" in r.text and "c10_cuda" not in r.text and "WinError" not in r.text, r.text[:200])
 # ses tasarla: motor yok → 503 Türkçe; motor çöker → ham metin sızmaz; zaman aşımı → takılmaz

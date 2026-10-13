@@ -10,6 +10,6 @@ else
 fi
 while true; do
   python guncelle.py --sync --quiet
-  python main.py; kod=$?
+  python main.py >> sunucu.log 2>&1; kod=$?
   [ "$kod" = 75 ] || exit "$kod"
 done

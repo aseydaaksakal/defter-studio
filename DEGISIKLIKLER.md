@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- /health motor denetimini beklemez (arka plan + kalıcı önbellek), sunucu.log, kur.bat 120 sn ve günlük gösterimi
+
+## 2026-10-14 — teslim
 - OmniVoice seslendirmede hazır sayılır: çalışma kanıtı (kayıtlı ses/başarılı üretim) boyut eşiğinden önce gelir
 
 ## 2026-10-14 — teslim

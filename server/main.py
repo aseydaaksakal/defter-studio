@@ -167,33 +167,69 @@ def _probe_run(mod):
     return (r.stdout or r.stderr or f"süreç çöktü (kod {r.returncode})").strip().splitlines()[-1][:300]
 
 
+PROBE_FILE = os.path.join(os.getenv("DEFTER_VERI", os.path.join(HERE, "veri")), "probe.json")  # son denetim sonucu: yeniden başlatmada anında doğru durum
+PENDING = "__bekleniyor__"
+
+
+def _probe_load():
+    try:
+        with open(PROBE_FILE, encoding="utf-8") as f:
+            for m, (t, err) in json.load(f).items():
+                _probe_cache.setdefault(m, (min(t, time.time() - PROBE_TTL_OK - 1), err))  # bayat sayılır: arka planda yeniden denenir
+    except Exception:
+        pass
+
+
+def _probe_save():
+    try:
+        os.makedirs(os.path.dirname(PROBE_FILE), exist_ok=True)
+        with open(PROBE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_probe_cache, f)
+    except OSError:
+        pass
+
+
 def _probe_refresh(mods):
     from concurrent.futures import ThreadPoolExecutor
     with _probe_lock:
         with ThreadPoolExecutor(max_workers=max(1, min(4, len(mods)))) as ex:
             for m, err in zip(mods, ex.map(_probe_run, mods)):
                 _probe_cache[m] = (time.time(), err)
+    _probe_save()
+
+
+def _probe_bg_start(mods):
+    if _probe_bg["busy"] or not mods:
+        return
+
+    _probe_bg["busy"] = True
+
+    def work():
+        try:
+            _probe_refresh(mods)
+        finally:
+            _probe_bg["busy"] = False
+    threading.Thread(target=work, daemon=True).start()
 
 
 def _probe_status(mods):
-    """{modül: None | hata}. Önbellekte olmayanlar için bekler; bayatlayanları arka planda tazeler (sunucu takılmaz)."""
+    """{modül: None | hata | PENDING}. HİÇBİR ZAMAN beklemez (/health hemen döner): denetim arka planda yürür; sonuç gelene dek PENDING."""
     if os.getenv("DEFTER_PROBE", "1") == "0":
         return {m: None for m in mods}
-    need = [m for m in mods if m not in _probe_cache]
-    if need:
-        _probe_refresh(need)
+    if not _probe_cache:
+        _probe_load()
     now = time.time()
-    stale = [m for m in mods if now - _probe_cache[m][0] > (PROBE_TTL_OK if _probe_cache[m][1] is None else PROBE_TTL_ERR)]
-    if stale and not _probe_bg["busy"]:
-        _probe_bg["busy"] = True
+    need = [m for m in mods if m not in _probe_cache]
+    stale = [m for m in mods if m in _probe_cache and now - _probe_cache[m][0] > (PROBE_TTL_OK if _probe_cache[m][1] is None else PROBE_TTL_ERR)]
+    _probe_bg_start(need + stale)
+    return {m: (_probe_cache[m][1] if m in _probe_cache else PENDING) for m in mods}
 
-        def work():
-            try:
-                _probe_refresh(stale)
-            finally:
-                _probe_bg["busy"] = False
-        threading.Thread(target=work, daemon=True).start()
-    return {m: _probe_cache[m][1] for m in mods}
+
+def probing():
+    """Henüz sonucu gelmemiş motorlar (arayüz 'kontrol ediliyor' gösterir)."""
+    inst = tts_installed()
+    st = _probe_status([PROBE_MODS[e] for e in inst if e in PROBE_MODS])
+    return [e for e in inst if e in PROBE_MODS and st.get(PROBE_MODS[e]) == PENDING]
 
 
 def probe_reset():
@@ -204,7 +240,7 @@ def engine_errors():
     """{motor: 'kısa Türkçe hata'} — paketi diskte olup import EDİLEMEYEN motorlar."""
     inst = tts_installed()
     st = _probe_status([PROBE_MODS[e] for e in inst if e in PROBE_MODS])
-    return {e: _engine_err_text(st[PROBE_MODS[e]]) for e in inst if e in PROBE_MODS and st.get(PROBE_MODS[e])}
+    return {e: _engine_err_text(st[PROBE_MODS[e]]) for e in inst if e in PROBE_MODS and st.get(PROBE_MODS[e]) and st.get(PROBE_MODS[e]) != PENDING}
 
 
 def _engine_err_text(raw):
@@ -224,7 +260,7 @@ def tts_engines():
     """Gerçekten ÇALIŞAN (import edilebilen) motorlar; /health tts.engines ve tüm seçim mantığı bunu kullanır."""
     inst = tts_installed()
     st = _probe_status([PROBE_MODS[e] for e in inst if e in PROBE_MODS])
-    return [e for e in inst if e not in PROBE_MODS or not st.get(PROBE_MODS[e])]
+    return [e for e in inst if e not in PROBE_MODS or st.get(PROBE_MODS[e]) is None]
 
 
 def tts_auto():
@@ -1361,7 +1397,7 @@ def health():
     ready = [m["id"] for m in modeller.catalog() if m.get("adaptor") and modeller.tam_hazir(m["id"])]
     plan = tts_plan()
     return {"ok": True, "version": VERSION, "app": os.path.exists(os.path.join(APP_DIR, "index.html")),
-            "tts": {"pref": TTS_PREF, "engines": eng, "installed": tts_installed(), "engineErrors": engine_errors(), "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs) + len(builtin_voices()), "models": ready, "design": design_motors(),
+            "tts": {"pref": TTS_PREF, "engines": eng, "installed": tts_installed(), "engineErrors": engine_errors(), "probing": probing(), "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs) + len(builtin_voices()), "models": ready, "design": design_motors(),
                     "edgeVersion": _edge_version(), "pocketTr": has("pocket_tts_turkish")},
             "ffmpeg": bool(ffmpeg_exe()),
             "update": {"available": bool(_UPD.get("n")) or bool(_UPD.get("pip")), "latest": _UPD.get("latest"), "n": _UPD.get("n", 0)},
@@ -1501,6 +1537,7 @@ if __name__ == "__main__":
     url = f"http://localhost:{PORT}/"
     threading.Thread(target=tts_engines, daemon=True).start()  # motor yüklenebilirlik denetimini ısıt (/health ilk çağrıda beklemesin)
     print(f"Defter Studio {VERSION}: {url}  ·  TTS(kurulu)={','.join(tts_installed()) or 'yok'}  ·  Whisper={WHISPER_MODEL}/{DEVICE}  ·  Ollama={OLLAMA}")
+    _probe_status([PROBE_MODS[e] for e in tts_installed() if e in PROBE_MODS])  # motor denetimini arka planda başlat (açılışı geciktirmez)
     threading.Thread(target=update_check, args=(True,), daemon=True).start()  # güncelleme var mı (arka planda; /health bildirir)
     if os.getenv("DEFTER_OPEN", "1") != "0":
         import webbrowser
