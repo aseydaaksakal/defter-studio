@@ -24,9 +24,10 @@
   "tools/otomatik-baslat-kaldir.bat": "7c45f587f4bb330f559c8096b6148c72c59d3cba25e0ab1c0f8f095143c0a8aa",
   "tools/ses-karsilastir.bat": "537450335a6279744281861d7597f238c7c765b4c23140784105a9f3b9633906",
   "tools/sunucu-tani.bat": "40e2be5f464c6c52678916ef34c8b059b26528252e4539def4c76b612d4ee6d8",
-  "tools/teslim.sh": "884505fde651fd4b115b761a475a23e1ed2a6b2edaa297d5dc0531cf7e7e0410",
+  "tools/teslim.sh": "7664c7c99cc8157fc3b507e26f398c1cfaa936123bed7d21cec9d2a8dc143090",
   "tools/torch-denetim.py": "2b154906e2937920c181387005d62dea5471d78c210244f0920c5d4555719898",
   "tools/uret-manifest.py": "a033e606e8e5339dbff1e3f496cbac2dd9231d4ac48d4bbd1125b354ed9763b5",
+  "tools/uret-zip.py": "c2578fe3b200fcfccade85724117431eec545176be4ce34f3875d3652703ac94",
   "tools/veri-seti-hazirla.py": "0110f0541e8a314047124baf5a3d594f823c29dd7a5d6d2cf4f4c9ae9ccbd469"
  },
  "kabuk": {

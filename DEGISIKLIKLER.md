@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- kur.zip: kur.bat indirilebilir zip olarak Pages'te
+
+## 2026-10-14 — teslim
 - 0.8.1: tek kur.bat (yerel=Pages), torch onarımı, gerçek motor sağlığı, sunucuda kadro, podcast karakterleri, kurallar
 
 ## 2026-10-13 — teslim
