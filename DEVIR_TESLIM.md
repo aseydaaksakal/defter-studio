@@ -1,6 +1,6 @@
 # Devir teslim
 
-Son güncelleme: 2026-10-14 · sürüm **0.8.1** · canlı: https://aseydaaksakal.github.io/defter-studio/
+Son güncelleme: 2026-10-14 · sürüm **0.8.1**
 
 Bu belge projeyi devralan kişi ya da yapay zeka içindir: durum, kanıtlar, eksikler, sıradaki iş ve hazır başlangıç istemi.
 Ayrıntı gerektikçe [PROJE_REHBERI.md](PROJE_REHBERI.md) (dosya → görev) ve [docs/NOT_DEFTERI.md](docs/NOT_DEFTERI.md)

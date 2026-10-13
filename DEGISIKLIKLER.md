@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- OmniVoice seslendirmede hazır sayılır: çalışma kanıtı (kayıtlı ses/başarılı üretim) boyut eşiğinden önce gelir
+
+## 2026-10-14 — teslim
 - kur.zip: kur.bat indirilebilir zip olarak Pages'te
 
 ## 2026-10-14 — teslim

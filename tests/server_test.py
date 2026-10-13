@@ -702,6 +702,17 @@ modeller._jobs[tid] = {"state": "iniyor", "received": 0, "total": 20, "msg": ""}
 ok("/models: indirme sürüyorsa hazır değil", next(m for m in client.get("/models").json()["models"] if m["id"] == tid)["hazir"] is False)
 modeller._jobs.pop(tid)
 
+# Kanıt: motor gerçekten ses ürettiyse (kayıtlı ses ya da başarılı üretim) disk boyutu küçük görünse de model hazır sayılır
+import tempfile as _tf
+_vd = _tf.mkdtemp(); _kp = os.path.join(_tf.mkdtemp(), "kanit.json")
+modeller.VOICES_DIR_KANIT, modeller.KANIT_PATH = _vd, _kp
+_oid = "k2-fsa/OmniVoice"
+ok("Kanıt yokken küçük/yarım model hazır değil", modeller.kanitli(_oid) is False)
+open(os.path.join(_vd, "kadin-genc.json"), "w", encoding="utf-8").write('{"engine": "omnivoice", "source": "tasarım"}')
+ok("OmniVoice ile tasarlanmış ses varsa model çalışıyor sayılır (tam_hazir)", modeller.kanitli(_oid) and modeller.tam_hazir(_oid))
+os.remove(os.path.join(_vd, "kadin-genc.json")); modeller.kanit_yaz(_oid)
+ok("Başarılı üretim kaydı model hazırlığını kalıcı kılar", modeller.kanitli(_oid) and modeller.tam_hazir(_oid))
+
 srv.shutdown()
 
 n = sum(results)

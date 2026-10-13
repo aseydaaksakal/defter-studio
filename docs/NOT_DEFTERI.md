@@ -314,3 +314,7 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 - **Belirti:** kur.bat sonrası localhost eski; yalnız Pages açılıyor; "Entry Point Not Found c10_cuda.dll/torch_cuda.dll/libtorchaudio.pyd"; Ses stüdyosu "kurulu" derken motorlar çalışmıyor; podcast'te 2 karakter.
 - **Kök neden:** (1) eski sunucu 8765'i tutuyordu, yeni kod çalışmıyordu; kur.bat uygulama dosyalarını indirmiyor, Pages'i açıyordu. (2) pip omnivoice/voxcpm ile torch'u değiştirip torchaudio'yu karışık bırakmıştı. (3) /health yalnız paket varlığına bakıyordu. (4) kadro tarayıcı köküne bağlıydı (Pages ≠ localhost).
 - **Önlem:** kur.bat eski süreci kapatır, her şeyi eşitler, localhost açar; torch tek komutla çifti kurulur ve doğrulanır; motor sağlığı gerçek import ile; kadro `/cast`; teslimde `tools/esitlik.py`.
+
+## 0.8.1b (2026-10-14) — OmniVoice ses üretiyor ama seslendirmede "indirilmemiş"
+- **Kök neden:** 0.8.1'deki %50 boyut eşiği, motorun kendi HF önbelleğine indirdiği (modeller klasöründe ~1 MB görünen) çalışan modeli "hazır değil" saydı; `_tts_model` 409 verdi.
+- **Çözüm/önlem:** `modeller.kanitli()`: motorla tasarlanmış/klonlanmış ses varsa ya da bir üretim başarılıysa (`models_kanit.json`) model hazır sayılır. Kural: hazırlık, disk boyutundan değil çalışma kanıtından gelir; boyut yalnız kanıt yokken kullanılır.

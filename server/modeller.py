@@ -132,9 +132,54 @@ def is_ready(model_id):
 HAZIR_ORAN = 0.5  # diskteki boyut, katalogdaki (Hugging Face) boyutun en az bu oranı olmalı; "4 MB indi" modeli hazır sayılmaz
 
 
+KANIT_PATH = os.path.join(os.getenv("DEFTER_STATE", HERE), "models_kanit.json")  # gerçekten ses üretmiş modeller (git'e girmez)
+VOICES_DIR_KANIT = None  # main.py ses klasörünü atar: tasarım/klon kaydı bu motorla üretildiyse model çalışıyor demektir
+
+
+def kanit_yaz(model_id):
+    """Model gerçekten ses ürettiyse kaydet: motor kendi önbelleğine indirmiş olabilir (disk boyutu küçük görünür), yine de çalışıyordur."""
+    try:
+        with open(KANIT_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        d = {}
+    if model_id not in d:
+        d[model_id] = time.time()
+        try:
+            with open(KANIT_PATH, "w", encoding="utf-8") as f:
+                json.dump(d, f)
+        except OSError:
+            pass
+
+
+def kanitli(model_id):
+    try:
+        with open(KANIT_PATH, encoding="utf-8") as f:
+            if model_id in json.load(f):
+                return True
+    except Exception:
+        pass
+    ad = (entry(model_id) or {}).get("adaptor")
+    if ad and VOICES_DIR_KANIT and os.path.isdir(VOICES_DIR_KANIT):  # eski kayıtlar: bu motorla tasarlanmış/klonlanmış ses var
+        for fn in os.listdir(VOICES_DIR_KANIT):
+            if fn.endswith(".json"):
+                try:
+                    with open(os.path.join(VOICES_DIR_KANIT, fn), encoding="utf-8") as f:
+                        if json.load(f).get("engine") == ad:
+                            return True
+                except Exception:
+                    pass
+    return False
+
+
 def tam_hazir(model_id, uzak=None, diskte=None):
     """'hazir' alanı: indirme gerçekten tamam (is_ready) VE bilinen uzak boyutun en az %50'si diskte.
     Uzak boyut bilinmiyorsa (çevrimdışı/henüz çekilmedi) yalnızca tam indirme denetimi geçerlidir."""
+    j = _jobs.get(model_id)
+    if j and j["state"] in ("kuyrukta", "iniyor"):
+        return False
+    if kanitli(model_id):
+        return True
     if not is_ready(model_id):
         return False
     uzak = uzak if uzak is not None else (_sizes.get(model_id) or (0, None))[1]

@@ -9,3 +9,4 @@ server/.venv-moss/
 ses-ornekleri/
 server/.guncel.json
 server/veri/
+server/models_kanit.json

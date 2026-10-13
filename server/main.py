@@ -68,6 +68,7 @@ TTS_PREF = os.getenv("DEFTER_TTS", "auto").lower()             # auto | chatterb
 WHISPER_MODEL = os.getenv("DEFTER_WHISPER", "large-v3-turbo")  # tiny | small | medium | large-v3 | large-v3-turbo
 DEVICE = os.getenv("DEFTER_DEVICE", "cuda")                    # cuda | cpu
 VOICES_DIR = os.getenv("DEFTER_VOICES", os.path.join(HERE, "voices"))
+modeller.VOICES_DIR_KANIT = VOICES_DIR
 OLLAMA = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 if not OLLAMA.startswith("http"):
     OLLAMA = "http://" + OLLAMA
@@ -1021,6 +1022,7 @@ async def _tts_model(model_id, j, text, gender, lang, ref):
         print(f"[tts/{eng}] {type(e).__name__}: {e}")
         code, msg = tr_hata(e)
         raise HTTPException(code, f"{m['ad']} çalışmadı: {msg}")
+    modeller.kanit_yaz(model_id)  # üretti: indirme boyutu küçük görünse de model çalışıyor
     return Response(data, media_type="audio/wav", headers={"X-Defter-Engine": eng + ":" + model_id})
 
 
