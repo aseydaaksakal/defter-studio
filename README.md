@@ -83,7 +83,7 @@ js/studio/gen.js, batch.js         14 aracın istemleri ve şemaları, tam sayı
 js/studio/views/*.js               her aracın görüntüleyicisi
 js/vendor/                         dexie, pdf.js, marked, DOMPurify, mammoth, Tesseract, Piper (CDN gerekmez)
 server/                            isteğe bağlı Python yardımcı sunucu (uygulamayı sunar, TTS, klon, Whisper, web, vekil)
-tools/                             ollama-baglan.bat, kur-gpu.bat, teslim.sh
+tools/                             ollama-baglan.bat, kur-gpu.bat, kur-comfyui.bat, comfyui-baslat.bat, teslim.sh
 tests/                             sahte model + Playwright uçtan uca testleri
 ```
 

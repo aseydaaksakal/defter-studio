@@ -85,16 +85,16 @@ def make(txt):
         lay = ["bullets", "two-col", "stat", "timeline", "process", "chart", "table"]
         return {"slides": [{"layout": lay[int(i) % len(lay)], "title": t, "bullets": ["bir", "iki"], "left": {"heading": "Sol", "bullets": ["a"]}, "right": {"heading": "Sağ", "bullets": ["b"]},
                             "stat": {"value": "%75", "label": "oran"}, "items": [{"label": "1999", "text": "tam yürürlük"}], "chart": {"labels": ["A1", "A2"], "values": [30, 150], "unit": "mil"},
-                            "table": {"columns": ["Saha", "Menzil"], "rows": [["A1", "30"]]}, "notes": f"{t} hakkında konuşmacı notu.", "refs": [1]} for i, t, _ in rows]}
+                            "table": {"columns": ["Saha", "Menzil"], "rows": [["A1", "30"]]}, "visual": f"mock visual {i}", "notes": f"{t} hakkında konuşmacı notu.", "refs": [1]} for i, t, _ in rows]}
     if "slaytlık bir sunu hazırla" in low or "slayt daha yaz" in low:
         need = want(txt, 6)
-        return {"title": "Mock Sunu", "subtitle": "alt", "slides": [{"layout": "title" if i == 0 else "bullets", "title": f"Slayt {i + 1}", "bullets": ["bir", "iki"], "notes": f"Not {i + 1}", "refs": [1]} for i in range(need)]}
+        return {"title": "Mock Sunu", "subtitle": "alt", "slides": [{"layout": "title" if i == 0 else "bullets", "title": f"Slayt {i + 1}", "bullets": ["bir", "iki"], "visual": f"mock visual {i}", "notes": f"Not {i + 1}", "refs": [1]} for i in range(need)]}
     R = {
         "bölümlük akış çıkar": {"title": "Test Bölümü", "segments": [{"topic": "Giriş", "points": ["a"]}, {"topic": "Sahalar", "points": ["b"]}]},
         "replik. Her replikte": {"lines": [{"speaker": "A", "text": "Merhaba, bugün GMDSS konuşuyoruz.", "tone": "neşeli"}, {"speaker": "B", "text": "Harika, başlayalım. A1 sahası VHF ile kapsanır.", "tone": "meraklı"}, {"speaker": "A", "text": "Doğru, menzil yaklaşık yirmi ile otuz deniz milidir."}]},
-        "sahnelik bir": {"title": "Mock Video", "scenes": [{"title": "Sahne 1", "icon": "🚢", "bullets": ["a"], "narration": "Birinci sahne. İkinci cümle."}, {"title": "Sahne 2", "icon": "📡", "bullets": ["b"], "narration": "Üçüncü cümle burada."}]},
+        "sahnelik bir": {"title": "Mock Video", "scenes": [{"title": "Sahne 1", "icon": "🚢", "visual": "mock scene one", "bullets": ["a"], "narration": "Birinci sahne. İkinci cümle."}, {"title": "Sahne 2", "icon": "📡", "visual": "mock scene two", "bullets": ["b"], "narration": "Üçüncü cümle burada."}]},
         "zihin haritasını": {"title": "Mock Harita", "root": {"label": "Kök", "children": [{"label": "Dal", "children": [{"label": "Yaprak"}]}]}},
-        "Bir infografik içeriği hazırla": {"title": "Mock İnfo", "subtitle": "s", "highlights": [{"icon": "📡", "heading": "H", "text": "T"}], "stats": [{"value": "1", "label": "l"}], "timeline": [], "compare": {"columns": [], "rows": []}, "takeaway": "ana"},
+        "Bir infografik içeriği hazırla": {"title": "Mock İnfo", "subtitle": "s", "heroVisual": "mock hero", "highlights": [{"icon": "📡", "visual": "mock box", "heading": "H", "text": "T"}], "stats": [{"value": "1", "label": "l"}], "timeline": [], "compare": {"columns": [], "rows": []}, "takeaway": "ana"},
         "veri tablosu": {"title": "Mock Tablo", "columns": ["A", "B"], "rows": [{"cells": ["1", "2"], "ref": 1}], "notes": "n"},
         "hafıza sarayı yürüyüşüne": {"title": "Mock Hafıza", "items": [{"cue": "Soru?", "fact": "Cevap bir", "mnemonic": "kod", "image": "sahne", "emoji": "🧠"}], "palace": {"place": "Ev", "stops": [{"loc": "Kapı", "item": 0, "scene": "Kapıda dev bir cevap"}]}, "story": "Hikaye", "tips": ["ipucu"]},
         "kendi cümleleriyle anlatması": {"title": "Mock Öğret", "topics": [{"name": "Konu 1", "question": "Anlatır mısın?", "keyPoints": ["a", "b"]}]},
@@ -114,6 +114,19 @@ def make(txt):
     return "# Mock Rapor\n\nGMDSS 1999'da tam yürürlüğe girdi [1].\n\n## Bölüm\nMetin [2]."
 
 
+def mock_png(prompt, w, h):
+    """İsteme göre renklenen küçük geçerli PNG (görsel üretimi testleri için)."""
+    import struct
+    import zlib
+    w, h = max(8, min(int(w), 256)) // 4 * 4, max(8, min(int(h), 256)) // 4 * 4
+    c = zlib.crc32(prompt.encode())
+    r, g, b = (c & 255) | 64, ((c >> 8) & 255) | 64, ((c >> 16) & 255) | 64
+    rows = b"".join(b"\x00" + bytes([r, g, b]) * w for _ in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
 def tone_wav(text, gender):
     sr, dur = 16000, max(0.4, min(6.0, len(text) / 22))
     f = 210 if gender == "f" else 120
@@ -128,7 +141,7 @@ def tone_wav(text, gender):
 CAT = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server", "model_katalog.json"), encoding="utf-8"))["modeller"]
 PRESETS = [("kadin-genc", "Kadın · genç · canlı", "f"), ("kadin-orta", "Kadın · orta yaş · sakin", "f"), ("kadin-derin", "Kadın · derin sesli", "f"), ("kadin-olgun", "Kadın · olgun · öğretmen", "f"),
            ("erkek-genc", "Erkek · genç · enerjik", "m"), ("erkek-orta", "Erkek · orta yaş · net", "m"), ("erkek-derin", "Erkek · derin sesli · belgesel", "m"), ("erkek-olgun", "Erkek · olgun · hoca", "m")]
-ST = {"voices": {}, "jobs": {}, "ready": set(), "puan": {}, "log": []}
+ST = {"voices": {}, "jobs": {}, "ready": set(), "puan": {}, "log": [], "imglog": []}
 
 
 def models_list():
@@ -177,7 +190,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         if p.startswith("/health"):
-            return self.send(200, {"ok": True, "version": "mock", "tts": {"engines": ["mock"], "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "stt": None})
+            return self.send(200, {"ok": True, "version": "mock", "tts": {"engines": ["mock"], "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None})
         if p == "/voices/presets":
             have = list(ST["voices"])
             return self.send(200, {"presets": [{"id": i, "label": l, "gender": g, "created": any(h == i or h.startswith(i + "-") for h in have)} for i, l, g in PRESETS], "motors": ["mock"]})
@@ -189,6 +202,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.send(200, {"voices": voices_list()})
         if p == "/models":
             return self.send(200, {"models": models_list(), "hf": True, "onbellek": "/mock/hf"})
+        if p == "/_imglog":
+            return self.send(200, {"log": ST["imglog"]})
         if p == "/_log":
             return self.send(200, {"log": ST["log"]})
         return self.send(200, {"data": [{"id": "mock"}]})
@@ -242,11 +257,14 @@ class H(http.server.BaseHTTPRequestHandler):
             ST["ready"].discard(body.get("id")); ST["jobs"].pop(body.get("id"), None)
             return self.send(200, {"ok": True, "serbest": 3 * 10 ** 9})
         if p == "/_reset":  # testler arası yalıtım
-            ST.update(voices={}, jobs={}, ready=set(), puan={}); ST["log"].clear()
+            ST.update(voices={}, jobs={}, ready=set(), puan={}); ST["log"].clear(); ST["imglog"].clear()
             return self.send(200, {"ok": True})
         if p == "/_log/clear":
-            ST["log"].clear()
+            ST["log"].clear(); ST["imglog"].clear()
             return self.send(200, {"ok": True})
+        if p == "/image":
+            ST["imglog"].append({"prompt": body.get("prompt"), "w": body.get("width"), "h": body.get("height")})
+            return self.send(200, mock_png(body.get("prompt", ""), body.get("width", 64), body.get("height", 36)), "image/png")
         if p.startswith("/tts"):
             ST["log"].append({k: body.get(k) for k in ("speaker", "gender", "voice", "model")})
             return self.send(200, tone_wav(body.get("text", ""), body.get("gender", "f")), "audio/wav")

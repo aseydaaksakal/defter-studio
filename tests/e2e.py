@@ -113,6 +113,8 @@ def main():
         ok("Ayarlar: ses bölümü (MiniMax, Gemini, Azure, Google, lokal klon)", all(k in vs for k in ["MiniMax", "Gemini", "Azure", "Google", "Lokal sunucu"]))
         wait_until(lambda: "Lokal sunucu" in txt(".voice-settings p.small"), 8)
         ok("Ayarlar: otomatik motor lokal sunucuyu seçiyor", "Lokal sunucu" in txt(".voice-settings p.small"), txt(".voice-settings p.small")[:90])
+        pg.click(".settings summary:has-text('Görseller (slayt')")
+        ok("Ayarlar: görseller bölümü, lokal (ComfyUI) sağlayıcı hazır", wait_until(lambda: "Hazır: Lokal" in txt(".settings"), 8), txt(".settings")[-200:].replace("\n", " ")[:90])
         pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(300)
 
         # --- Defter + kaynaklar (dosya yükleme ve yapıştırma)
@@ -174,8 +176,23 @@ def main():
         close_viewer()
 
         # --- Slaytlar: 5 (tek istek) ve 20 (ana hat + partiler)
+        fj = lambda path, post=False: pg.evaluate("([m, p, post]) => fetch(m + p, post ? { method: 'POST' } : {}).then((r) => r.json())", [MOCK, path, post])
+        fj("/_log/clear", True)
         create("Slayt Sunusu", 5)
         ok("Slayt: 5 slayt", open_latest(r"Mock Sunu") and "/ 5" in txt(".slides-view"))
+        # --- Yapay zeka görselleri (0.5.0): üretimde otomatik, kapakta arka plan, diğer düzenlerde resim paneli, önbellekli
+        ok("Görsel: kapak slaytında yapay zeka arka planı", wait_until(lambda: pg.query_selector(".stage-wrap .deck .s-bg") is not None, 20))
+        pg.click(".thumbs .thumb >> nth=1"); pg.wait_for_timeout(300)
+        ok("Görsel: madde slaytında resim paneli", wait_until(lambda: pg.query_selector(".stage-wrap .deck .s-pic") is not None, 8))
+        il = fj("/_imglog")["log"]
+        ok("Görsel: lokal sunucuya yazısız, stilli istem gitti (5 slayt = 5 istek)", len(il) == 5 and all("No text" in x["prompt"] and "Style:" in x["prompt"] for x in il), f"{len(il)} istek")
+        ok("Görsel: görsel gerçekten yüklendi", pg.evaluate("() => { const i = document.querySelector('.stage-wrap .deck .s-pic'); return !!i && i.complete && i.naturalWidth > 0; }"))
+        pg.click(".slides-view >> text=Görselleri üret"); pg.wait_for_timeout(900)
+        ok("Görsel: hepsi hazırken yeniden üretmiyor", len(fj("/_imglog")["log"]) == 5)
+        pg.click(".slides-view >> text=Görseli yenile"); pg.wait_for_selector(".modal input.input")
+        pg.fill(".modal input.input", "a brand new lighthouse scene"); pg.click(".modal-foot >> text=Kaydet")
+        ok("Görsel: slayt görseli yeni tarifle yenilendi", wait_until(lambda: any("brand new lighthouse" in x["prompt"] for x in fj("/_imglog")["log"]), 10))
+        pg.screenshot(path=f"{SHOTS}/slides-img.png")
         close_viewer()
         create("Slayt Sunusu", 20)
         time.sleep(1)
@@ -200,7 +217,51 @@ def main():
         ok("Video: üretildi", open_latest(r"^Mock Video", 120))
         st = wait_until(lambda: "anlatıcı hazır" in txt(".video-view"), 40)
         ok("Video: erkek anlatıcı hazır", st and "erkek" in txt(".video-view"), txt(".video-view .player-row")[:80])
+        vl = [x for x in fj("/_imglog")["log"] if "mock scene" in x["prompt"]]
+        ok("Video: her sahne için dikey (9:16) görsel istendi", len(vl) == 2 and all(x["w"] == 576 and x["h"] == 1024 for x in vl), str([(x["w"], x["h"]) for x in vl]))
+        ok("Video: sahnelerde görsel anahtarı kayıtlı", pg.evaluate("async () => { const { db } = await import('./js/db.js'); const a = (await db.artifacts.where('type').equals('video').toArray()).pop(); return a.content.scenes.every((s) => s.imgKey); }"))
+        pg.screenshot(path=f"{SHOTS}/video-img.png")
         close_viewer()
+
+        # --- İnfografik: başlık görseli + kutu görselleri
+        create("İnfografik")
+        ok("İnfografik: üretildi", open_latest(r"^Mock İnfo", 90))
+        ok("İnfografik: başlık görseli ve kutu görseli", wait_until(lambda: pg.query_selector(".info-poster .ip-hero") is not None and pg.query_selector(".info-poster .ip-ic img") is not None, 10))
+        pg.screenshot(path=f"{SHOTS}/info-img.png")
+        close_viewer()
+
+        # --- Bulut görsel sağlayıcıları (sahte fetch ile istek biçimi): Gemini Interactions + MiniMax image-01
+        cl = pg.evaluate("""async () => {
+          const m = await import('./js/imagegen.js'); const t = await import('./js/tts.js');
+          const cv = document.createElement('canvas'); cv.width = 64; cv.height = 36; const cx = cv.getContext('2d'); cx.fillStyle = '#3a8'; cx.fillRect(0, 0, 64, 36);
+          const b64 = cv.toDataURL('image/png').split(',')[1];
+          const orig = window.fetch, calls = [], oldT = await t.loadTTS(), oldI = await m.loadImgCfg();
+          window.fetch = async (u, o) => {
+            if (/generativelanguage|api\\.minimax\\.io/.test(String(u))) {
+              calls.push({ u: String(u), h: o.headers, body: JSON.parse(o.body) });
+              if (/generativelanguage/.test(String(u))) return new Response(JSON.stringify({ steps: [{ type: 'model_output', content: [{ type: 'image', data: b64, mime_type: 'image/png' }] }] }), { status: 200 });
+              return new Response(JSON.stringify({ data: { image_base64: [b64] }, base_resp: { status_code: 0 } }), { status: 200 });
+            }
+            return orig(u, o);
+          };
+          try {
+            await t.saveTTS({ ...oldT, geminiKey: 'g-key', minimaxKey: 'm-key' });
+            await m.saveImgCfg({ ...oldI, provider: 'gemini' });
+            const a = await m.generateImage('cloud test one', { aspect: '16:9', force: true });
+            await m.saveImgCfg({ ...oldI, provider: 'minimax' });
+            const b = await m.generateImage('cloud test two', { aspect: '16:9', force: true });
+            const c = await m.generateImage('cloud test two', { aspect: '16:9' });
+            return { calls, a: a.provider, b: b.provider, c: c.provider, cached: c.cached, size: b.blob.size };
+          } finally { window.fetch = orig; await t.saveTTS(oldT); await m.saveImgCfg(oldI); }
+        }""")
+        g, mm = cl["calls"][0], cl["calls"][1]
+        ok("Görsel: Gemini isteği (Interactions, anahtar başlığı, oran, model)", g["u"].endswith("/v1beta/interactions") and g["h"]["x-goog-api-key"] == "g-key" and g["body"]["model"] == "gemini-3.1-flash-lite-image" and g["body"]["response_format"]["aspect_ratio"] == "16:9" and "No text" in g["body"]["input"][0]["text"], g["u"])
+        ok("Görsel: MiniMax isteği (image-01, base64, Bearer)", mm["u"].endswith("/v1/image_generation") and mm["h"]["Authorization"] == "Bearer m-key" and mm["body"]["model"] == "image-01" and mm["body"]["response_format"] == "base64" and mm["body"]["aspect_ratio"] == "16:9", mm["u"])
+        ok("Görsel: bulut yanıtları çözüldü, ikinci istek önbellekten", cl["a"] == "gemini" and cl["b"] == "minimax" and cl["c"] == "cache" and cl["cached"] and len(cl["calls"]) == 2 and cl["size"] > 0, str((cl["a"], cl["b"], cl["c"])))
+        fi = pg.evaluate("""async () => { const m = await import('./js/imagegen.js'); const b = 'A'.repeat(300);
+          return [!!m.findImage({ steps: [{ type: 'model_output', content: [{ type: 'image', data: b, mime_type: 'image/png' }] }] }), !!m.findImage({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: b } }] } }] }),
+                  !!m.findImage({ data: { image_base64: [b] } }), !!m.findImage({ predictions: [{ bytesBase64Encoded: b }] }), !!m.findImage({ steps: [{ content: [{ type: 'text', text: b }] }] })]; }""")
+        ok("Görsel: yanıt biçimleri (Interactions, generateContent, MiniMax, Imagen) çözülüyor", fi == [True, True, True, True, False], str(fi))
 
         # --- Dinleyerek öğren (0 token)
         create("Dinleyerek Öğren", 10)

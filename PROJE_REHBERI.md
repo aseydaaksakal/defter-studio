@@ -95,7 +95,7 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 ## 8. Lokal sunucu — `server/main.py`
 - Uçlar: `/health`, `/tts` (Chatterbox → XTTS → edge → Piper), `/voices`, `/transcribe`, `/fetch`, `/youtube`, `/search`, `/ollama/*`, `/proxy`.
 - Uygulamayı statik olarak sunar.
-- Kurulum ve başlatma: `server/baslat.bat|sh`. GPU ile klonlama: `tools/kur-gpu.bat`.
+- Kurulum ve başlatma: `server/baslat.bat|sh`. GPU ile klonlama: `tools/kur-gpu.bat`. Lokal görseller: `tools/kur-comfyui.bat` + `tools/comfyui-baslat.bat`.
 - Ortam değişkenleri: `DEFTER_TTS`, `DEFTER_WHISPER`, `DEFTER_DEVICE`, `DEFTER_VOICES`, `OLLAMA_HOST`, `DEFTER_PROXY_HOSTS`, `DEFTER_OPEN`.
 
 ### 8b. Ses kütüphanesi ve modeller (0.4.0)
@@ -103,11 +103,18 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 - `server/main.py`: `/voices` (label, text, PATCH, audio), `/voices/presets`, `/voices/design`, `/models*`, `/tts` `model` alanı.
 - `js/voice-library.js` (kütüphane, tasarım, klon, kadro), `js/model-manager.js` (yönetici), `js/tts.js` (`voicePool('server')`, `serverModel`), `gen.js` `castFor` (2-6 konuşmacı).
 
+### 8c. Yapay zeka görselleri (0.5.0)
+- `js/imagegen.js`: sağlayıcılar (`geminiImage`, `minimaxImage`, `serverImage`), `generateImage`/`generateMany`, önbellek (`preload`, `imageSrc`, `dataUrl`, `inlineImages`), `findImage` (yanıt çözücü), `STYLES`.
+- `js/studio/illustrate.js`: `plan` (öğe listesi), `illustrate`, `autoIllustrate` (`app.js` `doJob` çağırır), `illustrateOne`.
+- `js/image-settings.js`: Ayarlar › Görseller. `server/gorsel.py` + `POST /image`: ComfyUI. Ayrıntı: `docs/GORSEL.md`.
+- Görüntüleyiciler: `slides.js` (`.s-bg`, `.s-pic`), `infographic.js` (`.ip-hero`, `.ip-ic img`), `video.js` (`sceneImage` + `drawScene` paneli).
+- İçerik alanları: slayt/sahne `visual` + `imgKey`; infografik `heroVisual` + `heroKey`, kutu `visual` + `imgKey`.
+
 ## 9. Testler ve teslim
 
 | İş | Yer |
 |---|---|
 | Sahte model + sahte sunucu | `tests/mock_llm.py`. Yeni istem → yeni anahtar ifade. |
-| Uçtan uca | `tests/e2e.py` (36 kontrol) |
+| Uçtan uca | `tests/e2e.py` (73 kontrol) |
 | Teslim | `tools/teslim.sh` |
 | Elle test listesi | `docs/TEST_PLANI.md` |

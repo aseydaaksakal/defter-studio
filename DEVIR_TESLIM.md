@@ -1,6 +1,6 @@
 # Devir teslim
 
-Son güncelleme: 2026-10-12 · sürüm **0.3.0** · canlı: https://aseydaaksakal.github.io/defter-studio/
+Son güncelleme: 2026-10-13 · sürüm **0.5.0** · canlı: https://aseydaaksakal.github.io/defter-studio/
 
 Bu belge projeyi devralan kişi ya da yapay zeka içindir: durum, kanıtlar, eksikler, sıradaki iş ve hazır başlangıç istemi.
 Ayrıntı gerektikçe [PROJE_REHBERI.md](PROJE_REHBERI.md) (dosya → görev) ve [docs/NOT_DEFTERI.md](docs/NOT_DEFTERI.md)
@@ -32,7 +32,10 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 | Yeni sağlayıcılar (Grok, DeepSeek, Qwen, Mistral, Together, Kimi, MiniMax) | ✅ | CORS geçti; gerçek anahtarla denenmedi |
 | Öğrenme: yöntemler kütüphanesi, Pomodoro, boşluk doldurma, dikte/gölgeleme | ✅ | e2e |
 | Çoklu sekme güvenliği | ✅ | İkinci sekme açılınca ilk sekmenin işleri bozulmuyor (yavaş sahte modelle test) |
-| Testler | ✅ | `tests/e2e.py` 36/36 |
+| **Yapay zeka görselleri (0.5.0):** slayt (kapak arka planı + sağ panel), infografik (başlık + kutu), video sahneleri (panel + yakınlaşma); önbellekli; Ayarlar › Görseller | ✅ Kod hazır | e2e: lokal sunucu `/image` ile 5 slayt = 5 istek, video 9:16, infografik hero, **Gemini ve MiniMax istek biçimi sahte `fetch` ile**, önbellek; ComfyUI istemcisi sahte ComfyUI ile (tek dosyalı ve ayrı UNET türü). **Gerçek anahtar ve gerçek GPU ile denenmedi.** |
+| Lokal görsel: ComfyUI + FLUX.1-schnell (`tools/kur-comfyui.bat`, `tools/comfyui-baslat.bat`, `server/gorsel.py`) | ⚠️ Kod hazır | Kullanıcı kuracak; `docs/GORSEL.md` |
+| `tools/kur-gpu.bat` onarımı | ⚠️ Kullanıcıda doğrulanacak | LF/CRLF karışıklığı ve adımsız hata giderildi; kullanıcının hata metni gelmedi (bkz. NOT_DEFTERI 0.5.0) |
+| Testler | ✅ | `tests/e2e.py` 73/73 |
 | Dokümanlar | ✅ | README, CLAUDE.md, AGENTS.md, bu belge, PROJE_REHBERI, LINKLER, docs/* |
 
 ## 3. Kullanıcının ortamı (2026-10-12)
@@ -64,7 +67,7 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 ## 5. Bilinen eksikler ve riskler
 
 1. **Gerçek bulut sesleri** (Gemini, MiniMax, ElevenLabs, Azure, Google) gerçek anahtarla uçtan uca denenmedi. API biçimleri resmî dokümanlara göre yazıldı ve CORS doğrulandı. İlk gerçek denemede yanıt biçimi farkı çıkarsa düzeltilecek kısım ilgili `*Line`/`*Chunk` fonksiyonudur.
-2. **Video görselleri** şablon + emoji ile çiziliyor. NotebookLM'deki gibi yapay zeka görselleri yok (Faz B).
+2. **Yapay zeka görselleri gerçek anahtar/GPU ile denenmedi.** İlk gerçek denemede yanıt biçimi farkı çıkarsa düzeltilecek yer `js/imagegen.js` (`geminiImage`, `minimaxImage`) ya da `server/gorsel.py` (iş akışı). 0.5.0'dan önce üretilmiş sunularda `visual` tarifi yoktur; yeniden üretin ya da **Görseli yenile** ile tarif girin.
 3. **Video indirme gerçek zamanlı.** 5 dakikalık video 5 dakikada kaydedilir; sekme açık kalmalı.
 4. **Aralıklı tekrar basit aralıklarla çalışıyor** (1-3-7-16-35-80 gün). FSRS yol haritasında.
 5. **Embedding varsayılanı boş.** Yalnız BM25 kullanılıyor; Türkçe anlamsal arama için bge-m3 önerilir.
@@ -72,15 +75,16 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 
 ## 6. Sıradaki iş (Faz B, öncelik sırasıyla)
 
-0. **0.4.0 ses kütüphanesi/model yöneticisi kullanıcının PC'sinde doğrulanacak:** `tools/kur-gpu.bat`, `tools/modelleri-indir.bat indir --onerilen`, sonra Ayarlar'da modelleri dinle, beğenmediğini 👎 ile sil. GPU adaptörleri (OmniVoice Türkçe tasarım, VoxCPM/Trendyol, Bark, KugelAudio) gerçek donanımda denenmedi; ilk çalıştırmada düzeltme gerekebilir. Depoyu private yapma ertelendi (Pages için GitHub Pro gerekir).
+0. **Kullanıcının PC'sinde doğrulanacaklar (ben yapamam: Windows/GPU yok):**
+   - `tools/kur-gpu.bat` (0.5.0'da yeniden yazıldı; hata verirse artık adım adını yazar, o satırları yapıştır) ve `tools/modelleri-indir.bat indir --onerilen`.
+   - Ayarlar'da sesleri dinle, beğenmediğini 👎 ile sil. GPU adaptörleri (OmniVoice Türkçe tasarım, VoxCPM/Trendyol, Bark, KugelAudio) gerçek donanımda denenmedi; gerekirse düzelt.
+   - Görseller: önce Gemini/MiniMax anahtarıyla Ayarlar › Görseller › Deneme görseli; sonra istenirse `tools/kur-comfyui.bat` → `tools/comfyui-baslat.bat` → `server/baslat.bat`.
+   - Depoyu private yapma ertelendi (Pages için GitHub Pro gerekir).
 
 1. **Lokal sesleri kullanıcının bilgisayarında doğrula** (OmniVoice/Pocket TTS; gerekirse API düzeltmesi). Ardından **NotebookLM ile birebir eşleşme**: video seslendirmeli sunum, arayüz ayrıntıları.
    **Gerçek seslerle doğrulama:** Kullanıcı ücretsiz Gemini anahtarı ekleyince podcast ve video ses kalitesi dinlenir. Varsa MiniMax klonu denenir.
-2. **Yapay zeka görselleri:** slayt, infografik ve video sahnelerine görsel.
-   - Lokal: ComfyUI + FLUX.1-schnell.
-   - Bulut: Gemini/Imagen ya da MiniMax image.
-   - Görseller önbelleğe alınır.
-3. **Video v2:** Ken Burns, geçişler, kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile hızlı MP4.
+2. ✅ **Yapay zeka görselleri (0.5.0, gerçek anahtar/GPU doğrulaması bekliyor).** Sonraki adım: görseli olan slaytlara "görsel düzenleri" (tam sayfa, yan yana), infografikte görselli şablonlar.
+3. **Video v2:** geçişler (çapraz solma), kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile hızlı MP4. (Görselli sahnelerde yavaş yakınlaşma 0.5.0'da var; gerçek Ken Burns kaydırması yok.)
 4. **FSRS-5 zamanlayıcı** (kart + hata defteri + banka ortak) ve sınav planlayıcı v2.
 5. **qwen3-vl ile OCR** ve isteğe bağlı ikinci-model doğrulaması.
 
@@ -89,7 +93,7 @@ Ayrıntı: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
 ## 7. Çalıştırma ve teslim
 
 ```bash
-python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 58 kontrol
+python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 73 kontrol
 bash tools/teslim.sh "kısa açıklama"                                              # test + günlük + commit + push + bağlantılar
 ```
 
@@ -99,8 +103,9 @@ bash tools/teslim.sh "kısa açıklama"                                         
 Defter Studio projesine devam ediyoruz (GitHub: aseydaaksakal/defter-studio, canlı: https://aseydaaksakal.github.io/defter-studio/).
 Önce depodaki DEVIR_TESLIM.md'yi, sonra CLAUDE.md'yi oku; PROJE_REHBERI.md'den yalnız gereken bölümü oku.
 Büyük dosyaları (js/app.js, css/app.css, js/studio/gen.js) baştan sona okuma, grep ile bölüm bul.
-Bu oturumun işi: DEVIR_TESLIM.md "Sıradaki iş" listesindeki 2. madde (yapay zeka görselleri: slayt, infografik ve video
-sahnelerine kaynakla ilgili görsel; lokal ComfyUI + FLUX.1-schnell ve bulutta Gemini/MiniMax görsel API'si, önbellekli).
+Bu oturumun işi: önce DEVIR_TESLIM.md "Sıradaki iş" 0. madde: [BURAYA PC'DE ÇALIŞTIRDIĞIN SONUCU YAZ: kur-gpu.bat hangi adımda
+hata verdi (son satırlar), tools/kur-comfyui.bat ve Ayarlar › Görseller › Deneme görseli sonucu, hangi sesleri sildin]; gerekli
+düzeltmeleri yap. Sonra 3. madde (Video v2: sahneler arası geçiş, kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile hızlı MP4).
 Bitince testleri çalıştır (tests/e2e.py), tools/teslim.sh ile teslim et, DEVIR_TESLIM.md ve docs/NOT_DEFTERI.md'yi güncelle,
 canlı siteyi Chrome'da kontrol et, bana bütün bağlantıları ver ve bir sonraki oturum için yeni başlangıç istemini yaz.
 Word dosyası üretme; arayüz ve iletişim Türkçe.

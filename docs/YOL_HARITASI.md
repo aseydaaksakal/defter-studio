@@ -11,7 +11,7 @@
 ## Sıradaki (öncelik sırasıyla)
 
 ### Faz B — görsel kalite ve gerçek NotebookLM videosu
-1. **Yapay zeka görselleri:** slayt, infografik ve video sahnelerine görsel.
+1. ✅ **Yapay zeka görselleri (0.5.0):** slayt, infografik ve video sahnelerine görsel. Gerçek anahtar/GPU ile doğrulama kullanıcıda.
    - Lokal: ComfyUI + FLUX.1-schnell (RTX 5090).
    - Bulut: Gemini/Imagen ya da MiniMax image API.
    - Her görsel kaynakla ilgili bir istemden üretilip önbelleğe alınır.

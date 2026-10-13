@@ -1,6 +1,8 @@
 // Videolu Özet: sahneler tuvale (canvas) canlı çizilir; tüm anlatım tek ses dosyası olarak üretilir (varsayılan erkek anlatıcı),
 // sahneler anlatımın zamanlamasına göre ilerler; MP4/WebM olarak sesli dışa aktarılır.
-import { h, icon, toast, download, slug, fmtTime } from '../../ui.js';
+import { h, icon, toast, download, slug, fmtTime, promptBox } from '../../ui.js';
+import { imageSrc, preload } from '../../imagegen.js';
+import { illustrate, illustrateOne, imagesAvailable } from '../illustrate.js';
 import { speakBrowser, synthesize, resolveEngine, loadTTS, ENGINE_SHORT, hasBrowserVoice } from '../../tts.js';
 
 const THEMES = {
@@ -15,6 +17,13 @@ function wrap(ctx, text, maxW) {
   for (const w of words) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
   if (line) lines.push(line);
   return lines;
+}
+// Sahne görseli (yapay zeka): önceden yüklenmiş blob adresinden HTMLImageElement; hazır değilse null (görselsiz çizilir)
+const imgEls = new Map();
+function sceneImage(sc) {
+  const src = sc?.imgKey ? imageSrc(sc.imgKey) : null; if (!src) return null;
+  let el = imgEls.get(src); if (!el) { el = new Image(); el.src = src; imgEls.set(src, el); }
+  return el.complete && el.naturalWidth ? el : null;
 }
 const ease = (t) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 
@@ -38,18 +47,31 @@ export function drawScene(ctx, W, H, sc, k, t, n, theme, deckTitle, caption) {
   let y = pad * 0.6 + 70 * u + (1 - a1) * 20;
   for (const l of wrap(ctx, sc.title, W - pad * 2)) { ctx.fillText(l, pad, y); y += (portrait ? 62 : 58) * u; }
   ctx.globalAlpha = 1;
+  // yapay zeka görseli: simgenin yerine yuvarlak köşeli panel, yavaş yakınlaşma (Ken Burns)
+  const pic = sceneImage(sc); let picBy = 0;
+  if (pic) {
+    const pw = portrait ? W - pad * 2 : W * 0.34, ph = portrait ? Math.min(H * 0.26, pw * 0.62) : H * 0.54;
+    const px = portrait ? pad : W - pad - pw, py = portrait ? y + 10 * u : H * 0.2;
+    const z = Math.max(pw / pic.naturalWidth, ph / pic.naturalHeight) * (1 + 0.08 * t), dw = pic.naturalWidth * z, dh = pic.naturalHeight * z;
+    ctx.save(); ctx.globalAlpha = ease((t - 0.02) / 0.15); ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 22 * u); ctx.clip();
+    ctx.drawImage(pic, px + (pw - dw) / 2 + (0.5 - t) * pw * 0.03, py + (ph - dh) / 2, dw, dh); ctx.restore();
+    ctx.strokeStyle = T.accent; ctx.lineWidth = 4 * u; ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 22 * u); ctx.stroke();
+    picBy = portrait ? py + ph + 26 * u : y + 30 * u;
+  }
   // simge
   const iconSize = (portrait ? 170 : 150) * u * (1 + 0.04 * Math.sin(t * Math.PI * 2));
   ctx.font = `${iconSize}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
   ctx.textBaseline = 'middle';
   const ix = portrait ? W / 2 - iconSize * 0.75 : W - pad - iconSize * 1.6;
   const iy = portrait ? y + iconSize * 1.05 + 10 * u : H * 0.5;
-  ctx.globalAlpha = ease((t - 0.05) / 0.2);
-  ctx.fillStyle = T.soft; ctx.beginPath(); ctx.arc(ix + iconSize * 0.75, iy, iconSize * 0.95, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = T.ink; ctx.textAlign = 'center'; ctx.fillText(sc.icon || '•', ix + iconSize * 0.75, iy); ctx.textAlign = 'left';
+  if (!pic) {
+    ctx.globalAlpha = ease((t - 0.05) / 0.2);
+    ctx.fillStyle = T.soft; ctx.beginPath(); ctx.arc(ix + iconSize * 0.75, iy, iconSize * 0.95, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = T.ink; ctx.textAlign = 'center'; ctx.fillText(sc.icon || '•', ix + iconSize * 0.75, iy); ctx.textAlign = 'left';
+  }
   ctx.globalAlpha = 1; ctx.textBaseline = 'top';
   // sayı
-  let by = portrait ? iy + iconSize * 1.15 : y + 30 * u;
+  let by = pic ? picBy : portrait ? iy + iconSize * 1.15 : y + 30 * u;
   if (sc.stat?.value) {
     const a = ease((t - 0.15) / 0.15); ctx.globalAlpha = a;
     ctx.fillStyle = T.accent; ctx.font = `800 ${72 * u}px ${T.font}`; ctx.fillText(sc.stat.value, pad, by);
@@ -225,6 +247,31 @@ export function render(root, art, api) {
   const editBtn = h('button', { class: 'btn ghost small' }, icon('edit', 16), ' Sahneleri düzenle');
   editBtn.onclick = () => api.editJSON();
 
+  // Yapay zeka görselleri (Ayarlar › Görseller): eksik sahne görsellerini üret / geçerli sahnenin görselini yenile
+  const needAvail = async () => { if (await imagesAvailable()) return true; toast('Görsel sağlayıcısı yok: Ayarlar › Görseller (Gemini/MiniMax anahtarı ya da lokal ComfyUI).', 'error', 7000); return false; };
+  const imgBtn = h('button', { class: 'btn ghost small', title: 'Sahnelere kaynakla ilgili yapay zeka görselleri ekler' }, icon('infographic', 16), ' Görselleri üret');
+  imgBtn.onclick = async () => {
+    if (recording || !(await needAvail())) return;
+    imgBtn.disabled = true;
+    try {
+      const r = await illustrate('video', v, { onProgress: (n, m) => { status.textContent = `Görsel ${n}/${m}…`; } });
+      if (!r.total) toast(scenes.some((x) => x.imgKey) ? 'Tüm sahnelerin görseli hazır.' : 'Bu videoda görsel tarifi yok; videoyu yeniden üretince eklenir ya da sahne başına "Görseli yenile"yi kullanın.', 'info', 6000);
+      else { await api.save({ ...v, scenes }, `${r.made} görsel eklendi`); toast(`${r.made} görsel eklendi${r.failed ? `, ${r.failed} üretilemedi: ${r.errors[0]}` : ''}`, r.failed ? 'error' : 'ok', 6000); }
+      status.textContent = ''; if (!playing) frame();
+    } catch (e) { toast('Görseller üretilemedi: ' + e.message, 'error', 7000); } finally { imgBtn.disabled = false; }
+  };
+  const regenBtn = h('button', { class: 'btn ghost small', title: 'Geçerli sahnenin görselini (yeni tarifle) yeniden üretir' }, icon('infographic', 16), ' Görseli yenile');
+  regenBtn.onclick = async () => {
+    if (recording) return;
+    const sc = scenes[k];
+    const t = await promptBox('Sahne görseli tarifi (İngilizce, yazısız bir sahne)', sc.visual || ''); if (t == null || !t.trim()) return;
+    if (!(await needAvail())) return;
+    regenBtn.disabled = true;
+    try { sc.visual = t.trim(); sc.imgKey = await illustrateOne(sc.visual, portrait ? '9:16' : '16:9', v.theme); await api.save({ ...v, scenes }, `Sahne ${k + 1} görseli yenilendi`); if (!playing) frame(); }
+    catch (e) { toast('Görsel üretilemedi: ' + e.message, 'error', 7000); } finally { regenBtn.disabled = false; }
+  };
+  preload(scenes.map((x) => x.imgKey)).then(() => { if (!disposed && !playing) frame(); });
+
   root.append(h('div', { class: 'video-view' },
     h('div', { class: 'video-frame' + (portrait ? ' portrait' : '') }, canvas),
     h('div', { class: 'player card' },
@@ -234,7 +281,7 @@ export function render(root, art, api) {
         h('button', { class: 'icon-btn', 'aria-label': 'Önceki sahne', onclick: () => jump(k - 1) }, icon('back')),
         playBtn,
         h('button', { class: 'icon-btn', 'aria-label': 'Sonraki sahne', onclick: () => jump(k + 1) }, icon('next')),
-        h('span', { class: 'chip ghosty' }, scenes.length + ' sahne'), h('span', { class: 'grow' }), dlBtn, editBtn))));
+        h('span', { class: 'chip ghosty' }, scenes.length + ' sahne'), h('span', { class: 'grow' }), imgBtn, regenBtn, dlBtn, editBtn))));
   document.fonts?.ready.then(() => !playing && frame()); frame();
   prepare();
   return () => { disposed = true; playing = false; window.speechSynthesis?.cancel(); pAudio?.pause(); audio?.pause(); cancelAnimationFrame(raf); recording?.stop(); };

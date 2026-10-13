@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-13 — teslim
+- 0.5.0: yapay zeka görselleri (slayt, infografik, video; Gemini/MiniMax/lokal ComfyUI+FLUX, önbellekli), kur-gpu.bat onarımı (CRLF, adım adım hata), kur-comfyui.bat
+
+## 2026-10-13 — teslim
 - 0.4.0: ses kütüphanesi, 3-5 konuşmacı, klon, TTS model yöneticisi
 
 ## 2026-10-12 — teslim

@@ -10,6 +10,7 @@ tarayıcının tek başına yapamadığı işleri bilgisayarınızda yapar:
   GET/POST/PATCH/DELETE /voices   ses kütüphanesi: klonlar ve tasarlanan sesler (voices/<ad>.wav + <ad>.json)
   GET  /voices/<ad>/audio · GET /voices/presets · POST /voices/design   dinleme, hazır tasarımlar, yeni ses tasarlama
   GET/POST /models…   Hugging Face ses modelleri: katalog, indir, beğen, sil (modeller.py)
+  POST /image         metinden görsel üretir (ComfyUI + FLUX.1-schnell; gorsel.py) — slayt, infografik, video sahneleri
   POST /transcribe    ses/video dosyasını metne döker (faster-whisper; GPU yoksa CPU)
   GET  /fetch         web sayfasını temiz metne çevirir (trafilatura)
   GET  /youtube       YouTube altyazısını / dökümünü alır
@@ -40,9 +41,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 import adaptorler
+import gorsel
 import modeller
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
@@ -593,6 +595,17 @@ def _transcribe_path(path):
     return "\n".join(lines), info.language
 
 
+@app.post("/image")
+async def image(req: Request):
+    """{prompt, width, height, seed?} → görsel baytları (ComfyUI + FLUX.1-schnell)."""
+    j = await req.json()
+    try:
+        data, tur = await gorsel.uret(j.get("prompt", ""), j.get("width", 1024), j.get("height", 576), j.get("seed"))
+    except gorsel.GorselHata as e:
+        raise HTTPException(e.kod, str(e))
+    return Response(content=data, media_type=tur, headers={"X-Defter-Engine": "comfyui-flux"})
+
+
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     if not has("faster_whisper"):
@@ -703,7 +716,7 @@ def health():
     ready = [m["id"] for m in modeller.catalog() if m.get("adaptor") and modeller.is_ready(m["id"])]
     return {"ok": True, "version": VERSION, "app": os.path.exists(os.path.join(APP_DIR, "index.html")),
             "tts": {"pref": TTS_PREF, "engines": eng, "female": female, "clone": clone, "voices": len(vs), "models": ready, "design": design_motors()},
-            "stt": f"faster-whisper {WHISPER_MODEL}" if has("faster_whisper") else None, "ollama": OLLAMA}
+            "stt": f"faster-whisper {WHISPER_MODEL}" if has("faster_whisper") else None, "ollama": OLLAMA, "image": gorsel.durum()}
 
 
 # ---------------------------------------------------------------- Uygulama (statik dosyalar) — en sonda bağlanmalı

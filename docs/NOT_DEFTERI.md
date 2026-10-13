@@ -5,6 +5,27 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 
 ---
 
+## 2026-10-13 — 0.5.0 — yapay zeka görselleri + kur-gpu.bat onarımı
+
+- **İstek:** (1) `tools/kur-gpu.bat` "Kurulum hatası" verdi. (2) Slayt, infografik, video sahnelerine yapay zeka görseli.
+- **kur-gpu.bat — Belirti:** Kullanıcının PC'sinde kurulum hata verdi (hata metni gelmedi). **Bulunan nedenler (koddan):**
+  - Dosyada LF ve CRLF satır sonları **karışıktı** (yalnız iki satır CRLF). Windows `cmd`, LF'li `.bat` dosyalarında `goto :hata` etiketlerini ve `( )` bloklarını bozabiliyor; `kur-chatterbox.bat` ve `server/baslat.bat` de LF'ydi.
+  - `|| goto :hata` zinciri hangi adımda düştüğünü söylemiyordu; `voxcpm` hatası yutuluyordu ama `omnivoice` bağımlılıkları torch'u CPU sürümüne çevirirse bu fark edilmiyordu.
+  - `omnivoice` `transformers>=5.3.0` ister; `kur-chatterbox.bat` `transformers==5.2.0`'a sabitler. **İkisi aynı sanal ortamda çakışır.**
+- **Çözüm:** `kur-gpu.bat` yeniden yazıldı: adım adım (`[1/5]`…), her adımda `if errorlevel 1 goto :hata` ve `%ADIM%` adı, Python sürüm uyarısı, bağımlılıklardan sonra CUDA kaybolduysa `cu128` geri yükleme, VoxCPM isteğe bağlı, son denetimde `omnivoice/pocket_tts/voxcpm` içe aktarma. Bütün `.bat` dosyaları CRLF'e çevrildi ve `.gitattributes` (`*.bat -text`: CRLF olduğu gibi saklanır, raw ve ZIP indirmeleri de CRLF verir) eklendi.
+- **Doğrulanmadı:** Gerçek hata metni bilinmiyor; bu ortamda Windows/GPU yok. Hata sürerse artık hangi adımda olduğunu yazıyor.
+- **Ders:** Windows toplu iş dosyalarını her zaman CRLF yaz; Git ile gönderiyorsan `.gitattributes` koy.
+- **Görseller — yapılan:**
+  - `js/imagegen.js`: Gemini (Interactions API, `gemini-3.1-flash-lite-image`), MiniMax `image-01`, lokal sunucu `/image`; stil sözlüğü, oran, önbellek (`img:<özet>` anahtarlı blob), 2 eşzamanlı, 429'da yeniden deneme.
+  - `js/studio/illustrate.js`: hangi öğeye görsel gideceğini planlar (slaytta kapak + eşit aralıklı en çok 12), üretir, `imgKey` yazar. `app.js` `doJob` içinde üretim sonrası otomatik çağırır.
+  - `server/gorsel.py` + `POST /image`: ComfyUI + FLUX.1-schnell; tek dosyalı checkpoint ya da ayrı UNET/CLIP/VAE otomatik bulunur. `tools/kur-comfyui.bat`, `tools/comfyui-baslat.bat`.
+  - Görüntüleyiciler: slayt (kapak arka planı, sağ panel, HTML dışa aktarımda gömülü), infografik (başlık + kutu, PNG'de gömülü), video (panel + Ken Burns benzeri yakınlaşma).
+  - Ayarlar › Görseller (`js/image-settings.js`), `docs/GORSEL.md`.
+- **Araştırma:** Gemini görsel API'si artık Interactions API; Imagen "kapatıldı" olarak listeleniyor; en ucuz model `gemini-3.1-flash-lite-image`. Yanıt yolu belgede örneksiz olduğundan `findImage` yanıtı özyinelemeli arar.
+- **Hata (test):** Ayarlar'da "Görseller" bölümü kapalı `<details>` içindeydi, `inner_text` kapalı içeriği vermiyor. **Çözüm:** testte önce özete tıklanıyor.
+- **Hata (tasarım):** Aynı istemle "yenile", önbellek anahtarı aynı olduğu için eski `blob:` adresini tutuyordu. **Çözüm:** `putBlob` eski nesne adresini iptal edip siliyor.
+- **Doğrulanmadı:** Gemini ve MiniMax **gerçek anahtarla**, ComfyUI **gerçek GPU'da** denenmedi. İstek biçimleri sahte `fetch` ile, ComfyUI iş akışı sahte ComfyUI ile (iki iş akışı türü) sınandı.
+
 ## 2026-10-13 — 0.4.0 — ses kütüphanesi, 3-5 konuşmacı, klon, model yöneticisi
 
 - **İstek:** Birden fazla Türkçe kadın/erkek ses, 3-5 kişilik podcast, 25 MIT TTS modelini seçilebilir yapı, sınırsız klon.

@@ -11,6 +11,8 @@ import { typingPage } from './typing.js';
 import { looksScanned, runOcr, stopOcr, ocrRunning, onOcrProgress, ocrText } from './ocr.js';
 import { loadTTS, saveTTS, synthesize } from './tts.js';
 import { voiceSettings } from './voice-settings.js';
+import { imageSettings } from './image-settings.js';
+import { IMAGE_TOOLS, autoIllustrate } from './studio/illustrate.js';
 import { bankCard } from './bank-ui.js';
 import { pomodoroButton } from './pomodoro.js';
 import { TAB, ownedElsewhere } from './tabs.js';
@@ -634,6 +636,11 @@ async function doJob(id) {
   try {
     const r = await TOOLS[a.type].generate(a.notebookId, a.options, { signal: aborts[id].signal, progress,
       onToken: (_, all) => { if (Date.now() - lastPaint > 1500) { lastPaint = Date.now(); progress(`Yazılıyor… ${all.length.toLocaleString('tr')} karakter`); } } });
+    if (IMAGE_TOOLS.has(a.type)) { // içerik hazır: kaynakla ilgili yapay zeka görsellerini üret (kapalıysa ya da sağlayıcı yoksa atlanır; hata içeriği bozmaz)
+      await progress('Görseller üretiliyor…');
+      const ir = await autoIllustrate(a.type, r.content, { signal: aborts[id].signal, onProgress: (d, n) => progress(`Görseller üretiliyor ${d}/${n}`) });
+      if (ir?.failed) toast(`${ir.failed} görsel üretilemedi: ${ir.errors[0]}. Görüntüleyicide "Görselleri üret" ile yeniden deneyebilirsiniz.`, 'error', 8000);
+    }
     const prev = await db.artifacts.get(id);
     if (prev.content) await db.versions.add({ artifactId: id, content: prev.content, title: prev.title, note: 'Yeniden üretimden önceki sürüm', createdAt: prev.updatedAt });
     if (a.type === 'podcast') { // senaryo hazır: doğal sesi de şimdi üret (hata olursa oynatıcı tarayıcı sesine düşer)
@@ -786,6 +793,7 @@ async function openSettings() {
   const read = () => ({ provider: prov.value, baseUrl: base.value.trim(), apiKey: key.value.trim(), model: model.value.trim(), fastModel: fastM.value.trim(), embedModel: embedM.value.trim(), numCtx: +ctx.value, temperature: +temp.value });
   const vset = await voiceSettings();
   const ttsBlock = vset.el;
+  const imgBlock = (await imageSettings()).el;
   const est = await navigator.storage?.estimate?.().catch(() => null);
   modal({ title: 'Ayarlar', wide: true, body: h('div', { class: 'settings' },
     h('h3', {}, 'Dil modeli'),
@@ -807,6 +815,7 @@ async function openSettings() {
       try { const t = await chat({ cfg: read(), messages: [{ role: 'user', content: 'Tek kelimeyle "hazır" yaz.' }] }); put(out, h('span', { class: 'ok-t' }, '✓ Bağlantı çalışıyor: '), t.slice(0, 80)); } catch (e) { put(out, connectionHelp(e)); }
     } }, 'Bağlantıyı test et'), out),
     ttsBlock,
+    imgBlock,
     h('h3', {}, 'Lokal yardımcı sunucu (isteğe bağlı)'),
     h('p', { class: 'muted small' }, 'Ücretsiz doğal Türkçe kadın + erkek ses (Emel/Ahmet), lokal ses klonlama, ses/YouTube dökümü ve web araması için. Kurulum: docs/KURULUM.md › 5. bölüm'),
     h('div', { class: 'row gap' }, srvIn, h('button', { class: 'btn ghost small', onclick: async () => {

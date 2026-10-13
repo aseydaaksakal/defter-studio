@@ -94,6 +94,11 @@ sunucu adresi ayarı gerekmez. GitHub Pages'ten kullanırken sunucuyu bağlamak 
   - İlk podcastte kadın ve erkek ses bir kez tasarlanıp `server\voices\` klasörüne kaydedilir; sonra hep aynı seslerle okunur. Kayıt gerekmez.
   - Kendi sesinizi kullanmak isterseniz Ayarlar › Seslendirme › Lokal sunucu bölümünden kaydedin.
   - Chatterbox isteyenler için: `tools\kur-chatterbox.bat`.
+  - Kurulum hata verirse betik hangi adımda düştüğünü yazar (`[1/5]`…); son hata satırlarını paylaşın. Chatterbox ile OmniVoice aynı sanal ortamda `transformers` sürümü yüzünden çakışır; ikisini birlikte kurmayın.
+
+**Yapay zeka görselleri (slayt, infografik, video):**
+- Gemini ya da MiniMax anahtarı varsa ek kurulum gerekmez (Ayarlar › Görseller).
+- Anahtarsız, lokal: `tools\kur-comfyui.bat` (ComfyUI + FLUX.1-schnell, ~17 GB), sonra `tools\comfyui-baslat.bat` ve `server\baslat.bat`. Ayrıntı: [GORSEL.md](GORSEL.md).
 
 Seslendirme sırası (`DEFTER_TTS=auto`): OmniVoice → Chatterbox (referansla) → Pocket TTS → XTTS-v2 → edge-tts → Piper. Belirli bir motoru
 zorlamak için `DEFTER_TTS` ortam değişkenini ayarlayın:

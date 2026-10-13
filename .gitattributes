@@ -1,0 +1,5 @@
+# Windows toplu iş dosyaları (.bat/.cmd) CRLF olarak SAKLANIR ve olduğu gibi çıkarılır (dönüştürme yok: -text).
+# LF'li .bat dosyalarında etiketler (goto :hata) ve ( ) blokları bozulabilir; raw.githubusercontent.com ve ZIP indirmeleri de CRLF verir.
+*.bat -text
+*.cmd -text
+*.sh text eol=lf

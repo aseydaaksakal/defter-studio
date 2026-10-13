@@ -39,6 +39,8 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 - **Veritabanı:** Şema değişirse `db.version(n+1)` ekle; eski sürümü silme. Şu an v2 (`questions` tablosu).
 - **Ses:** Yeni motor `js/tts.js` içinde şuralara eklenir: `ENGINES`, `ENGINE_SHORT`, `voicePool`, `LINE_FN` (ya da parça fonksiyonu), `availableEngines`.
   - Her motor kadın ve erkek ses vermeli. Veremiyorsa `femaleOK` false dönmeli.
+- **Görsel:** Yeni görselli çıktı `js/studio/illustrate.js` `plan` içine eklenir; içerikte `visual` (İngilizce, yazısız) + `imgKey`. Görselde asla yazı üretilmez. Sağlayıcı kodu yalnız `js/imagegen.js` içinde.
+- **Windows betikleri:** `.bat` dosyaları CRLF olmalı (`.gitattributes` `-text` ile CRLF olarak saklar); LF'li `.bat` etiketleri ve `( )` bloklarını bozabilir.
 - **localhost:** Kullanıcı açıkça istemedikçe tarayıcı localhost'a istek atmaz (Chrome yerel ağ izni sorar).
   - Sunucu adresi boşsa `serverUrl()` yalnız uygulama zaten localhost'tan açılmışsa aynı kökene sorar.
 - **Belge çıktısı:** Word (.docx) üretme; belge çıktıları PDF/Markdown/HTML olur. Kullanıcının kalıcı tercihi budur.
@@ -48,7 +50,7 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 ```bash
 python3 -m http.server 8099 &        # depo kökünde
 python3 tests/mock_llm.py &          # sahte model (OpenAI uyumlu SSE) + sahte lokal sunucu (/health, /tts) — 8098
-python3 tests/e2e.py [klasör]        # 36 uçtan uca kontrol, ekran görüntüleri klasöre
+python3 tests/e2e.py [klasör]        # 73 uçtan uca kontrol, ekran görüntüleri klasöre
 ```
 Sahte model istemdeki KAYNAKLAR bloğundan istenen sayıda, kaynaktan alıntılı öğe üretir.
 - Yeni bir istem eklersen `tests/mock_llm.py`'ye o isteme özgü bir anahtar ifade ekle.
