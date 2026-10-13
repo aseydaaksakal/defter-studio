@@ -1,7 +1,7 @@
 // Sesli Özet oynatıcısı: tek parça doğal ses (gerçek ileri/geri sarma), konuşmacılar, döküm vurgusu, hız, WAV indirme.
 // Ses hazırlanırken hazır olan bölümler sırayla çalınır (beklemeden dinleme). Türkçe tarayıcı sesi yoksa tarayıcı sesi kullanılmaz.
 import { h, icon, toast, download, slug, fmtTime } from '../../ui.js';
-import { synthesize, speakBrowser, resolveEngine, ENGINE_SHORT, loadTTS, hasNaturalBrowserVoice, hasBrowserVoice, femaleOK } from '../../tts.js';
+import { synthesize, speakBrowser, resolveEngine, ENGINE_SHORT, loadTTS, hasNaturalBrowserVoice, hasBrowserVoice, femaleOK, hasSavedMix } from '../../tts.js';
 import { castFor } from '../gen.js';
 
 export function speakersOf(c) {
@@ -128,18 +128,21 @@ export function render(root, art, api) {
   const redoBtn = h('button', { class: 'btn ghost small' }, icon('refresh', 16), ' Sesi yeniden üret');
   const upsell = h('div', { hidden: true });
 
+  let freshNext = false; // yalnız 'Sesi yeniden üret' ile true: kayıtlı sesi yok say
   async function prepare() {
     const cfg = await loadTTS();
-    const engine = await resolveEngine(cfg);
+    const fresh = freshNext; freshNext = false;
+    const savedOk = !fresh && await hasSavedMix(art.id, lines); // kayıtlı tam ses varsa motor/anahtar/ağ hiç devreye girmez
+    const engine = savedOk ? 'saved' : await resolveEngine(cfg);
     const needF = speakers.some((s) => s.gender !== 'm');
-    upsell.hidden = !(needF && !femaleOK(engine));
+    upsell.hidden = savedOk || !(needF && !femaleOK(engine));
     if (!upsell.hidden) upsell.replaceChildren(femaleVoiceCard(api.openSettings));
     if (engine === 'browser') { liveMode = true; playBtn.disabled = false; status.textContent = 'Tarayıcı sesi' + (hasNaturalBrowserVoice(c.lang) ? ' (doğal)' : ''); time.textContent = `${lines.length} replik`; return; }
     streaming = true; pieces.length = 0; sPos = 0;
-    const name = ENGINE_SHORT[engine] || engine;
-    status.textContent = `${name} ile hazırlanıyor…`;
+    const name = ENGINE_SHORT[engine] || (savedOk ? 'Kayıtlı ses' : engine);
+    status.textContent = savedOk ? 'Kayıtlı ses yükleniyor…' : `${name} ile hazırlanıyor…`;
     try {
-      const r = await synthesize(art.id, lines, speakers, c.lang, { format: c.format, onPiece, onProgress: (m) => { status.textContent = m + (pieces.length ? ' · ▶ hazır bölümleri çalar' : ''); } });
+      const r = await synthesize(art.id, lines, speakers, c.lang, { format: c.format, fresh, onPiece, onProgress: (m) => { status.textContent = m + (pieces.length ? ' · ▶ hazır bölümleri çalar' : ''); } });
       if (disposed) return;
       // akıştan tek parça dosyaya geç: aynı yerden devam et
       const wasPlaying = sPlaying && !sWaiting;
@@ -153,7 +156,7 @@ export function render(root, art, api) {
       playBtn.disabled = false;
       dlBtn.hidden = false;
       dlBtn.onclick = () => download(slug(art.title) + '.wav', r.blob);
-      status.textContent = `${ENGINE_SHORT[r.engine] || name} · ses dosyası hazır`;
+      status.textContent = r.saved ? `${ENGINE_SHORT[r.engine] || 'Kayıtlı'} · ses dosyası hazır (kayıtlı, bu cihazdan çalıyor; ağ/API kullanılmadı)` : `${ENGINE_SHORT[r.engine] || name} · ses dosyası hazır ve bu cihaza kaydedildi`;
       redoBtn.replaceChildren(icon('refresh', 16), ' Sesi yeniden üret');
       if (resume) { audio.currentTime = at; audio.play().catch(() => {}); }
     } catch (e) {
@@ -169,7 +172,7 @@ export function render(root, art, api) {
     const { db } = await import('../../db.js');
     await db.blobs.where('artifactId').equals(art.id).filter((b) => b.kind === 'mix').delete();
     if (audio) { audio.pause(); audio = null; }
-    playBtn.disabled = true; prepare();
+    freshNext = true; playBtn.disabled = true; prepare();
   };
 
   const editBtn = h('button', { class: 'btn ghost small' }, icon('edit', 16), ' Metni düzenle');
@@ -180,6 +183,7 @@ export function render(root, art, api) {
     if (!editing) {
       const newLines = [...list.querySelectorAll('.tline')].map((n, i) => ({ ...lines[i], text: n.querySelector('.tline-text').innerText.trim() })).filter((l) => l.text);
       await api.save({ ...c, lines: newLines }, 'Döküm düzenlendi');
+      try { const { db } = await import('../../db.js'); await db.blobs.where('artifactId').equals(art.id).filter((b) => b.kind === 'mix').delete(); } catch {} // metin değişti: eski ses geçersiz
       toast('Döküm kaydedildi; ses yeniden üretiliyor');
       api.reopen();
     }

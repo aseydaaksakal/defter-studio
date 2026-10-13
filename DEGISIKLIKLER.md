@@ -1,6 +1,17 @@
 # Değişiklikler
 
 ## 2026-10-13 — teslim
+- 0.6.0: Edge 403 onarımı, Pocket TTS Türkçe, kayıtlı podcast sesi, Piper kalıcı oturum, Fish Audio, motor tanısı, Video v2
+
+## 2026-10-13 — 0.6.0 — ses güvenilirliği, kayıtlı podcast sesi, Video v2
+- Edge 403: edge-tts her açılışta güncellenir, 403'te bir kez kendiliğinden güncelleyip yeniden dener
+- Pocket TTS Türkçe (3 kadın + 3 erkek hazır ses, referanssız) motoru ve `tools\kur-pocket-tr.bat`
+- Kayıtlı podcast sesi: bitmiş ses tek dosya olarak saklanır, açılışta ağ/API kullanılmaz; yeniden üretim yalnız düğmeyle
+- Piper: ses başına kalıcı oturum, onnxruntime ve fonemleştirici depodan (CDN yok), önbellek-öncelikli servis çalışanı, "Piper modelini indir ve sakla"
+- Fish Audio motoru (kadın/erkek ses kimliği sabit), Motor tanısı (`/tts/selftest`) ve Ollama VRAM boşaltma
+- Video v2: sahneler arası geçiş, kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile Hızlı MP4
+
+## 2026-10-13 — teslim
 - 0.5.1: ses kilidi (motor değişmez, robota düşmez, kaldığı yerden devam), MOSS-TTS adaptörü, ses karşılaştırma ve sunucu tanı araçları
 
 ## 2026-10-13 — teslim

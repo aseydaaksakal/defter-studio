@@ -149,3 +149,12 @@ için pratikte sorun olmaz.
 - Bir podcast tek motorla seslendirilir; kadın/erkek ses sabit kalır. Motor hata verirse (ör. Gemini günlük kota) otomatik başka motora **geçilmez**, Piper'a hiç düşülmez.
 - Hazır parçalar saklanır; "Kaldığı yerden devam et" yalnız eksik satırları üretir (kota yenilenince ya da başka motor seçilerek).
 - Sınırsız/ücretsiz yol: lokal sunucu motorları (OmniVoice, Pocket TTS, VoxCPM, MOSS-TTS). Tümünü dinlemek için `tools\ses-karsilastir.bat`; sunucu sorunları için `tools\sunucu-tani.bat`.
+
+## 0.6.0 notları
+- Model değerlendirmesi, Pages/100 MB sınırı ve Space/Colab/Kaggle karşılaştırması: [SES_ALTYAPI.md](SES_ALTYAPI.md).
+- **Pocket TTS Türkçe** (`pockettr`): 3 kadın + 3 erkek hazır ses, referanssız; `tools\kur-pocket-tr.bat`. Ses adları `pt-kadin-1…3`, `pt-erkek-1…3` (`/voices` içinde `builtin`).
+- **Motor tanısı:** Ayarlar › Seslendirme › "Motorları sına" ya da `GET /tts/selftest[?engines=a,b]`: her motoru kadın+erkek dener; gerçek hata + ipucu (VRAM, sm_120/cu128, eksik paket, 403, HF girişi).
+- **VRAM koruması:** TTS öncesi boş VRAM yetmezse Ollama modelleri boşaltılır (`DEFTER_UNLOAD_OLLAMA=0` kapatır).
+- **Fish Audio:** Ayarlar'da anahtar + Türkçe sesleri listele → bir kadın bir erkek seç (seçilmezse her satırda farklı ses gelir).
+- **Kayıtlı ses:** bitmiş podcast sesi cihazda saklanır, açılışta ağ yok; yeniden üretim "Sesi yeniden üret".
+

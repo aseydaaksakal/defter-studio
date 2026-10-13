@@ -44,6 +44,8 @@ let state = { nb: null, pane: 'chat', viewer: null, cleanup: null };
 // ===================== Başlangıç =====================
 async function boot() {
   applyTheme(await getSetting('theme', 'auto'));
+  // Kalıcı depolama: üretilmiş ses/video dosyaları ve Piper modeli tarayıcı yer açarken silinmesin (izin verilmezse sessizce geçilir)
+  try { navigator.storage?.persist?.(); } catch {}
   // Sayfa kapanırken yarıda kalan üretimleri işaretle
   // (başka bir açık sekmede çalışan işlere dokunma)
   await db.artifacts.where('status').anyOf('running', 'queued').filter((a) => !ownedElsewhere(a.owner)).modify({ status: 'error', error: 'Sayfa kapandığı için yarıda kaldı.' });

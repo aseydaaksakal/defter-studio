@@ -3,9 +3,10 @@
 import { h, toast } from './ui.js';
 import {
   ENGINES, ENGINE_SHORT, VOICES, loadTTS, saveTTS, synthesize, listElevenVoices, listGoogleVoices, minimaxUpload, minimaxClone,
-  minimaxDesign, newVoiceId, recordVoice, toWav, resolveEngine, femaleOK
+  minimaxDesign, newVoiceId, recordVoice, toWav, resolveEngine, femaleOK, listFishVoices, preloadPiper
 } from './tts.js';
 import { voiceLibrary } from './voice-library.js';
+import { serverUrl } from './server.js';
 
 const READ_TEXT = 'Merhaba, bu kayıt ses klonlama için hazırlanıyor. Sakin ve net bir sesle, her zamanki konuşma hızımla okuyorum. Bugün hava güzel; denizde rüzgâr hafif, dalgalar küçük. Gemiler limana yaklaşırken telsizden kısa ve açık mesajlar duyuluyor. Öğrenmek, tekrar etmek ve anlamak için bu cümleleri doğal bir tonla seslendiriyorum.';
 const GEMINI_DESC = { Kore: 'kararlı', Aoede: 'ferah', Leda: 'genç', Zephyr: 'parlak', Sulafat: 'sıcak', Despina: 'yumuşak', Achernar: 'yumuşak', Vindemiatrix: 'nazik', Charon: 'bilgilendirici', Puck: 'neşeli', Orus: 'kararlı', Iapetus: 'net', Algenib: 'pürüzlü', Sadaltager: 'bilgili', Alnilam: 'kararlı', Schedar: 'dengeli' };
@@ -156,6 +157,37 @@ export async function voiceSettings() {
     field('Kadın sesi', sel('azureF', [['', 'tr-TR-EmelNeural'], ...VOICES.azure.f.slice(1).map((v) => [v, v])])),
     field('Erkek sesi', sel('azureM', [['', 'tr-TR-AhmetNeural'], ...VOICES.azure.m.slice(1).map((v) => [v, v])])));
 
+  // Fish Audio (ses kimliği = reference_id; ses seçilmezse her satırda farklı ses gelir, bu yüzden kadın ve erkek seçimi şart)
+  const fF = sel('fishF', [['', cfg.fishF ? 'Seçili kadın sesi (' + cfg.fishF.slice(0, 8) + '…)' : 'Önce “Türkçe sesleri listele”']]);
+  const fM = sel('fishM', [['', cfg.fishM ? 'Seçili erkek sesi (' + cfg.fishM.slice(0, 8) + '…)' : 'Önce “Türkçe sesleri listele”']]);
+  const fList = h('button', { class: 'btn ghost small', type: 'button', onclick: async () => {
+    out.textContent = 'Fish Audio sesleri alınıyor…';
+    try {
+      const vs = await listFishVoices(cfg.fishKey, 'tr');
+      const o = (v) => [v.id, `${v.name}${v.gender ? (v.gender === 'f' ? ' · kadın' : ' · erkek') : ''}${v.desc ? ' · ' + v.desc : ''}`];
+      fill(fF, 'fishF', [['', 'Seçin…'], ...vs.filter((v) => v.gender !== 'm').map(o)]);
+      fill(fM, 'fishM', [['', 'Seçin…'], ...vs.filter((v) => v.gender !== 'f').map(o)]);
+      out.textContent = `${vs.length} Türkçe ses bulundu. Bir kadın ve bir erkek seçin; “Sesi dene” ile dinleyin.`;
+    } catch (e) { out.textContent = '✗ ' + e.message; }
+  } }, 'Türkçe sesleri listele');
+  const fishSec = sec('Fish Audio — çok dilli, ses klonlama (kendi API anahtarınız)', !!cfg.fishKey,
+    field('API anahtarı', key('fishKey', 'fish.audio/app/api-keys'), h('div', { class: 'muted small' }, 'Anahtar yalnız bu tarayıcıda saklanır; sohbete ya da depoya yapıştırmayın.')),
+    field('Model', inp('fishModel', { list: 'dl-fish' }), h('datalist', { id: 'dl-fish' }, ['s2.1-pro-free', 's2.1-pro', 's2-pro', 's1'].map((m) => h('option', { value: m })))),
+    field('Kadın sesi', h('div', { class: 'row gap' }, fF, fList)), field('Erkek sesi', fM));
+
+  // Tarayıcıda Piper: modeli bir kez indir, kalıcı sakla (her seferinde yeniden yüklenmez)
+  const piperOut = h('span', { class: 'muted small' });
+  const piperBtn = h('button', { class: 'btn ghost small', type: 'button', onclick: async () => {
+    piperBtn.disabled = true; piperOut.textContent = 'Başlatılıyor…';
+    try {
+      await preloadPiper('tr_TR-fettah-medium', (pct) => (piperOut.textContent = `İndiriliyor %${pct}`));
+      const persisted = await navigator.storage?.persisted?.();
+      piperOut.textContent = '✓ Piper hazır ve bu tarayıcıda saklandı' + (persisted ? ' (kalıcı depolama izni var)' : ' (kalıcı depolama izni verilmedi: tarayıcı yer açarken silebilir)');
+    } catch (e) { piperOut.textContent = '✗ ' + e.message; } finally { piperBtn.disabled = false; }
+  } }, 'Piper modelini indir ve sakla (~63 MB)');
+  const piperSec = sec('Tarayıcıda Piper — ücretsiz, çevrimdışı (robot gibi, yalnız erkek)', false,
+    h('div', { class: 'field span2' }, h('p', { class: 'muted small' }, 'Model ilk kullanımda bir kez indirilir ve bu tarayıcıda kalıcı saklanır; sonraki açılışlarda ağ gerekmez. Motor olarak yalnız “Ses motoru” listesinden elle seçilirse kullanılır.'), h('div', { class: 'row gap' }, piperBtn, piperOut)));
+
   const openaiSec = sec('OpenAI TTS', !!cfg.openaiKey, field('API anahtarı', key('openaiKey')), field('Model', inp('openaiModel')));
 
   // Lokal sunucu: ses kütüphanesi, ses tasarımı, klonlama, ses kadrosu ve lokal modeller (js/voice-library.js)
@@ -166,21 +198,41 @@ export async function voiceSettings() {
   const testBtn = h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
     await saveTTS(cfg); out.textContent = 'Deneniyor…';
     try {
-      const r = await synthesize('test:' + Date.now(), [
+      const testId = 'test:' + Date.now();
+      const r = await synthesize(testId, [
         { speaker: 'A', text: 'Merhaba, ben Deniz. GMDSS bir Şubat bin dokuz yüz doksan dokuzda tam olarak yürürlüğe girdi.', tone: 'sıcak' },
         { speaker: 'B', text: 'Ben de Kaan. Bugün deniz sahalarını konuşacağız, hazır mısın?', tone: 'neşeli' }],
         [{ id: 'A', name: 'Deniz', gender: 'f', role: 'sunucu' }, { id: 'B', name: 'Kaan', gender: 'm', role: 'sunucu' }], 'Türkçe', { onProgress: (m) => (out.textContent = m) });
+      try { const { db } = await import('./db.js'); await db.blobs.where('artifactId').equals(testId).delete(); } catch {} // deneme sesi depoda birikmesin
       if (r.blob) { new Audio(URL.createObjectURL(r.blob)).play(); out.textContent = `✓ ${ENGINE_SHORT[r.engine]} çalışıyor (dinliyorsunuz)${femaleOK(r.engine) ? '' : ' · bu motorda Türkçe kadın sesi yok'}`; }
       else out.textContent = 'Tarayıcı sesi seçili: podcast satır satır okunur.';
     } catch (e) { out.textContent = '✗ ' + e.message; }
   } }, 'Sesi dene (kadın + erkek)');
 
+  // Motor tanısı: lokal sunucudaki her ses motorunu kısa bir cümleyle dener; gerçek hatayı ve çözüm ipucunu gösterir
+  const diagOut = h('div', { class: 'small stack', role: 'status' });
+  const diagBtn = h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
+    const base = await serverUrl(true);
+    if (!base) { diagOut.replaceChildren(h('p', {}, '✗ Lokal sunucu çalışmıyor: server\\baslat.bat ile başlatın (tools\\sunucu-tani.bat nedenini yazar).')); return; }
+    diagBtn.disabled = true; diagOut.replaceChildren(h('p', { class: 'muted' }, 'Motorlar deneniyor (ilk denemede model yüklenir; birkaç dakika sürebilir)…'));
+    try {
+      const r = await fetch(base + '/tts/selftest', { signal: AbortSignal.timeout(900000) });
+      if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+      const j = await r.json(), i = j.info || {};
+      const env = [i.gpu ? `${i.gpu} (${i.capability || '?'})` : 'GPU yok/görünmüyor', i.torch ? 'torch ' + i.torch : 'torch kurulu değil', i.vramFreeGb != null ? `boş VRAM ${i.vramFreeGb}/${i.vramTotalGb} GB` : '',
+        (i.ollamaLoaded || []).length ? 'Ollama VRAM\'de: ' + i.ollamaLoaded.join(', ') : '', i.edge ? 'edge-tts ' + i.edge : ''].filter(Boolean).join(' · ');
+      diagOut.replaceChildren(h('p', { class: 'muted' }, env),
+        ...j.results.map((x) => h('p', {}, x.ok ? `✓ ${x.engine} — kadın + erkek çalışıyor (${x.seconds} sn)` : `✗ ${x.engine} — ${x.error}`, x.hint ? h('br') : '', x.hint ? h('i', {}, '→ ' + x.hint) : '')),
+        h('p', { class: 'muted' }, 'Bu çıktıyı kopyalayıp Claude\'a gönderirseniz hata kesin olarak giderilir.'));
+    } catch (e) { diagOut.replaceChildren(h('p', {}, '✗ Tanı çalışmadı: ' + e.message)); } finally { diagBtn.disabled = false; }
+  } }, 'Motorları sına (lokal sunucu)');
+
   const el = h('div', { class: 'voice-settings' },
     h('h3', {}, 'Seslendirme (podcast ve video)'),
     now,
     h('div', { class: 'grid2' }, field('Ses motoru', engine), field('Video anlatıcısı', narrator)),
-    elevenSec, geminiSec, minimaxSec, googleSec, azureSec, openaiSec, serverSec,
-    h('div', { class: 'row gap' }, testBtn, out));
+    elevenSec, geminiSec, minimaxSec, fishSec, googleSec, azureSec, openaiSec, piperSec, serverSec,
+    h('div', { class: 'row gap wrap' }, testBtn, diagBtn, out), diagOut);
   resolveEngine(cfg).then((e) => { now.textContent = e === 'none' ? 'Şu an ses motoru yok: server\\baslat.bat ile lokal sunucuyu açın (kotasız) ya da bir anahtar girin. Piper otomatik kullanılmaz.' : `Şu an kullanılacak motor: ${ENGINE_SHORT[e]} (bir podcast boyunca değişmez).${femaleOK(e) ? '' : ' Bu motorda Türkçe kadın sesi yok — lokal sunucuyu açın ya da bir anahtar ekleyin.'}`; });
   return { el, read: () => ({ ...cfg }) };
 }

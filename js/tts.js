@@ -18,6 +18,7 @@ export const ENGINES = {
   elevenlabs: 'ElevenLabs v4 — gerçek insan sesi, duygulu',
   gemini: 'Gemini TTS — çok doğal, ücretsiz katman var',
   minimax: 'MiniMax — Türkçe kadın/erkek, ses klonlama ve tasarım',
+  fish: 'Fish Audio — çok dilli, ses klonlama (kendi anahtarınız; seçilen kadın/erkek ses sabit kalır)',
   google: 'Google Cloud TTS — Chirp 3 HD (aylık ücretsiz kota)',
   azure: 'Azure Speech — Emel / Ahmet (aylık ücretsiz kota)',
   openai: 'OpenAI TTS',
@@ -25,13 +26,15 @@ export const ENGINES = {
   piper: 'Tarayıcıda Piper — robot gibi, yalnız erkek (otomatik sırada yok; yalnız elle seçilirse)',
   browser: 'Tarayıcı sesi (yalnız bu tarayıcıda Türkçe ses varsa)'
 };
-export const ENGINE_SHORT = { elevenlabs: 'ElevenLabs', gemini: 'Gemini TTS', minimax: 'MiniMax', google: 'Google Cloud TTS', azure: 'Azure Speech', openai: 'OpenAI TTS', server: 'Lokal sunucu', piper: 'Piper (tarayıcı)', browser: 'Tarayıcı sesi', none: 'Ses motoru yok' };
+export const ENGINE_SHORT = { elevenlabs: 'ElevenLabs', gemini: 'Gemini TTS', minimax: 'MiniMax', fish: 'Fish Audio', google: 'Google Cloud TTS', azure: 'Azure Speech', openai: 'OpenAI TTS', server: 'Lokal sunucu', piper: 'Piper (tarayıcı)', browser: 'Tarayıcı sesi', none: 'Ses motoru yok' };
 export const NO_ENGINE = 'Ses motoru yok. Seçenekler: 1) server\\baslat.bat ile lokal sunucuyu açın (kotasız); 2) Ayarlar › Seslendirme’ye Gemini, MiniMax ya da Azure anahtarı girin; 3) Ayarlar › Ses motoru’ndan Piper’ı elle seçin (yalnız erkek, robot gibi).';
 
 export const VOICES = {
   gemini: { f: ['Kore', 'Aoede', 'Leda', 'Zephyr', 'Sulafat', 'Despina', 'Achernar', 'Vindemiatrix'], m: ['Charon', 'Puck', 'Orus', 'Iapetus', 'Algenib', 'Sadaltager', 'Alnilam', 'Schedar'] },
   openai: { f: ['nova', 'shimmer', 'coral', 'sage'], m: ['onyx', 'echo', 'ash', 'ballad'] },
   minimax: { f: ['Turkish_CalmWoman'], m: ['Turkish_Trustworthyman'] },
+  fish: { f: [], m: [] }, // Fish Audio'da ses kimliği (reference_id) kullanıcıdan gelir; seçilmezse her satırda farklı ses çıkar
+
   azure: { f: ['tr-TR-EmelNeural', 'en-US-AvaMultilingualNeural', 'en-US-EmmaMultilingualNeural'], m: ['tr-TR-AhmetNeural', 'en-US-AndrewMultilingualNeural', 'en-US-BrianMultilingualNeural'] },
   google: { f: ['tr-TR-Chirp3-HD-Kore', 'tr-TR-Chirp3-HD-Aoede', 'tr-TR-Chirp3-HD-Leda', 'tr-TR-Wavenet-A'], m: ['tr-TR-Chirp3-HD-Charon', 'tr-TR-Chirp3-HD-Puck', 'tr-TR-Chirp3-HD-Orus', 'tr-TR-Wavenet-B'] },
   // Piper'ın Türkçe seslerinin üçü de erkek; kadın konuşmacıya ayrı bir erkek ses verilir ve kullanıcı uyarılır.
@@ -45,6 +48,7 @@ const DEFAULTS = {
   elevenKey: '', elevenModel: 'eleven_v4', elevenF: '', elevenM: '',
   geminiKey: '', geminiModel: 'gemini-3.8-flash-tts', geminiF: '', geminiM: '',
   minimaxKey: '', minimaxModel: 'speech-2.8-hd', minimaxF: '', minimaxM: '', minimaxVoices: [],
+  fishKey: '', fishModel: 's2.1-pro-free', fishF: '', fishM: '',
   googleKey: '', googleF: '', googleM: '',
   azureKey: '', azureRegion: 'westeurope', azureF: '', azureM: '',
   openaiKey: '', openaiModel: 'gpt-4o-mini-tts',
@@ -70,6 +74,7 @@ export async function availableEngines(cfg) {
   if (cfg.elevenKey) out.push('elevenlabs');
   if (await geminiKey(cfg)) out.push('gemini');
   if (cfg.minimaxKey) out.push('minimax');
+  if (cfg.fishKey && cfg.fishF && cfg.fishM) out.push('fish');
   if (cfg.googleKey) out.push('google');
   if (cfg.azureKey) out.push('azure');
   if (cfg.openaiKey) out.push('openai');
@@ -96,6 +101,7 @@ export async function voicePool(engine, cfg) {
   switch (engine) {
     case 'elevenlabs': return merge(own(cfg.elevenF, cfg.elevenM), ELEVEN_DEFAULT);
     case 'minimax': return merge(own(cfg.minimaxF, cfg.minimaxM), VOICES.minimax);
+    case 'fish': return own(cfg.fishF, cfg.fishM);
     case 'azure': return merge(own(cfg.azureF, cfg.azureM), VOICES.azure);
     case 'google': {
       let best = VOICES.google;
@@ -392,16 +398,25 @@ const piperWaits = {};
 function piperWorker() {
   if (piperW) return piperW;
   piperW = new Worker(new URL('./piper-worker.js', import.meta.url), { type: 'module' });
-  piperW.onmessage = (e) => { const w = piperWaits[e.data.id]; if (!w) return; if (e.data.progress) return w.onInfo?.(e.data.progress); delete piperWaits[e.data.id]; e.data.error ? w.fail(new Error(e.data.error)) : w.ok(e.data.blob); };
+  piperW.onmessage = (e) => { const w = piperWaits[e.data.id]; if (!w) return; if (e.data.progress) return w.onInfo?.(e.data.progress); delete piperWaits[e.data.id]; e.data.error ? w.fail(new Error(e.data.error)) : w.ok(e.data.blob || true); };
   piperW.onerror = (e) => { for (const k in piperWaits) { piperWaits[k].fail(new Error('Piper ses motoru başlatılamadı: ' + (e.message || 'bilinmeyen hata'))); delete piperWaits[k]; } piperW = null; };
   return piperW;
+}
+// Piper modelini önceden belleğe al (ayar penceresinde ya da podcast açılırken): ilk satır beklemez. İndirme yalnız ilk sefer; sonra kalıcı depodan gelir.
+export async function preloadPiper(voiceId = 'tr_TR-fettah-medium', onInfo) {
+  try { await navigator.storage?.persist?.(); } catch {}
+  const id = ++piperSeq;
+  await new Promise((ok, fail) => {
+    piperWaits[id] = { ok, fail, onInfo: (p) => { if (p?.total && onInfo) onInfo(Math.round((p.loaded / p.total) * 100)); } };
+    piperWorker().postMessage({ id, voiceId, preload: true });
+  });
 }
 async function piperLine(line, voice, _cfg, _style, _lang, _sp, onInfo) {
   const id = ++piperSeq;
   const text = normalizeTR(line.text);
   try {
     return await new Promise((ok, fail) => {
-      piperWaits[id] = { ok, fail, onInfo: (p) => { if (p?.total && onInfo) onInfo(`Ücretsiz ses modeli indiriliyor %${Math.round((p.loaded / p.total) * 100)} (yalnız ilk sefer, ~60 MB)`); } };
+      piperWaits[id] = { ok, fail, onInfo: (p) => { if (p?.total && onInfo) onInfo(`Ücretsiz ses modeli indiriliyor %${Math.round((p.loaded / p.total) * 100)} (yalnız ilk sefer, ~60 MB; sonra bu tarayıcıda kalıcı saklanır)`); } };
       piperWorker().postMessage({ id, text, voiceId: voice });
     });
   } catch (e) {
@@ -409,8 +424,42 @@ async function piperLine(line, voice, _cfg, _style, _lang, _sp, onInfo) {
     throw e;
   }
 }
-const LINE_FN = { openai: openaiLine, server: serverLine, piper: piperLine, minimax: minimaxLine, azure: azureLine, google: googleLine };
-const CONCURRENCY = { openai: 3, minimax: 3, azure: 3, google: 3, server: 1, piper: 1 };
+// ---------------- Fish Audio ----------------
+const FISH = 'https://api.fish.audio';
+async function fishFetch(path, key, init = {}) {
+  const url = FISH + path;
+  const headers = { Authorization: 'Bearer ' + key, ...(init.headers || {}) };
+  try { return await fetch(url, { ...init, headers }); }
+  catch { // tarayıcı doğrudan erişemezse (CORS) lokal sunucunun vekilinden dene
+    const base = await serverUrl();
+    if (!base) throw new TTSError('Fish Audio’ya tarayıcıdan erişilemedi (CORS) ve lokal sunucu kapalı. server\\baslat.bat ile sunucuyu açın; istek sunucu üzerinden gider.');
+    return fetch(base + '/proxy?url=' + encodeURIComponent(url), { ...init, headers });
+  }
+}
+async function fishLine(line, voice, cfg) {
+  if (!cfg.fishKey) throw new TTSError('Fish Audio için ayarlara API anahtarı girin.');
+  if (!voice) throw new TTSError('Fish Audio: Ayarlar › Seslendirme › Fish Audio’dan bir kadın ve bir erkek ses seçin (ses kimliği). Seçilmezse her satırda farklı bir ses gelir.');
+  const r = await fishFetch('/v1/tts', cfg.fishKey, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', model: cfg.fishModel || 's2.1-pro-free' },
+    body: JSON.stringify({ text: normalizeTR(line.text), reference_id: voice, format: 'mp3', mp3_bitrate: 128, latency: 'normal', normalize: true })
+  });
+  if (!r.ok) throw await httpErr('Fish Audio', r);
+  return r.blob();
+}
+// Herkese açık ses kütüphanesinden Türkçe sesleri listele (cinsiyet etiketlerden tahmin edilir)
+export async function listFishVoices(key, language = 'tr') {
+  const r = await fishFetch(`/model?page_size=40&page_number=1&language=${encodeURIComponent(language)}&sort_by=score`, key);
+  if (!r.ok) throw await httpErr('Fish Audio', r);
+  const j = await r.json();
+  return (j.items || []).map((m) => {
+    const tags = (m.tags || []).map((t) => String(t).toLowerCase());
+    const gender = tags.some((t) => /^(female|woman|kad[ıi]n)/.test(t)) ? 'f' : tags.some((t) => /^(male|man|erkek)/.test(t)) ? 'm' : '';
+    return { id: m._id || m.id, name: m.title || m._id, gender, desc: (m.description || '').slice(0, 60) };
+  }).filter((v) => v.id);
+}
+
+const LINE_FN = { openai: openaiLine, server: serverLine, piper: piperLine, minimax: minimaxLine, fish: fishLine, azure: azureLine, google: googleLine };
+const CONCURRENCY = { openai: 3, minimax: 3, fish: 2, azure: 3, google: 3, server: 1, piper: 1 };
 
 // ---------------- Üst düzey: tüm konuşmayı tek dosyaya çevir ----------------
 const STYLE = {
@@ -437,6 +486,20 @@ function chunkLines(lines, maxChars = 1600, maxSpeakers = 2) {
   return chunks;
 }
 
+// Metin anahtarı: yalnız konuşmacı + metin + ton. Motor/ses/model ayarına BAĞLI DEĞİL (ayar değişince kayıtlı ses boşa gitmesin).
+const textKey = (lines) => hash('t1' + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone || ''])));
+export async function savedMix(artifactId, lines) {
+  const tk = textKey(lines);
+  const all = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.blob).toArray();
+  let hit = all.find((b) => b.textKey === tk);
+  if (!hit) { // 0.6.0 öncesi kayıt: metin anahtarı yok; satır sayısı tutuyorsa kabul et ve yükselt
+    hit = all.find((b) => !b.textKey && b.timings?.length === lines.length);
+    if (hit) { try { await db.blobs.update(hit.id, { textKey: tk }); } catch {} }
+  }
+  return hit ? { engine: hit.engine, blob: hit.blob, timings: hit.timings, cached: true, saved: true } : null;
+}
+export const hasSavedMix = async (artifactId, lines) => !!(await savedMix(artifactId, lines).catch(() => null));
+
 const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 const inflight = {};
 
@@ -445,8 +508,11 @@ const inflight = {};
  * Dönen: { blob (WAV), timings: [{start, end}], engine } — önbelleğe alınır, metin değişmedikçe yeniden üretilmez.
  * onPiece({blob, idx:[satır no]}) parçalar sırayla hazır oldukça çağrılır (beklemeden dinletmek için).
  */
-export async function synthesize(artifactId, lines, speakers, lang, { format = 'deep', onProgress = () => {}, onPiece, engine: forced } = {}) {
+export async function synthesize(artifactId, lines, speakers, lang, { format = 'deep', onProgress = () => {}, onPiece, engine: forced, fresh = false } = {}) {
   if (!lines?.length) throw new TTSError('Seslendirilecek metin yok.');
+  // KAYITLI SES ÖNCE: bu metnin tamamı daha önce seslendirildiyse (hangi motorla olursa olsun) kayıtlı dosya çalınır;
+  // ağa/API'ye hiç gidilmez, kota harcanmaz. Yeniden üretim yalnız 'Sesi yeniden üret' ile (fresh) ya da metin değişince olur.
+  if (!fresh) { const saved = await savedMix(artifactId, lines); if (saved) return saved; }
   const cfg = await loadTTS();
   // SES KİLİDİ: bir seslendirme tek bir motorla yapılır. Motor başta seçilir; kota ya da hata olursa başka motora (özellikle robot
   // Piper'a) GEÇİLMEZ: podcast ortasında ses ve cinsiyet değişiyordu. Biten parçalar saklanır; yeniden açınca kaldığı yerden sürer.
@@ -469,7 +535,7 @@ export async function synthesize(artifactId, lines, speakers, lang, { format = '
 async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format, onProgress, onPiece) {
   if (engine === 'server') await serverUrl(true); // taze motor planı (cinsiyet başına kilitlenecek motor)
   const voices = await assignVoices(speakers, engine, cfg);
-  const model = { gemini: cfg.geminiModel, elevenlabs: cfg.elevenModel, minimax: cfg.minimaxModel, openai: cfg.openaiModel, azure: cfg.azureRegion, server: cfg.serverModel || JSON.stringify(serverInfo()?.tts?.plan || {}) }[engine] || '';
+  const model = { gemini: cfg.geminiModel, elevenlabs: cfg.elevenModel, minimax: cfg.minimaxModel, fish: cfg.fishModel, openai: cfg.openaiModel, azure: cfg.azureRegion, server: cfg.serverModel || JSON.stringify(serverInfo()?.tts?.plan || {}) }[engine] || '';
   const key = hash(engine + JSON.stringify(voices) + model + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone])));
   const cached = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.key === key).first();
   if (cached) return { engine, blob: cached.blob, timings: cached.timings, cached: true };
@@ -520,7 +586,7 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
     onProgress('Ses birleştiriliyor ve dengeleniyor…');
     const { blob, timings } = await mixPieces(pieces, lines);
     await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' || b.kind === 'piece').delete();
-    await db.blobs.add({ artifactId, kind: 'mix', key, blob, timings, engine });
+    await db.blobs.add({ artifactId, kind: 'mix', key, textKey: textKey(lines), blob, timings, engine });
     return { engine, blob, timings };
   })();
   inflight[key] = job;

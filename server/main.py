@@ -5,13 +5,14 @@ Uygulamayı http://localhost:8765 adresinde sunar (bu adresten açınca Ollama i
 tarayıcının tek başına yapamadığı işleri bilgisayarınızda yapar:
   GET  /              uygulamanın kendisi (depo kökündeki dosyalar)
   GET  /health        hangi motorların hazır olduğunu söyler
-  POST /tts           metni sese çevirir: OmniVoice → VoxCPM2/Trendyol-TTS → Chatterbox → Pocket → XTTS-v2 → edge-tts
+  POST /tts           metni sese çevirir: Pocket TTS Türkçe (6 hazır ses) → OmniVoice → VoxCPM2/Trendyol-TTS → Chatterbox → Pocket → XTTS-v2 → edge-tts
                       ("model" ya da "engine" verilirse yalnız o, hata verirse sessizce başkasına düşmez; uygulama podcast
                       boyunca /health'teki "plan" motorunu "engine" olarak göndererek ses ve cinsiyetin değişmesini önler).
                       Piper (robot, yalnız erkek) otomatik sırada yoktur; yalnız DEFTER_TTS=piper ile seçilir.
   GET/POST/PATCH/DELETE /voices   ses kütüphanesi: klonlar ve tasarlanan sesler (voices/<ad>.wav + <ad>.json)
   GET  /voices/<ad>/audio · GET /voices/presets · POST /voices/design   dinleme, hazır tasarımlar, yeni ses tasarlama
   GET/POST /models…   Hugging Face ses modelleri: katalog, indir, beğen, sil (modeller.py)
+  POST /video/start|frames|finish   hızlı MP4: tarayıcının çizdiği kareler + ses → ffmpeg (video v2)
   POST /image         metinden görsel üretir (ComfyUI + FLUX.1-schnell; gorsel.py) — slayt, infografik, video sahneleri
   POST /transcribe    ses/video dosyasını metne döker (faster-whisper; GPU yoksa CPU)
   GET  /fetch         web sayfasını temiz metne çevirir (trafilatura)
@@ -46,7 +47,7 @@ import adaptorler
 import gorsel
 import modeller
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
@@ -58,7 +59,7 @@ OLLAMA = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 if not OLLAMA.startswith("http"):
     OLLAMA = "http://" + OLLAMA
 ORIGINS = os.getenv("DEFTER_ORIGINS", "https://aseydaaksakal.github.io,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8099").split(",")
-PROXY_HOSTS = set(os.getenv("DEFTER_PROXY_HOSTS", "api.cerebras.ai,api.minimax.io,api.minimaxi.com,dashscope.aliyuncs.com,dashscope-intl.aliyuncs.com,api.x.ai,api.deepseek.com,api.mistral.ai,api.together.xyz,api.moonshot.ai,api.groq.com,openrouter.ai").split(","))
+PROXY_HOSTS = set(os.getenv("DEFTER_PROXY_HOSTS", "api.cerebras.ai,api.fish.audio,api.minimax.io,api.minimaxi.com,dashscope.aliyuncs.com,dashscope-intl.aliyuncs.com,api.x.ai,api.deepseek.com,api.mistral.ai,api.together.xyz,api.moonshot.ai,api.groq.com,openrouter.ai").split(","))
 
 PIPER_VOICES = {  # Türkçe Piper seslerinin üçü de erkek
     "tr": {"f": os.getenv("DEFTER_PIPER_F", "tr_TR-dfki-medium"), "m": os.getenv("DEFTER_PIPER_M", "tr_TR-fahrettin-medium")},
@@ -93,6 +94,8 @@ def vox_repo():
 
 def tts_engines():
     e = []
+    if has("pocket_tts_turkish"):  # CPU'da bile çalışır, 3 kadın + 3 erkek hazır ses (referans kaydı gerekmez)
+        e.append("pockettr")
     if has("omnivoice"):
         e.append("omnivoice")
     if adaptorler.durum("voxcpm")[0] and vox_repo():
@@ -117,7 +120,7 @@ def tts_auto():
 
 def _engine_can(eng, gender):
     """Bu motor, bu cinsiyette (ek ayar gerekmeden) hemen konuşabilir mi?"""
-    if eng in ("omnivoice", "voxcpm", "edge"):
+    if eng in ("pockettr", "omnivoice", "voxcpm", "edge"):
         return True
     if eng == "piper":
         return gender == "m"
@@ -194,9 +197,17 @@ def ref_for(gender, voice=None):
     return None
 
 
+def builtin_voices():
+    """Referans kaydı gerektirmeyen hazır sesler (şu an Pocket TTS Türkçe). Ses kadrosu ve podcast bunları cinsiyete göre dağıtır."""
+    if not has("pocket_tts_turkish"):
+        return []
+    return [{"name": n, "gender": g, "label": lab, "source": "hazır", "engine": "pockettr", "text": None, "hasText": False,
+             "textState": "var", "seconds": 0, "builtin": True} for n, _v, g, lab in POCKETTR_VOICES]
+
+
 @app.get("/voices")
 def voices_get():
-    return {"voices": list_voices()}
+    return {"voices": builtin_voices() + list_voices()}
 
 
 def _auto_text(n):
@@ -490,16 +501,106 @@ def tts_pocket(text, ref):
     return _wav_bytes(np.asarray(audio, dtype="float32"), m.sample_rate)
 
 
+# ---- Pocket TTS Türkçe (wite-tech/pocket-tts-turkish, CC-BY-4.0, ~110M parametre): 3 kadın + 3 erkek hazır ses, referans gerekmez
+POCKETTR_VOICES = [  # (sunucu adı, modeldeki ses, cinsiyet, açıklama)
+    ("pt-kadin-1", "female_1", "f", "Kadın 1 · parlak, enerjik"),
+    ("pt-kadin-2", "female_2", "f", "Kadın 2 · sıcak, samimi"),
+    ("pt-kadin-3", "female_3", "f", "Kadın 3 · kendinden emin, net"),
+    ("pt-erkek-1", "male_1", "m", "Erkek 1 · sakin, derin, anlatıcı"),
+    ("pt-erkek-2", "male_2", "m", "Erkek 2 · enerjik, parlak"),
+    ("pt-erkek-3", "male_3", "m", "Erkek 3 · kendinden emin, keskin"),
+]
+_PT_BY_NAME = {n: (v, g) for n, v, g, _ in POCKETTR_VOICES}
+
+
+@lru_cache(maxsize=1)
+def _pockettr():
+    from pocket_tts_turkish import TurkishTTS  # pip install pocket-tts-turkish
+    dev = "cuda" if DEVICE == "cuda" else "cpu"
+    try:
+        return TurkishTTS.from_pretrained(os.getenv("DEFTER_POCKETTR", "wite-tech/pocket-tts-turkish"), device=dev)
+    except Exception:
+        if dev == "cpu":
+            raise
+        return TurkishTTS.from_pretrained(os.getenv("DEFTER_POCKETTR", "wite-tech/pocket-tts-turkish"), device="cpu")
+
+
+def pockettr_voice(name, gender):
+    """Uygulamanın gönderdiği ses adını (pt-kadin-2 ya da female_2) modeldeki sese çevirir; bilinmiyorsa cinsiyete göre ilki."""
+    if name in _PT_BY_NAME and _PT_BY_NAME[name][1] == gender:
+        return _PT_BY_NAME[name][0]
+    if isinstance(name, str) and re.fullmatch(r"(fe)?male_\d+", name or ""):
+        return name
+    return "female_1" if gender == "f" else "male_1"
+
+
+def tts_pockettr(text, voice, gender):
+    m = _pockettr()
+    t = text.replace("İ", "i").replace("I", "ı").lower()  # eğitimde büyük İ/I yok
+    v = pockettr_voice(voice, gender)
+    if v not in m.voices:
+        v = next((x for x in m.voices if x.startswith("female" if gender == "f" else "male")), m.default_voice)
+    audio = m.generate(t, voice=v, seed=zlib.crc32((v + t).encode()))  # aynı satır = aynı ses (tekrarlanabilir)
+    return _wav_bytes(audio, m.sample_rate)
+
+
+def _edge_version():
+    try:
+        from importlib.metadata import version
+        return version("edge-tts")
+    except Exception:
+        return None
+
+
+_edge_upgrade = {"done": False}
+
+
+def _edge_try_upgrade():
+    """Microsoft ses hizmeti eski edge-tts sürümlerini 403 ile reddeder (Sec-MS-GEC jetonu gerekir). Bir kez kendiliğinden güncellemeyi dener."""
+    import importlib
+    import subprocess
+    import sys
+    if _edge_upgrade["done"]:
+        return False
+    _edge_upgrade["done"] = True
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "edge-tts"], check=True, timeout=180)
+        for k in [k for k in sys.modules if k == "edge_tts" or k.startswith("edge_tts.")]:
+            del sys.modules[k]
+        importlib.invalidate_caches()
+        importlib.import_module("edge_tts")
+        return True
+    except Exception:
+        return False
+
+
 async def tts_edge(text, gender, lang):
     import edge_tts  # Ücretsiz ama çevrimiçi Microsoft sesleri; resmî API değildir
     voice = EDGE_VOICES.get(lang, EDGE_VOICES["tr"])[gender]
-    out = bytearray()
-    async for chunk in edge_tts.Communicate(text, voice).stream():
-        if chunk["type"] == "audio":
-            out += chunk["data"]
-    if not out:
-        raise RuntimeError("edge-tts boş ses döndürdü")
-    return bytes(out)
+
+    async def once(mod):
+        out = bytearray()
+        async for chunk in mod.Communicate(text, voice).stream():
+            if chunk["type"] == "audio":
+                out += chunk["data"]
+        if not out:
+            raise RuntimeError("edge-tts boş ses döndürdü")
+        return bytes(out)
+
+    try:
+        return await once(edge_tts)
+    except Exception as e:
+        if "403" not in str(e) and "Invalid response status" not in str(e):
+            raise
+        # 403 = eski edge-tts (jeton eksik) ya da Microsoft uç noktası değişti: bir kez güncelle ve yeniden dene
+        if await asyncio.to_thread(_edge_try_upgrade):
+            import edge_tts as fresh
+            try:
+                return await once(fresh)
+            except Exception as e2:
+                e = e2
+        raise RuntimeError(f"Microsoft ses hizmeti isteği reddetti (403). Kurulu edge-tts: {_edge_version() or '?'}. "
+                           "server\\baslat.bat'ı kapatıp yeniden açın (açılışta edge-tts güncellenir) ya da Pocket TTS Türkçe'yi kurun: tools\\kur-pocket-tr.bat") from e
 
 
 @lru_cache(maxsize=8)
@@ -524,10 +625,143 @@ def tts_piper(text, gender, lang):
 
 _gpu_lock = threading.Lock()  # aynı anda tek GPU üretimi
 
+# ---- VRAM koruması: RTX 5090 (24 GB) üzerinde Ollama'daki 27B model VRAM'in büyük kısmını tutar; TTS modeli sığmayınca "çalışmıyor" görünür.
+# Çözüm (sıralı çalıştırma): TTS'ten önce Ollama'nın yüklü modellerini boşalt (keep_alive=0); sohbet sırası gelince Ollama kendisi yeniden yükler.
+def _free_vram_gb():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            return free / 2**30, total / 2**30
+    except Exception:
+        pass
+    return None, None
+
+
+def _ollama_loaded():
+    try:
+        import httpx
+        r = httpx.get(OLLAMA + "/api/ps", timeout=2)
+        return [m.get("name") or m.get("model") for m in r.json().get("models", [])] if r.status_code == 200 else []
+    except Exception:
+        return []
+
+
+def ollama_unload():
+    """Ollama'nın yüklü bütün modellerini VRAM'den boşaltır; boşaltılanların adlarını döndürür."""
+    names = [n for n in _ollama_loaded() if n]
+    try:
+        import httpx
+        for n in names:
+            httpx.post(OLLAMA + "/api/generate", json={"model": n, "keep_alive": 0}, timeout=30)
+    except Exception:
+        pass
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+    return names
+
+
+def vram_guard(need_gb=6.0):
+    """Boş VRAM yetersizse Ollama modellerini boşaltır (DEFTER_UNLOAD_OLLAMA=0 ile kapatılır). Boşaltılan model adlarını döndürür."""
+    if os.getenv("DEFTER_UNLOAD_OLLAMA", "1") == "0":
+        return []
+    free, _total = _free_vram_gb()
+    if free is None or free >= need_gb:
+        return []
+    return ollama_unload()
+
+
+def _is_oom(e):
+    t = str(e).lower()
+    return "out of memory" in t or "cuda error: out of memory" in t or "cublas_status_alloc_failed" in t
+
+
+GPU_NEED_GB = {"pockettr": 2.0, "pocket": 2.0, "omnivoice": 6.0, "voxcpm": 8.0, "chatterbox": 6.0, "xtts": 4.0, "moss": 12.0, "bark": 6.0, "kugelaudio": 8.0}
+
+
+def hint_for(err):
+    """Ses motoru hatasını Türkçe, uygulanabilir bir ipucuna çevirir."""
+    t = str(err).lower()
+    if _is_oom(err):
+        return "VRAM yetmedi: Ollama'daki büyük model GPU belleğini tutuyor. Sunucu otomatik boşaltmayı dener; olmazsa komut satırında 'ollama stop <model>' çalıştırın."
+    if "no kernel image" in t or "sm_120" in t or "sm_90" in t or "not compatible with the current pytorch" in t:
+        return "PyTorch bu ekran kartını (RTX 50xx, sm_120) tanımıyor: tools\\kur-gpu.bat ile CUDA 12.8 (cu128) PyTorch kurun."
+    if "no module named" in t or "modulenotfounderror" in t:
+        return "Paket kurulu değil: ilgili kurulum betiğini çalıştırın (tools\\kur-gpu.bat, tools\\kur-pocket-tr.bat, tools\\kur-moss.bat)."
+    if "403" in t and ("bing" in t or "edge" in t or "invalid response status" in t):
+        return "edge-tts eski: server\\baslat.bat'ı kapatıp yeniden açın (açılışta güncellenir) ya da: pip install -U edge-tts"
+    if "401" in t or "gated" in t or "access to model" in t or "repository not found" in t:
+        return "Hugging Face erişimi gerekli: modelin sayfasında koşulları kabul edin ve 'hf auth login' ile giriş yapın."
+    if "connection" in t or "timed out" in t or "max retries" in t or "name resolution" in t:
+        return "İnternet bağlantısı gerekiyor (model ilk kullanımda indirilir)."
+    if "referans" in t:
+        return "Bu motor ses klonlamayla konuşur: Ayarlar › Lokal sunucu › ses kütüphanesine bir kayıt ekleyin."
+    if "cuda" in t and ("not available" in t or "no cuda" in t):
+        return "CUDA görünmüyor: NVIDIA sürücüsünü ve tools\\kur-gpu.bat'ı kontrol edin."
+    return ""
+
+
+@app.get("/tts/selftest")
+async def tts_selftest(engines: str = ""):
+    """Kurulu bütün ses motorlarını kısa bir cümleyle dener; her biri için süre, boyut, gerçek hata ve çözüm ipucu döndürür."""
+    import time
+    want = [e for e in engines.split(",") if e] or tts_engines()
+    free, total = await asyncio.to_thread(_free_vram_gb)
+    info = {"vramFreeGb": round(free, 1) if free is not None else None, "vramTotalGb": round(total, 1) if total is not None else None,
+            "ollamaLoaded": await asyncio.to_thread(_ollama_loaded), "edge": _edge_version()}
+    try:
+        import torch
+        info.update(torch=torch.__version__, cuda=bool(torch.cuda.is_available()), gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                    capability="sm_%d%d" % torch.cuda.get_device_capability(0) if torch.cuda.is_available() else None)
+    except Exception as e:
+        info.update(torch=None, cuda=False, torchError=str(e)[:120])
+    results = []
+    for eng in want:
+        t0 = time.time()
+        row = {"engine": eng}
+        try:
+            for g in ("f", "m"):
+                if eng == "edge":
+                    data = await tts_edge("Merhaba, bu bir ses denemesidir.", g, "tr")
+                elif eng == "piper":
+                    data = await asyncio.to_thread(tts_piper, "Merhaba, bu bir ses denemesidir.", g, "tr")
+                else:
+                    data = await asyncio.to_thread(_gpu_synth, eng, "Merhaba, bu bir ses denemesidir.", g, "tr", ref_for(g), {"voice": ("pt-kadin-1" if g == "f" else "pt-erkek-1") if eng == "pockettr" else None})
+                row[g] = {"ok": True, "bytes": len(data)}
+        except LookupError as e:
+            row["error"] = f"referans ses yok: {e}"
+        except Exception as e:
+            row["error"] = f"{type(e).__name__}: {str(e)[:260]}"
+        row["ok"] = "error" not in row
+        row["seconds"] = round(time.time() - t0, 1)
+        if not row["ok"]:
+            row["hint"] = hint_for(row["error"])
+        results.append(row)
+    return {"info": info, "results": results}
+
+
 
 def _gpu_synth(eng, text, gender, lang, ref, j, repo=None):
     """GPU/PyTorch motorları; aynı anda tek üretim. Referansı olmayan klon motorları LookupError verir (sıradaki motora geçilir)."""
     with _gpu_lock:
+        try:
+            vram_guard(GPU_NEED_GB.get(eng, 6.0))
+            return _gpu_synth_inner(eng, text, gender, lang, ref, j, repo)
+        except Exception as e:
+            if not _is_oom(e):
+                raise
+            ollama_unload()  # bellek yetmedi: Ollama'yı boşalt, bir kez daha dene
+            return _gpu_synth_inner(eng, text, gender, lang, ref, j, repo)
+
+
+def _gpu_synth_inner(eng, text, gender, lang, ref, j, repo=None):
+    if True:
+        if eng == "pockettr":
+            return tts_pockettr(text, j.get("voice"), gender)
         if eng == "omnivoice":
             return tts_omni(text, ref, gender)
         if eng == "voxcpm":
@@ -606,7 +840,7 @@ async def tts(req: Request):
     errors = []
     for eng in order:
         try:
-            if eng in ("omnivoice", "voxcpm", "pocket", "chatterbox", "xtts"):
+            if eng in ("pockettr", "omnivoice", "voxcpm", "pocket", "chatterbox", "xtts"):
                 data = await asyncio.to_thread(_gpu_synth, eng, text, gender, lang, ref, j)
                 return Response(data, media_type="audio/wav", headers={"X-Defter-Engine": eng})
             if eng == "edge":
@@ -761,12 +995,127 @@ def health():
     eng = tts_engines()
     vs = list_voices()
     clone = any(e in eng for e in ("chatterbox", "xtts", "pocket", "omnivoice", "voxcpm"))
-    female = "edge" in eng or "omnivoice" in eng or "voxcpm" in eng or (clone and any(v["gender"] == "f" for v in vs))
+    female = "edge" in eng or "pockettr" in eng or "omnivoice" in eng or "voxcpm" in eng or (clone and any(v["gender"] == "f" for v in vs))
     ready = [m["id"] for m in modeller.catalog() if m.get("adaptor") and modeller.is_ready(m["id"])]
     plan = tts_plan()
     return {"ok": True, "version": VERSION, "app": os.path.exists(os.path.join(APP_DIR, "index.html")),
-            "tts": {"pref": TTS_PREF, "engines": eng, "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs), "models": ready, "design": design_motors()},
+            "tts": {"pref": TTS_PREF, "engines": eng, "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs) + len(builtin_voices()), "models": ready, "design": design_motors(),
+                    "edgeVersion": _edge_version(), "pocketTr": has("pocket_tts_turkish")},
+            "ffmpeg": bool(ffmpeg_exe()),
             "stt": f"faster-whisper {WHISPER_MODEL}" if has("faster_whisper") else None, "ollama": OLLAMA, "image": gorsel.durum()}
+
+
+
+# ---------------------------------------------------------------- Hızlı MP4 (ffmpeg): tarayıcı kareleri JPEG olarak yollar, ffmpeg MP4'e çevirir
+import shutil
+import subprocess
+
+_VIDEO_JOBS = {}
+_VIDEO_LOCK = threading.Lock()
+
+
+def ffmpeg_exe():
+    """Sistemdeki ffmpeg ya da imageio-ffmpeg'in getirdiği ikili (Windows'ta ayrıca kurulum gerekmez)."""
+    p = shutil.which("ffmpeg")
+    if p:
+        return p
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+@app.post("/video/start")
+async def video_start(audio: UploadFile = File(...), fps: int = Form(24), width: int = Form(1280), height: int = Form(720)):
+    exe = ffmpeg_exe()
+    if not exe:
+        raise HTTPException(503, "ffmpeg bulunamadı. pip install imageio-ffmpeg (server\\baslat.bat kurar) ya da ffmpeg'i PATH'e ekleyin.")
+    fps = max(10, min(60, fps))
+    d = tempfile.mkdtemp(prefix="defter-video-")
+    wav = os.path.join(d, "anlatim.wav")
+    with open(wav, "wb") as f:
+        f.write(await audio.read())
+    out = os.path.join(d, "video.mp4")
+    enc = os.getenv("DEFTER_FFMPEG_ENC", "libx264")  # RTX için: h264_nvenc
+    vopts = ["-c:v", enc] + (["-preset", "veryfast", "-crf", "21"] if enc == "libx264" else ["-preset", "p4", "-cq", "23"])
+    cmd = [exe, "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "pipe:0", "-i", wav,
+           "-map", "0:v:0", "-map", "1:a:0", *vopts, "-pix_fmt", "yuv420p", "-r", str(fps), "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out]
+    log = open(os.path.join(d, "ffmpeg.log"), "wb")
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=log, stderr=log)
+    vid = os.path.basename(d).replace("defter-video-", "")
+    with _VIDEO_LOCK:
+        _VIDEO_JOBS[vid] = {"dir": d, "proc": proc, "out": out, "log": log, "frames": 0}
+    return {"id": vid, "size": [width, height], "fps": fps}
+
+
+@app.post("/video/frames/{vid}")
+async def video_frames(vid: str, req: Request):
+    job = _VIDEO_JOBS.get(vid)
+    if not job:
+        raise HTTPException(404, "Video işi yok (sunucu yeniden başlamış olabilir)")
+    data = await req.body()
+    if job["proc"].poll() is not None:
+        raise HTTPException(500, "ffmpeg erken kapandı: " + _ffmpeg_tail(job))
+    try:
+        await asyncio.to_thread(job["proc"].stdin.write, data)
+        await asyncio.to_thread(job["proc"].stdin.flush)
+    except Exception as e:
+        raise HTTPException(500, f"ffmpeg'e kare yazılamadı: {e}. {_ffmpeg_tail(job)}")
+    job["frames"] += data.count(b"\xff\xd8\xff")  # yaklaşık kare sayısı (JPEG başlangıç imzası)
+    return {"ok": True, "bytes": len(data)}
+
+
+def _ffmpeg_tail(job):
+    try:
+        job["log"].flush()
+        with open(os.path.join(job["dir"], "ffmpeg.log"), "rb") as f:
+            return f.read()[-400:].decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def _video_cleanup(vid):
+    with _VIDEO_LOCK:
+        job = _VIDEO_JOBS.pop(vid, None)
+    if job:
+        try:
+            if job["proc"].poll() is None:
+                job["proc"].kill()
+            job["log"].close()
+        except Exception:
+            pass
+        shutil.rmtree(job["dir"], ignore_errors=True)
+
+
+@app.post("/video/finish/{vid}")
+async def video_finish(vid: str):
+    job = _VIDEO_JOBS.get(vid)
+    if not job:
+        raise HTTPException(404, "Video işi yok")
+    try:
+        job["proc"].stdin.close()
+    except Exception:
+        pass
+    try:
+        code = await asyncio.to_thread(job["proc"].wait, 900)
+    except Exception:
+        _video_cleanup(vid)
+        raise HTTPException(504, "ffmpeg zaman aşımına uğradı")
+    if code != 0 or not os.path.exists(job["out"]) or os.path.getsize(job["out"]) < 1000:
+        tail = _ffmpeg_tail(job)
+        _video_cleanup(vid)
+        raise HTTPException(500, f"ffmpeg başarısız (kod {code}): {tail}")
+    with open(job["out"], "rb") as f:
+        data = f.read()
+    _video_cleanup(vid)
+    return Response(data, media_type="video/mp4")
+
+
+@app.delete("/video/{vid}")
+def video_abort(vid: str):
+    _video_cleanup(vid)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- Uygulama (statik dosyalar) — en sonda bağlanmalı

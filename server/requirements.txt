@@ -8,10 +8,12 @@ soundfile
 huggingface_hub>=0.30   # model yöneticisi (Hugging Face indirme, önbellek)
 
 # Seslendirme (hafif, GPU gerekmez)
-edge-tts>=7.0          # Emel (kadın) / Ahmet (erkek) doğal Türkçe; ücretsiz ama çevrimiçi, resmî API değil
+edge-tts>=7.2.8        # Emel (kadın) / Ahmet (erkek) doğal Türkçe; ücretsiz ama çevrimiçi, resmî API değil. Eski sürümler 403 verir: her açılışta güncellenir
 piper-tts>=1.3         # çevrimdışı, hızlı; Türkçe sesleri yalnız erkek
 
 # Ses / video dökümü (GPU varsa CUDA, yoksa CPU)
+imageio-ffmpeg>=0.5     # hızlı MP4 için ffmpeg ikilisi (ayrıca kurulum gerekmez)
+
 faster-whisper>=1.1
 
 # Web ve YouTube kaynakları

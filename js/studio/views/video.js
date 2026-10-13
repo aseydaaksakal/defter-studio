@@ -4,6 +4,7 @@ import { h, icon, toast, download, slug, fmtTime, promptBox } from '../../ui.js'
 import { imageSrc, preload } from '../../imagegen.js';
 import { illustrate, illustrateOne, imagesAvailable } from '../illustrate.js';
 import { speakBrowser, synthesize, resolveEngine, loadTTS, ENGINE_SHORT, hasBrowserVoice } from '../../tts.js';
+import { serverUrl, serverInfo } from '../../server.js';
 
 const THEMES = {
   sketch: { bg: '#fbfaf6', grid: '#e9e6dc', ink: '#1d1d1f', accent: '#f2c94c', soft: '#dbe9f6', font: '"Patrick Hand", "Comic Sans MS", system-ui' },
@@ -88,18 +89,73 @@ export function drawScene(ctx, W, H, sc, k, t, n, theme, deckTitle, caption) {
     for (const l of wrap(ctx, b, bw - 40 * u)) { ctx.fillText(l, pad + 32 * u + (1 - a) * 30, by); by += (portrait ? 40 : 36) * u; }
     by += 14 * u; ctx.globalAlpha = 1;
   });
-  // altyazı
-  if (caption) {
-    ctx.font = `600 ${(portrait ? 30 : 26) * u}px system-ui, sans-serif`;
-    const lines = wrap(ctx, caption, W - pad * 2).slice(-2);
-    const ch = lines.length * 38 * u + 24 * u, cy = H - ch - 40 * u;
-    ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.beginPath(); ctx.roundRect(pad - 12 * u, cy, W - pad * 2 + 24 * u, ch, 12 * u); ctx.fill();
-    ctx.fillStyle = '#fff'; lines.forEach((l, i) => ctx.fillText(l, pad, cy + 12 * u + i * 38 * u));
-  }
+  // altyazı: metin = cümle düzeyi; nesne {words:[{t, state}]} = kelime düzeyi (okunan kelime vurgulanır)
+  if (caption) drawCaption(ctx, W, H, caption, u, pad, portrait, T);
   // ilerleme
   ctx.fillStyle = T.accent; ctx.fillRect(0, H - 6 * u, W * ((k + t) / n), 6 * u);
 }
 
+// Altyazı çizimi. Kelime düzeyinde: okunmuş kelimeler beyaz, şu an okunan kelime vurgulu kutuda, gelecekler soluk.
+function drawCaption(ctx, W, H, caption, u, pad, portrait, T) {
+  const fs = (portrait ? 30 : 26) * u, lh = 38 * u, maxW = W - pad * 2;
+  ctx.font = `600 ${fs}px system-ui, sans-serif`; ctx.textBaseline = 'top';
+  if (typeof caption === 'string') {
+    const lines = wrap(ctx, caption, maxW).slice(-2);
+    const ch = lines.length * lh + 24 * u, cy = H - ch - 40 * u;
+    ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.beginPath(); ctx.roundRect(pad - 12 * u, cy, maxW + 24 * u, ch, 12 * u); ctx.fill();
+    ctx.fillStyle = '#fff'; lines.forEach((l, i) => ctx.fillText(l, pad, cy + 12 * u + i * lh));
+    return;
+  }
+  const sp = ctx.measureText(' ').width;
+  const lines = []; let cur = [], w = 0;
+  for (const wd of caption.words) {
+    const ww = ctx.measureText(wd.t).width;
+    if (cur.length && w + sp + ww > maxW) { lines.push(cur); cur = []; w = 0; }
+    cur.push({ ...wd, ww }); w += (cur.length > 1 ? sp : 0) + ww;
+  }
+  if (cur.length) lines.push(cur);
+  const li = Math.max(0, lines.findIndex((l) => l.some((x) => x.state === 'now')));
+  const first = Math.max(0, Math.min(li - (li > 0 ? 1 : 0), lines.length - 2));
+  const shown = lines.slice(first, first + 2);
+  const ch = shown.length * lh + 24 * u, cy = H - ch - 40 * u;
+  ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.beginPath(); ctx.roundRect(pad - 12 * u, cy, maxW + 24 * u, ch, 12 * u); ctx.fill();
+  shown.forEach((ln, i) => {
+    let x = pad; const y = cy + 12 * u + i * lh;
+    for (const wd of ln) {
+      if (wd.state === 'now') { ctx.fillStyle = T.accent; ctx.beginPath(); ctx.roundRect(x - 5 * u, y - 3 * u, wd.ww + 10 * u, lh - 4 * u, 8 * u); ctx.fill(); ctx.fillStyle = '#111'; }
+      else ctx.fillStyle = wd.state === 'past' ? '#fff' : 'rgba(255,255,255,.55)';
+      ctx.fillText(wd.t, x, y); x += wd.ww + sp;
+    }
+  });
+}
+
+// Kelime zamanlaması: anlatım sahne başına tek parça; sahne içi kelime süreleri harf sayısı + noktalama duraklamasıyla paylaştırılır.
+// (Sentezden gerçek kelime zamanı gelmez; yaklaşık ama okumayı izlemek için yeterince yakındır.)
+export function wordPlan(text) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const wt = words.map((w) => w.replace(/[^\p{L}\p{N}]/gu, '').length + 1 + (/[.!?…]$/.test(w) ? 5 : /[,;:]$/.test(w) ? 2.5 : 0));
+  const sum = wt.reduce((a, b) => a + b, 0) || 1; let acc = 0, si = 0;
+  return words.map((t, i) => { const f0 = acc / sum; acc += wt[i]; const o = { t, f0, f1: acc / sum, sent: si }; if (/[.!?…]$/.test(t)) si++; return o; });
+}
+export function wordCaption(plan, frac) {
+  if (!plan.length) return '';
+  let idx = 0; for (let i = 0; i < plan.length; i++) if (plan[i].f0 <= frac) idx = i;
+  return { words: plan.filter((w) => w.sent === plan[idx].sent).map((w) => ({ t: w.t, state: w.f1 <= frac ? 'past' : w.f0 <= frac ? 'now' : 'next' })) };
+}
+export const TRANSITION_SEC = 0.6;
+const ease2 = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+let offCv = null;
+// Sahneler arası geçiş: önceki sahne yerinde kalır, yeni sahne hafif sağdan kayarak üzerine solar. local = sahnenin başından beri geçen saniye.
+export function drawFrame(ctx, W, H, scenes, k, frac, local, theme, title, caption) {
+  const n = scenes.length;
+  if (k > 0 && local < TRANSITION_SEC) {
+    const a = ease2(local / TRANSITION_SEC);
+    drawScene(ctx, W, H, scenes[k - 1], k - 1, 1, n, theme, title, '');
+    if (!offCv || offCv.width !== W || offCv.height !== H) { offCv = document.createElement('canvas'); offCv.width = W; offCv.height = H; }
+    drawScene(offCv.getContext('2d'), W, H, scenes[k], k, frac, n, theme, title, caption);
+    ctx.save(); ctx.globalAlpha = a; ctx.drawImage(offCv, (1 - a) * W * 0.06, 0); ctx.restore();
+  } else drawScene(ctx, W, H, scenes[k], k, frac, n, theme, title, caption);
+}
 
 // Seslendirmeyi altyazı parçalarına böl (cümle cümle)
 const sentences = (s) => (String(s || '').match(/[^.!?…]+[.!?…]*/g) || [s || '']).map((x) => x.trim()).filter(Boolean);
@@ -116,7 +172,7 @@ export function render(root, art, api) {
   const estStart = est.map((_, i) => est.slice(0, i).reduce((a, b) => a + b, 0));
   const estTotal = est.reduce((a, b) => a + b, 0);
   let disposed = false, playing = false, raf = 0, k = 0;
-  let audio = null, timings = null;                 // tek parça anlatım hazır olunca
+  let audio = null, timings = null, audioBlob = null; // tek parça anlatım hazır olunca
   const pieces = []; let pAudio = null, pPos = 0, pWait = false, streaming = false; // hazırlanırken sahne sahne
   let clock0 = 0, clockOff = 0, live = false;       // sessiz önizleme / tarayıcı sesi
   let recording = null;
@@ -127,28 +183,38 @@ export function render(root, art, api) {
   const setIcon = () => playBtn.replaceChildren(icon(playing ? 'pause' : 'play', 26));
   const sceneStart = (i) => (timings ? timings[i]?.start ?? 0 : estStart[i]);
 
+  // Altyazı kipi: kelime (okunan kelime vurgulanır) · cümle · kapalı. Tercih bu tarayıcıda saklanır.
+  const CAP_MODES = [['word', 'Altyazı: kelime'], ['sentence', 'Altyazı: cümle'], ['off', 'Altyazı: kapalı']];
+  let capMode = 'word'; try { capMode = localStorage.getItem('defter.capMode') || 'word'; } catch {}
+  const plans = scenes.map((s) => wordPlan(s.narration));
+  const captionFor = (k, frac) => {
+    if (capMode === 'off') return '';
+    if (capMode === 'word') return wordCaption(plans[k] || [], frac);
+    const sents = sentences(scenes[k]?.narration);
+    return sents[Math.min(sents.length - 1, Math.floor(frac * sents.length))] || '';
+  };
+
   function frame() {
-    let frac = 1, t = 0, total = estTotal;
+    let frac = 1, t = 0, total = estTotal, local = 99;
     if (audio && timings) {
       t = audio.currentTime; total = audio.duration || total;
       k = Math.max(0, timings.findLastIndex((x) => t >= x.start - 0.05));
       const end = timings[k + 1]?.start ?? total;
       frac = (t - timings[k].start) / Math.max(0.5, end - timings[k].start);
-      if (!playing && t === 0) frac = 1;
+      local = t - timings[k].start;
+      if (!playing && t === 0) { frac = 1; local = 99; }
     } else if (streaming && pAudio && pieces[pPos]) {
       k = pieces[pPos].idx[0];
       frac = pAudio.duration ? pAudio.currentTime / pAudio.duration : 0;
-      t = estStart[k] + frac * est[k];
+      t = estStart[k] + frac * est[k]; local = pAudio.currentTime;
     } else if (playing) {
       t = clockOff + (performance.now() - clock0) / 1000;
       if (t >= estTotal) { playing = false; t = estTotal; setIcon(); }
       k = Math.max(0, estStart.findLastIndex((s) => t >= s));
-      frac = (t - estStart[k]) / est[k];
+      frac = (t - estStart[k]) / est[k]; local = t - estStart[k];
     } else { t = clockOff; }
     frac = Math.max(0, Math.min(1, frac));
-    const sents = sentences(scenes[k]?.narration);
-    const cap = sents[Math.min(sents.length - 1, Math.floor(frac * sents.length))] || '';
-    drawScene(ctx, W, H, scenes[k], k, frac, scenes.length, v.theme, v.title, cap);
+    drawFrame(ctx, W, H, scenes, k, frac, local, v.theme, v.title, captionFor(k, frac));
     time.textContent = `${fmtTime(t)} / ${fmtTime(total)}`;
     bar.value = k;
     if (playing || (audio && !audio.paused)) raf = requestAnimationFrame(frame);
@@ -208,12 +274,12 @@ export function render(root, art, api) {
       const resumeScene = streaming && playing ? (pieces[pPos]?.idx[0] ?? k) : -1;
       const offset = pAudio && resumeScene >= 0 ? pAudio.currentTime : 0;
       pAudio?.pause(); streaming = false; pieces.forEach((p) => p.url && URL.revokeObjectURL(p.url));
-      timings = r.timings;
+      timings = r.timings; audioBlob = r.blob;
       audio = new Audio(URL.createObjectURL(r.blob));
       audio.onended = () => { playing = false; setIcon(); recording?.stop(); };
       await new Promise((ok) => { audio.onloadedmetadata = ok; audio.onerror = ok; });
       status.textContent = `${ENGINE_SHORT[r.engine]} · ${narrator.gender === 'm' ? 'erkek' : 'kadın'} anlatıcı hazır`;
-      dlBtn.disabled = false;
+      dlBtn.disabled = false; syncFast();
       if (resumeScene >= 0) { audio.currentTime = sceneStart(resumeScene) + offset; audio.play().catch(() => {}); loop(); } else frame();
     } catch (e) {
       if (disposed) return;
@@ -242,6 +308,61 @@ export function render(root, art, api) {
     rAudio.onended = () => setTimeout(() => recording?.stop(), 600);
     dlBtn.disabled = true; status.textContent = 'Video kaydediliyor (gerçek zamanlı; bu sekmeyi açık tutun)…';
     audio = rAudio; rec.start(500); playing = true; setIcon(); await rAudio.play(); loop();
+  };
+
+  // ---- Hızlı MP4 (lokal sunucuda ffmpeg): kareler gerçek zamanlı beklenmeden çizilir, JPEG olarak sunucuya gönderilir, ffmpeg MP4'e çevirir ----
+  const FPS = 24;
+  const fastBtn = h('button', { class: 'btn ghost small', hidden: true, title: 'Lokal sunucudaki ffmpeg ile gerçek zamandan çok daha hızlı MP4 üretir' }, icon('download', 16), ' Hızlı MP4');
+  const fastReady = async () => { const base = await serverUrl(); return !!(base && serverInfo()?.ffmpeg); };
+  async function syncFast() { fastBtn.hidden = !(await fastReady().catch(() => false)); fastBtn.disabled = !audioBlob || !!recording; }
+  fastBtn.onclick = async () => {
+    if (recording || !audioBlob || !timings) return;
+    const base = await serverUrl(); if (!base) return toast('Hızlı MP4 için lokal sunucu gerekir (server\\baslat.bat).', 'error', 6000);
+    fastBtn.disabled = dlBtn.disabled = true; playing = false; audio?.pause(); setIcon();
+    let id = null;
+    try {
+      const total = (audio?.duration && isFinite(audio.duration)) ? audio.duration : (timings.at(-1)?.end || estTotal);
+      const frames = Math.ceil(total * FPS) + FPS; // sonda 1 sn ek: son kare kesilmesin
+      const fd = new FormData(); fd.append('audio', audioBlob, 'anlatim.wav'); fd.append('fps', String(FPS)); fd.append('width', String(W)); fd.append('height', String(H));
+      const st = await fetch(base + '/video/start', { method: 'POST', body: fd });
+      if (!st.ok) throw new Error((await st.text()).slice(0, 200));
+      id = (await st.json()).id;
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c2 = cv.getContext('2d');
+      let batch = [], t0 = performance.now();
+      const toJpeg = () => new Promise((ok, no) => cv.toBlob((b) => (b ? ok(b) : no(new Error('Kare üretilemedi'))), 'image/jpeg', 0.9));
+      for (let i = 0; i < frames; i++) {
+        if (disposed) throw new Error('Görünüm kapandı');
+        const t = Math.min(i / FPS, total);
+        const kk = Math.max(0, timings.findLastIndex((x) => t >= x.start - 0.05));
+        const end = timings[kk + 1]?.start ?? total;
+        const local = t - timings[kk].start, fr = Math.max(0, Math.min(1, local / Math.max(0.5, end - timings[kk].start)));
+        drawFrame(c2, W, H, scenes, kk, fr, local, v.theme, v.title, captionFor(kk, fr));
+        batch.push(await toJpeg());
+        if (batch.length >= 48 || i === frames - 1) {
+          const r = await fetch(base + '/video/frames/' + id, { method: 'POST', body: new Blob(batch) });
+          if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+          batch = [];
+          const sec = (performance.now() - t0) / 1000;
+          status.textContent = `Hızlı MP4: %${Math.round(((i + 1) / frames) * 100)} · ${sec.toFixed(0)} sn (video ${fmtTime(total)})`;
+        }
+      }
+      status.textContent = 'ffmpeg MP4 dosyasını tamamlıyor…';
+      const fin = await fetch(base + '/video/finish/' + id, { method: 'POST' });
+      if (!fin.ok) throw new Error((await fin.text()).slice(0, 300));
+      id = null;
+      download(slug(art.title) + '.mp4', await fin.blob());
+      status.textContent = `MP4 indirildi (${((performance.now() - t0) / 1000).toFixed(0)} sn'de hazırlandı)`;
+    } catch (e) {
+      if (id) fetch(base + '/video/' + id, { method: 'DELETE' }).catch(() => {});
+      toast('Hızlı MP4 olmadı: ' + e.message, 'error', 8000); status.textContent = 'Hızlı MP4 olmadı: ' + String(e.message).slice(0, 100);
+    } finally { fastBtn.disabled = dlBtn.disabled = false; frame(); }
+  };
+  const capBtn = h('button', { class: 'btn ghost small', title: 'Altyazı kipi: kelime düzeyinde vurgu / cümle / kapalı' }, CAP_MODES.find((m) => m[0] === capMode)?.[1] || 'Altyazı');
+  capBtn.onclick = () => {
+    capMode = CAP_MODES[(CAP_MODES.findIndex((m) => m[0] === capMode) + 1) % CAP_MODES.length][0];
+    capBtn.textContent = CAP_MODES.find((m) => m[0] === capMode)[1];
+    try { localStorage.setItem('defter.capMode', capMode); } catch {}
+    if (!playing) frame();
   };
 
   const editBtn = h('button', { class: 'btn ghost small' }, icon('edit', 16), ' Sahneleri düzenle');
@@ -281,7 +402,7 @@ export function render(root, art, api) {
         h('button', { class: 'icon-btn', 'aria-label': 'Önceki sahne', onclick: () => jump(k - 1) }, icon('back')),
         playBtn,
         h('button', { class: 'icon-btn', 'aria-label': 'Sonraki sahne', onclick: () => jump(k + 1) }, icon('next')),
-        h('span', { class: 'chip ghosty' }, scenes.length + ' sahne'), h('span', { class: 'grow' }), imgBtn, regenBtn, dlBtn, editBtn))));
+        h('span', { class: 'chip ghosty' }, scenes.length + ' sahne'), h('span', { class: 'grow' }), capBtn, imgBtn, regenBtn, fastBtn, dlBtn, editBtn))));
   document.fonts?.ready.then(() => !playing && frame()); frame();
   prepare();
   return () => { disposed = true; playing = false; window.speechSynthesis?.cancel(); pAudio?.pause(); audio?.pause(); cancelAnimationFrame(raf); recording?.stop(); };

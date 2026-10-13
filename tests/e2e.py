@@ -221,6 +221,40 @@ def main():
         ok("Video: her sahne için dikey (9:16) görsel istendi", len(vl) == 2 and all(x["w"] == 576 and x["h"] == 1024 for x in vl), str([(x["w"], x["h"]) for x in vl]))
         ok("Video: sahnelerde görsel anahtarı kayıtlı", pg.evaluate("async () => { const { db } = await import('./js/db.js'); const a = (await db.artifacts.where('type').equals('video').toArray()).pop(); return a.content.scenes.every((s) => s.imgKey); }"))
         pg.screenshot(path=f"{SHOTS}/video-img.png")
+
+        # --- Video v2: kelime düzeyinde altyazı, sahneler arası geçiş, hızlı MP4 (lokal sunucuda ffmpeg)
+        v2 = pg.evaluate("""async () => {
+          const m = await import('./js/studio/views/video.js');
+          const plan = m.wordPlan('Bir iki üç. Dört beş altı yedi.');
+          const c1 = m.wordCaption(plan, 0.05), c2 = m.wordCaption(plan, 0.95);
+          const sc = [{ title: 'Birinci sahne', icon: '⚓', bullets: ['a'], narration: 'x' }, { title: 'İkinci sahne', icon: '🌊', bullets: ['b'], narration: 'y' }];
+          const mk = () => { const c = document.createElement('canvas'); c.width = 320; c.height = 180; return c; };
+          const url = (fn) => { const c = mk(); fn(c.getContext('2d')); return c.toDataURL(); };
+          const prevFinal = url((x) => m.drawScene(x, 320, 180, sc[0], 0, 1, 2, 'night', 'T', ''));
+          const nextPure = url((x) => m.drawScene(x, 320, 180, sc[1], 1, 0.5, 2, 'night', 'T', ''));
+          const f0 = url((x) => m.drawFrame(x, 320, 180, sc, 1, 0.5, 0, 'night', 'T', ''));
+          const fMid = url((x) => m.drawFrame(x, 320, 180, sc, 1, 0.5, m.TRANSITION_SEC / 2, 'night', 'T', ''));
+          const fEnd = url((x) => m.drawFrame(x, 320, 180, sc, 1, 0.5, m.TRANSITION_SEC + 0.2, 'night', 'T', ''));
+          const capOn = url((x) => m.drawFrame(x, 320, 180, sc, 1, 0.5, 5, 'night', 'T', m.wordCaption(m.wordPlan('Merhaba sevgili denizciler'), 0.5)));
+          const capOff = url((x) => m.drawFrame(x, 320, 180, sc, 1, 0.5, 5, 'night', 'T', ''));
+          return { n: plan.length, s0: plan[2].sent, s1: plan[3].sent, c1: c1.words.map((w) => w.t + ':' + w.state).join(' '), c2: c2.words.map((w) => w.t + ':' + w.state).join(' '),
+                   start: f0 === prevFinal, mid: fMid !== prevFinal && fMid !== nextPure, end: fEnd === nextPure, cap: capOn !== capOff };
+        }""")
+        ok("Video v2: kelime planı cümleleri ayırır, okunan kelime 'now' olur", v2["n"] == 7 and v2["s0"] == 0 and v2["s1"] == 1 and v2["c1"].startswith("Bir:now") and v2["c2"].endswith("yedi.:now") and "Dört:past" in v2["c2"], f'{v2["c1"]} | {v2["c2"]}')
+        ok("Video v2: geçiş başında önceki sahne, ortasında karışım, sonunda yeni sahne", v2["start"] and v2["mid"] and v2["end"], str((v2["start"], v2["mid"], v2["end"])))
+        ok("Video v2: kelime altyazısı çizilir", v2["cap"])
+        ok("Video v2: altyazı kipi düğmesi döner (kelime → cümle → kapalı)", wait_until(lambda: "kelime" in txt(".video-view .player-ctrl"), 5))
+        pg.click(".video-view >> text=Altyazı: kelime"); pg.wait_for_timeout(200)
+        ok("Video v2: altyazı kipi cümleye geçti", "cümle" in txt(".video-view .player-ctrl"))
+        pg.click(".video-view >> text=Altyazı: cümle"); pg.click(".video-view >> text=Altyazı: kapalı"); pg.wait_for_timeout(200)
+        ok("Video v2: kapalıdan başa dönüş (kelime)", "Altyazı: kelime" in txt(".video-view .player-ctrl"))
+        ok("Video v2: lokal sunucuda ffmpeg varsa 'Hızlı MP4' düğmesi görünür", wait_until(lambda: pg.query_selector(".video-view button:has-text('Hızlı MP4'):not([hidden])") is not None, 10))
+        with pg.expect_download(timeout=60000) as dl:
+            pg.click(".video-view button:has-text('Hızlı MP4')")
+        vf = dl.value.suggested_filename
+        mv = fj("/_video")
+        ok("Hızlı MP4: .mp4 indirildi", vf.endswith(".mp4"), vf)
+        ok("Hızlı MP4: kareler JPEG olarak toplu gitti, ses + 24 fps + 720x1280 bildirildi", mv.get("finished") and mv.get("jpeg_ok") and mv.get("frames", 0) >= 48 and mv.get("batches", 0) >= 2 and mv.get("fps") == "24" and (mv.get("w"), mv.get("h")) == ("720", "1280") and mv.get("audio", 0) > 1000, str(mv))
         close_viewer()
 
         # --- İnfografik: başlık görseli + kutu görselleri
@@ -427,6 +461,8 @@ def main():
         pg.click("text=Sesi dene (kadın + erkek)")
         wait_until(lambda: "çalışıyor (dinliyorsunuz)" in txt(".voice-settings"), 20)
         ok("Podcast sesi: lokal sunucu isteği seçili modelle gitti", any(x["model"] == TR for x in api("/_log")["log"]))
+        pg.click("text=Motorları sına (lokal sunucu)")
+        ok("Motor tanısı: ortam, çalışan motor ve gerçek hata + çözüm ipucu gösterilir", wait_until(lambda: "RTX 5090" in txt(".voice-settings") and "✓ edge" in txt(".voice-settings") and "✗ omnivoice" in txt(".voice-settings") and "Ollama modeli GPU" in txt(".voice-settings"), 10), txt(".voice-settings")[-260:])
         pg.click("summary:has-text('Lokal modeller')"); wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 31, 10)
         rl("alperiox/pocket-tts-turkish").locator("button[aria-label='Beğendim']").click()
         ok("Beğendim: sunucuda kalıcı", wait_until(lambda: next(m for m in api("/models")["models"] if m["id"] == "alperiox/pocket-tts-turkish")["puan"] == "begen", 5))
@@ -453,6 +489,49 @@ def main():
         api("/_tts_fail", True); api("/_log/clear", True)
         r2 = pg.evaluate(LOCK, [6, "yarim"])
         ok("Kaldığı yerden devam: yalnız eksik 3 satır yeniden üretildi", r2["ok"] and len(api("/_log")["log"]) == 3, f"çökmeden önce {n_before} istek, devamda {len(api('/_log')['log'])}")
+
+        # --- 0.6.0: kayıtlı ses önce (ağ/API kullanılmaz); yeniden üretim yalnız 'fresh' ile
+        SAVED = """async ([n, k, fresh]) => { const t = await import('./js/tts.js');
+          const lines = Array.from({ length: n }, (_, i) => ({ speaker: i % 2 ? 'B' : 'A', text: 'Deneme satırı numara ' + i + ' ' + k }));
+          const sp = [{ id: 'A', name: 'Deniz', gender: 'f' }, { id: 'B', name: 'Kaan', gender: 'm' }];
+          const r = await t.synthesize('kilit-' + k, lines, sp, 'Türkçe', { fresh }); return { saved: !!r.saved, size: r.blob.size }; }"""
+        api("/_log/clear", True)
+        sv1 = pg.evaluate(SAVED, [6, "yarim", False])
+        ok("Kayıtlı ses: bitmiş podcast yeniden açılınca ağa/API'ye hiç gidilmez", sv1["saved"] and sv1["size"] > 1000 and len(api("/_log")["log"]) == 0, str(sv1))
+        pg.evaluate("async () => { const t = await import('./js/tts.js'); const c = await t.loadTTS(); await t.saveTTS({ ...c, serverF: 'baska-ses', serverM: 'baska-erkek' }); }")
+        sv2 = pg.evaluate(SAVED, [6, "yarim", False])
+        ok("Kayıtlı ses: ses/motor ayarı değişse de aynı metin kayıtlıdan çalar", sv2["saved"] and len(api("/_log")["log"]) == 0)
+        sv3 = pg.evaluate(SAVED, [6, "yarim", True])
+        ok("Sesi yeniden üret: yalnız 'fresh' ile sunucuya gidilir ve yeni dosya kaydedilir", (not sv3["saved"]) and len(api("/_log")["log"]) == 6, str(len(api("/_log")["log"])))
+        sv4 = pg.evaluate(SAVED, [6, "yarim", False])
+        ok("Yeniden üretilen ses de kayıtlı kalır (ikinci açılışta ağ yok)", sv4["saved"] and len(api("/_log")["log"]) == 6)
+        pg.evaluate("async () => { const t = await import('./js/tts.js'); const c = await t.loadTTS(); await t.saveTTS({ ...c, serverF: '', serverM: '' }); }")
+
+        # --- 0.6.0: Fish Audio istek biçimi (sahte fetch): Bearer + model başlığı, kadın/erkek ses kimliği sabit
+        fish = pg.evaluate("""async () => {
+          const t = await import('./js/tts.js'); const orig = window.fetch, calls = [], old = await t.loadTTS();
+          const n = 4800, b = new DataView(new ArrayBuffer(44 + n * 2)), w = (o, x) => [...x].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+          w(0, 'RIFF'); b.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
+          b.setUint32(24, 24000, true); b.setUint32(28, 48000, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, 'data'); b.setUint32(40, n * 2, true);
+          for (let i = 0; i < n; i++) b.setInt16(44 + i * 2, Math.sin(i / 10) * 8000, true);
+          window.fetch = async (u, o) => {
+            if (/api\.fish\.audio\/v1\/tts/.test(String(u))) { calls.push({ u: String(u), h: o.headers, body: JSON.parse(o.body) }); return new Response(new Blob([b.buffer], { type: 'audio/wav' }), { status: 200 }); }
+            return orig(u, o);
+          };
+          try {
+            await t.saveTTS({ ...old, fishKey: 'f-key', fishModel: 's2.1-pro-free', fishF: 'REF-KADIN', fishM: 'REF-ERKEK' });
+            const lines = [{ speaker: 'A', text: 'Merhaba dünya' }, { speaker: 'B', text: 'Selam arkadaşlar' }, { speaker: 'A', text: 'Nasılsınız' }, { speaker: 'B', text: 'Teşekkürler' }];
+            const sp = [{ id: 'A', name: 'Deniz', gender: 'f' }, { id: 'B', name: 'Kaan', gender: 'm' }];
+            const r = await t.synthesize('fish-test', lines, sp, 'Türkçe', { engine: 'fish' });
+            const ref = (re) => calls.find((c) => re.test(c.body.text))?.body.reference_id;
+            const none = await t.saveTTS({ ...old, fishKey: 'f-key', fishF: '', fishM: '' }).then(async () => { try { await t.synthesize('fish-test2', lines, sp, 'Türkçe', { engine: 'fish' }); return ''; } catch (e) { return e.message; } });
+            return { n: calls.length, first: calls[0], kadin: ref(/Merhaba/), erkek: ref(/Selam/), kadin2: ref(/Nas/), erkek2: ref(/Te/), size: r.blob.size, none };
+          } finally { window.fetch = orig; await t.saveTTS(old); }
+        }""")
+        fh = fish["first"]
+        ok("Fish Audio: istek biçimi (POST /v1/tts, Bearer, model başlığı, mp3)", fish["n"] == 4 and fh["u"] == "https://api.fish.audio/v1/tts" and fh["h"]["Authorization"] == "Bearer f-key" and fh["h"]["model"] == "s2.1-pro-free" and fh["body"]["format"] == "mp3", str(fh)[:200])
+        ok("Fish Audio: kadın ve erkek konuşmacı hep aynı seçili ses kimliğiyle konuştu", (fish["kadin"], fish["kadin2"], fish["erkek"], fish["erkek2"]) == ("REF-KADIN", "REF-KADIN", "REF-ERKEK", "REF-ERKEK") and fish["size"] > 1000, str(fish)[:200])
+        ok("Fish Audio: ses seçilmediyse net hata (her satırda farklı ses gelmez)", "kadın ve bir erkek ses seçin" in fish["none"], fish["none"][:120])
         # Gemini günlük kota: kota dolunca robot sese düşmeden net hata
         pg.route("https://generativelanguage.googleapis.com/**", lambda route: route.fulfill(status=429, headers={"access-control-allow-origin": "*", "content-type": "application/json"},
                  body=json.dumps({"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded", "details": [{"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel"}]}]}})))

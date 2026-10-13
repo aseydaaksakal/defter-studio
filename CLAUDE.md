@@ -25,7 +25,7 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 
 ## Kurallar
 - **Dil:** Arayüz dili Türkçe, kod yorumları Türkçe.
-- **Bağımlılık:** Kütüphaneler `js/vendor/` içinde tutulur; CDN'e yeni bağımlılık ekleme. Tek istisna Piper'ın onnxruntime'ı.
+- **Bağımlılık:** Kütüphaneler `js/vendor/` içinde tutulur; CDN'e bağımlılık ekleme (0.6.0'dan beri istisna yok: Piper'ın onnxruntime ve fonemleştirici dosyaları da depoda). Yalnız Piper ses modeli Hugging Face'ten iner ve tarayıcıda kalıcı saklanır.
 - **Yeni Studio aracı** şu dört yere eklenir:
   - `js/studio/gen.js` içinde `TOOLS.<ad>` (`options` + `generate`). Model gerekmiyorsa `noLLM: true`.
   - `js/studio/views/<ad>.js` (`render`, `toText`).
@@ -37,6 +37,7 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 - **Halüsinasyon:** Soru ve kart üretiminde `EVIDENCE_RULE` ve `verifyItem` kullanılır. Doğrulanamayan öğe kullanıcıya gösterilmez.
 - **Görüntüleyici:** `api.save(content, not)` ile kaydeder; not verilirse önceki hâl `versions` tablosuna girer.
 - **Veritabanı:** Şema değişirse `db.version(n+1)` ekle; eski sürümü silme. Şu an v2 (`questions` tablosu).
+- **Podcast sesi:** Bitmiş ses `kind:'mix'` olarak IndexedDB'ye `textKey` ile saklanır; `synthesize` önce `savedMix`'e bakar. Motor/ses/model anahtarına BAĞLAMA; yalnız `fresh:true` yeniden üretir.
 - **Ses:** Yeni motor `js/tts.js` içinde şuralara eklenir: `ENGINES`, `ENGINE_SHORT`, `voicePool`, `LINE_FN` (ya da parça fonksiyonu), `availableEngines`.
   - Her motor kadın ve erkek ses vermeli. Veremiyorsa `femaleOK` false dönmeli.
 - **Görsel:** Yeni görselli çıktı `js/studio/illustrate.js` `plan` içine eklenir; içerikte `visual` (İngilizce, yazısız) + `imgKey`. Görselde asla yazı üretilmez. Sağlayıcı kodu yalnız `js/imagegen.js` içinde.
@@ -50,13 +51,13 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 ```bash
 python3 -m http.server 8099 &        # depo kökünde
 python3 tests/mock_llm.py &          # sahte model (OpenAI uyumlu SSE) + sahte lokal sunucu (/health, /tts) — 8098
-python3 tests/e2e.py [klasör]        # 78 uçtan uca kontrol, ekran görüntüleri klasöre
+python3 tests/e2e.py [klasör]        # 95 uçtan uca kontrol (+ python3 tests/server_test.py: 56), ekran görüntüleri klasöre
 ```
 Sahte model istemdeki KAYNAKLAR bloğundan istenen sayıda, kaynaktan alıntılı öğe üretir.
 - Yeni bir istem eklersen `tests/mock_llm.py`'ye o isteme özgü bir anahtar ifade ekle.
 - Anahtar, kaynak metninde geçmeyecek bir ifade olmalı.
 
-Kabuk notu: `pkill -f` ile süreç öldürürken desen komut satırının kendisinde geçmesin.
+Kabuk notu: `pkill -f` ile süreç öldürürken desen komut satırının kendisinde geçmesin (en kolayı: `fuser -k 8098/tcp`).
 - Örnek: `pgrep -f "[m]ock_llm"`. Aksi hâlde kabuk kendini öldürür (çıkış kodu 144).
 
 ## Teslim

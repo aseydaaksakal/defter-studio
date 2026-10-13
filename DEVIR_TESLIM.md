@@ -1,6 +1,6 @@
 # Devir teslim
 
-Son güncelleme: 2026-10-13 · sürüm **0.5.1** · canlı: https://aseydaaksakal.github.io/defter-studio/
+Son güncelleme: 2026-10-13 · sürüm **0.6.0** · canlı: https://aseydaaksakal.github.io/defter-studio/
 
 Bu belge projeyi devralan kişi ya da yapay zeka içindir: durum, kanıtlar, eksikler, sıradaki iş ve hazır başlangıç istemi.
 Ayrıntı gerektikçe [PROJE_REHBERI.md](PROJE_REHBERI.md) (dosya → görev) ve [docs/NOT_DEFTERI.md](docs/NOT_DEFTERI.md)
@@ -37,7 +37,14 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 | **Yapay zeka görselleri (0.5.0):** slayt (kapak arka planı + sağ panel), infografik (başlık + kutu), video sahneleri (panel + yakınlaşma); önbellekli; Ayarlar › Görseller | ✅ Kod hazır | e2e: lokal sunucu `/image` ile 5 slayt = 5 istek, video 9:16, infografik hero, **Gemini ve MiniMax istek biçimi sahte `fetch` ile**, önbellek; ComfyUI istemcisi sahte ComfyUI ile (tek dosyalı ve ayrı UNET türü). **Gerçek anahtar ve gerçek GPU ile denenmedi.** |
 | Lokal görsel: ComfyUI + FLUX.1-schnell (`tools/kur-comfyui.bat`, `tools/comfyui-baslat.bat`, `server/gorsel.py`) | ⚠️ Kod hazır | Kullanıcı kuracak; `docs/GORSEL.md` |
 | `tools/kur-gpu.bat` onarımı | ⚠️ Kullanıcıda doğrulanacak | LF/CRLF karışıklığı ve adımsız hata giderildi; kullanıcının hata metni gelmedi (bkz. NOT_DEFTERI 0.5.0) |
-| Testler | ✅ | `tests/e2e.py` 78/78 |
+| **0.6.0 Edge 403 onarımı:** `baslat` her açılışta `edge-tts` günceller; 403'te sunucu kendini günceller ve yeniden dener | ✅ Kod hazır | server_test; **gerçek Microsoft ucu sandbox'ta denenemedi** |
+| **Pocket TTS Türkçe (6 ses: 3 kadın + 3 erkek):** `pockettr` motoru, `tools\kur-pocket-tr.bat` | ⚠️ Kod hazır | Sahte modelle test; **gerçek model kullanıcının PC'sinde denenecek** |
+| **Kayıtlı podcast sesi (NotebookLM gibi):** ses bir kez üretilir, IndexedDB'de saklanır, açılınca ağsız çalar; yalnız "Sesi yeniden üret" yeniden üretir | ✅ | e2e |
+| **Piper kalıcı oturum:** ses başına model bir kez yüklenir, ORT/fonemleştirici depoda, SW önbellek, "Piper modelini indir ve sakla" | ✅ (HF'den ses indirme denenemedi) | Gerçek Chromium'da ORT + Türkçe fonem |
+| Fish Audio motoru (`fish`) | ⚠️ Kod hazır | **Gerçek anahtarla denenmedi** (sohbette paylaşılan anahtarlar kullanılmadı) |
+| Motor tanısı: `/tts/selftest` + Ayarlar › "Motorları sına", VRAM koruması | ✅ Kod hazır | server_test; gerçek GPU'da denenecek |
+| **Video v2:** sahneler arası geçiş, kelime altyazısı, ffmpeg ile hızlı MP4 | ✅ | Piksel testleri, gerçek ffmpeg sunucu testi, arayüz indirme testi |
+| Testler | ✅ | `tests/e2e.py` 95/95, `tests/server_test.py` 56/56 |
 | Dokümanlar | ✅ | README, CLAUDE.md, AGENTS.md, bu belge, PROJE_REHBERI, LINKLER, docs/* |
 
 ## 3. Kullanıcının ortamı (2026-10-12)
@@ -70,13 +77,14 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 
 1. **Gerçek bulut sesleri** (Gemini, MiniMax, ElevenLabs, Azure, Google) gerçek anahtarla uçtan uca denenmedi. API biçimleri resmî dokümanlara göre yazıldı ve CORS doğrulandı. İlk gerçek denemede yanıt biçimi farkı çıkarsa düzeltilecek kısım ilgili `*Line`/`*Chunk` fonksiyonudur.
 2. **Yapay zeka görselleri gerçek anahtar/GPU ile denenmedi.** İlk gerçek denemede yanıt biçimi farkı çıkarsa düzeltilecek yer `js/imagegen.js` (`geminiImage`, `minimaxImage`) ya da `server/gorsel.py` (iş akışı). 0.5.0'dan önce üretilmiş sunularda `visual` tarifi yoktur; yeniden üretin ya da **Görseli yenile** ile tarif girin.
-3. **Video indirme gerçek zamanlı.** 5 dakikalık video 5 dakikada kaydedilir; sekme açık kalmalı.
+3. **Video indirme:** lokal sunucu + ffmpeg varsa hızlı MP4 (gerçek zamandan hızlı); yoksa eski gerçek zamanlı kayıt. Kelime altyazısı kelime uzunluğuna göre **yaklaşık** zamanlanır (gerçek zaman damgası yok).
 4. **Aralıklı tekrar basit aralıklarla çalışıyor** (1-3-7-16-35-80 gün). FSRS yol haritasında.
 5. **Embedding varsayılanı boş.** Yalnız BM25 kullanılıyor; Türkçe anlamsal arama için bge-m3 önerilir.
 6. **Taranmış PDF OCR** Tesseract'la tarayıcıda yapılıyor; tablo ve el yazısında zayıf. Yol haritasında qwen3-vl ile OCR var.
 
 ## 6. Sıradaki iş (Faz B, öncelik sırasıyla)
 
+00. **Önce kullanıcıdan iste:** Ayarlar › Seslendirme › "Motorları sına" çıktısı + `tools\kur-pocket-tr.bat` sonucu (Edge 403 düzeldi mi, Pocket TR sesleri, Trendyol/VoxCPM/OmniVoice gerçek hata metni). Podcast'te kayıtlı sesin ağsız çaldığını doğrulat.
 0. **Kullanıcının PC'sinde doğrulanacaklar (ben yapamam: Windows/GPU yok):**
    - `tools/kur-gpu.bat` (0.5.0'da yeniden yazıldı; hata verirse artık adım adını yazar, o satırları yapıştır) ve `tools/modelleri-indir.bat indir --onerilen`.
    - Ayarlar'da sesleri dinle, beğenmediğini 👎 ile sil. GPU adaptörleri (OmniVoice Türkçe tasarım, VoxCPM/Trendyol, Bark, KugelAudio) gerçek donanımda denenmedi; gerekirse düzelt.
@@ -86,7 +94,8 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 1. **Lokal sesleri kullanıcının bilgisayarında doğrula** (OmniVoice/Pocket TTS; gerekirse API düzeltmesi). Ardından **NotebookLM ile birebir eşleşme**: video seslendirmeli sunum, arayüz ayrıntıları.
    **Gerçek seslerle doğrulama:** Kullanıcı ücretsiz Gemini anahtarı ekleyince podcast ve video ses kalitesi dinlenir. Varsa MiniMax klonu denenir.
 2. ✅ **Yapay zeka görselleri (0.5.0, gerçek anahtar/GPU doğrulaması bekliyor).** Sonraki adım: görseli olan slaytlara "görsel düzenleri" (tam sayfa, yan yana), infografikte görselli şablonlar.
-3. **Video v2:** geçişler (çapraz solma), kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile hızlı MP4. (Görselli sahnelerde yavaş yakınlaşma 0.5.0'da var; gerçek Ken Burns kaydırması yok.)
+3. ✅ **Video v2 (0.6.0 bitti).** Kalan: gerçek Ken Burns kaydırması, Whisper ile gerçek kelime zamanı.
+3b. İsteğe bağlı: Pocket TR için ücretsiz HF Space (`/tts` ucu), `erkamk/qwen3-tts-tiny-tr` adaptörü (4-5 referans sesle). Ayrıntı: `docs/SES_ALTYAPI.md`.
 4. **FSRS-5 zamanlayıcı** (kart + hata defteri + banka ortak) ve sınav planlayıcı v2.
 5. **qwen3-vl ile OCR** ve isteğe bağlı ikinci-model doğrulaması.
 
@@ -95,7 +104,7 @@ Ayrıntı: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
 ## 7. Çalıştırma ve teslim
 
 ```bash
-python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 78 kontrol + python3 tests/server_test.py (26)
+python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py   # 95 kontrol + python3 tests/server_test.py (56)
 bash tools/teslim.sh "kısa açıklama"                                              # test + günlük + commit + push + bağlantılar
 ```
 
@@ -103,10 +112,11 @@ bash tools/teslim.sh "kısa açıklama"                                         
 
 ```
 Defter Studio projesine devam ediyoruz (GitHub: aseydaaksakal/defter-studio, canlı: https://aseydaaksakal.github.io/defter-studio/).
-Önce depodaki DEVIR_TESLIM.md'yi, sonra CLAUDE.md'yi oku; PROJE_REHBERI.md'den yalnız gereken bölümü oku.
+Önce depodaki DEVIR_TESLIM.md'yi, sonra CLAUDE.md'yi oku; PROJE_REHBERI.md'den yalnız gereken bölümü oku (8d: 0.6.0 ses/video).
 Büyük dosyaları (js/app.js, css/app.css, js/studio/gen.js) baştan sona okuma, grep ile bölüm bul.
-Bu oturumun işi: önce kullanıcının PC sonuçları: [BURAYA YAZ: tools\sunucu-tani.bat çıktısı, tools\kur-moss.bat sonucu, tools\ses-karsilastir.bat ile hangi sesler iyi/kötü, kur-gpu.bat hatası varsa son satırlar]; gerekli düzeltmeleri yap (özellikle MOSS adaptörü GPU'da denenmedi). İsteğe bağlı: MOSS-TTSD (diyalog) adaptörü. Sonra 3. madde (Video v2: sahneler arası geçiş, kelime düzeyinde altyazı, lokal sunucuda ffmpeg ile hızlı MP4).
-Bitince testleri çalıştır (tests/e2e.py), tools/teslim.sh ile teslim et, DEVIR_TESLIM.md ve docs/NOT_DEFTERI.md'yi güncelle,
+Bu oturumun işi: önce PC sonuçlarım: [BURAYA YAZ: Ayarlar › Seslendirme › "Motorları sına" çıktısı, tools\kur-pocket-tr.bat sonucu, Edge sesi 403 veriyor mu, podcast kayıtlı sesi ağsız çalıyor mu, video "hızlı MP4" sonucu]; gerekli düzeltmeleri yap.
+Sonra istediğim iş: [BURAYA YAZ: ör. FSRS-5 zamanlayıcı, qwen3-vl OCR, Pocket TR için HF Space, qwen3-tts-tiny-tr adaptörü].
+Bitince testleri çalıştır (tests/e2e.py ve tests/server_test.py), tools/teslim.sh ile teslim et, DEVIR_TESLIM.md ve docs/NOT_DEFTERI.md'yi güncelle,
 canlı siteyi Chrome'da kontrol et, bana bütün bağlantıları ver ve bir sonraki oturum için yeni başlangıç istemini yaz.
-Word dosyası üretme; arayüz ve iletişim Türkçe.
+API anahtarlarımı sohbete yapıştırırsam kullanma; yalnız Ayarlar'a girilmesini söyle. Word dosyası üretme; arayüz ve iletişim Türkçe.
 ```

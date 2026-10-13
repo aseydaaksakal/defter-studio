@@ -32,6 +32,7 @@ def ok(name, cond, info=""):
 
 client = TestClient(main.app)
 ORIG_GPU, ORIG_MOSS = main._gpu_synth, adaptorler.moss_uret
+ORIG_EDGE, ORIG_ENGINES, ORIG_HAS = main.tts_edge, main.tts_engines, main.has
 WAV = main._wav_bytes(np.zeros(2400, dtype="float32"), 24000)
 calls, piper_calls = [], []
 FAIL, NEEDREF = set(), set()
@@ -205,6 +206,156 @@ fake_repo(repos[1])
 ok("Model yöneticisi: ana + ek depo tam inince hazır, boyut ikisini toplar", modeller.is_ready(mid) and modeller.local_size(mid) == 20, str(modeller.local_size(mid)))
 modeller.delete_model(mid)
 ok("Model yöneticisi: silince ek depo da gider", not modeller.is_ready(mid) and modeller.local_size(mid) == 0)
+
+
+# ---------------------------------------------------------------- 0.6.0: Pocket TTS Türkçe (6 hazır ses)
+import asyncio  # noqa: E402
+import types  # noqa: E402
+
+main.has = lambda mod: mod in ("pocket_tts_turkish", "edge_tts")
+main.tts_engines = ORIG_ENGINES
+eng_list = ORIG_ENGINES()
+ok("Pocket TTS Türkçe: kuruluysa ilk sırada", eng_list[:1] == ["pockettr"] and "edge" in eng_list, str(eng_list))
+bv = main.builtin_voices()
+ok("Pocket TTS Türkçe: 3 kadın + 3 erkek hazır ses listelenir", sorted(v["gender"] for v in bv) == ["f", "f", "f", "m", "m", "m"] and all(v["builtin"] for v in bv))
+ok("Hazır sesler /voices içinde görünür", {v["name"] for v in client.get("/voices").json()["voices"]} >= {"pt-kadin-1", "pt-erkek-3"})
+ok("Ses adı → model sesi eşlemesi (cinsiyet uyuşmazsa ilk ses)",
+   main.pockettr_voice("pt-kadin-2", "f") == "female_2" and main.pockettr_voice("pt-erkek-3", "m") == "male_3"
+   and main.pockettr_voice("pt-kadin-2", "m") == "male_1" and main.pockettr_voice(None, "f") == "female_1" and main.pockettr_voice("male_2", "m") == "male_2")
+seen = []
+main._gpu_synth = ORIG_GPU
+orig_pt = main.tts_pockettr
+main.tts_pockettr = lambda text, voice, gender: (seen.append((voice, gender)), WAV)[1]
+main.tts_engines = lambda: ["pockettr", "edge"]
+main.TTS_PREF = "auto"
+plan = main.tts_plan()
+ok("Plan: kadın ve erkek ikisi de Pocket TTS Türkçe (referans kaydı gerekmez)", plan == {"f": "pockettr", "m": "pockettr"}, str(plan))
+r = client.post("/tts", json={"text": "Merhaba", "gender": "f", "voice": "pt-kadin-3", "engine": "pockettr"})
+ok("/tts: seçilen hazır ses motora iletilir", r.status_code == 200 and seen == [("pt-kadin-3", "f")], f"{r.status_code} {seen}")
+main.tts_pockettr = orig_pt
+main._gpu_synth = fake_gpu
+
+# ---------------------------------------------------------------- 0.6.0: Edge 403 → bir kez güncelle ve yeniden dene
+class _Comm:
+    def __init__(self, ok_, *a, **k):
+        self.ok_ = ok_
+
+    async def stream(self):
+        if not self.ok_:
+            raise RuntimeError("403, message='Invalid response status', url='wss://speech.platform.bing.com/...'")
+        yield {"type": "audio", "data": b"ID3audio"}
+
+
+old_mod = types.ModuleType("edge_tts"); old_mod.Communicate = lambda *a, **k: _Comm(False)
+new_mod = types.ModuleType("edge_tts"); new_mod.Communicate = lambda *a, **k: _Comm(True)
+import sys as _sys  # noqa: E402
+_sys.modules["edge_tts"] = old_mod
+main._edge_upgrade["done"] = False
+upgrades = []
+main._edge_try_upgrade = lambda: (upgrades.append(1), _sys.modules.__setitem__("edge_tts", new_mod), True)[2]
+data = asyncio.run(ORIG_EDGE("Merhaba", "f", "tr"))
+ok("Edge 403: eski sürüm bir kez güncellenir ve istek başarıyla yinelenir", data == b"ID3audio" and len(upgrades) == 1)
+_sys.modules["edge_tts"] = old_mod
+main._edge_try_upgrade = lambda: False
+try:
+    asyncio.run(ORIG_EDGE("Merhaba", "f", "tr")); msg = ""
+except RuntimeError as e:
+    msg = str(e)
+ok("Edge 403: güncelleme olmazsa açık mesaj (baslat.bat / Pocket TTS önerisi)", "403" in msg and "baslat.bat" in msg and "kur-pocket-tr" in msg, msg[:90])
+class _Boom(types.ModuleType):
+    Communicate = staticmethod(lambda *a, **k: _Comm(False))
+
+
+boom = types.ModuleType("edge_tts")
+boom.Communicate = lambda *a, **k: type("C", (), {"stream": lambda self: (_ for _ in ()).throw(RuntimeError("bağlantı koptu"))})()
+_sys.modules["edge_tts"] = boom
+upgrades.clear()
+main._edge_try_upgrade = lambda: (upgrades.append(1), True)[1]
+try:
+    asyncio.run(ORIG_EDGE("Merhaba", "f", "tr")); other = ""
+except RuntimeError as e:
+    other = str(e)
+ok("Edge: 403 dışı hata olduğu gibi iletilir (güncelleme denenmez)", other == "bağlantı koptu" and not upgrades, other)
+main.has = ORIG_HAS
+main.tts_engines = lambda: []
+
+# ---------------------------------------------------------------- 0.6.0: Hızlı MP4 (gerçek ffmpeg varsa)
+import subprocess  # noqa: E402
+
+exe = main.ffmpeg_exe()
+ok("ffmpeg bulunur ve /health bildirir", (exe is not None) == client.get("/health").json()["ffmpeg"])
+if exe:
+    fr = subprocess.run([exe, "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x3366cc:s=320x240:r=24:d=1", "-frames:v", "24", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"], capture_output=True)
+    sil = main._wav_bytes(np.zeros(24000, dtype="float32"), 24000)
+    st = client.post("/video/start", data={"fps": "24", "width": "320", "height": "240"}, files={"audio": ("a.wav", sil, "audio/wav")})
+    vid = st.json().get("id")
+    r1 = client.post(f"/video/frames/{vid}", content=fr.stdout[: len(fr.stdout) // 2])
+    r2 = client.post(f"/video/frames/{vid}", content=fr.stdout[len(fr.stdout) // 2:])
+    ok("Hızlı MP4: başlat + iki parça kare kabul edilir", st.status_code == 200 and r1.status_code == 200 and r2.status_code == 200)
+    fin = client.post(f"/video/finish/{vid}")
+    ok("Hızlı MP4: ffmpeg geçerli MP4 döndürür", fin.status_code == 200 and fin.content[4:8] == b"ftyp" and len(fin.content) > 2000, f"{fin.status_code} {len(fin.content)} bayt")
+    ok("Hızlı MP4: iş temizlenir", vid not in main._VIDEO_JOBS)
+    pr = subprocess.run([exe, "-hide_banner", "-i", "-"], input=fin.content, capture_output=True)
+    info = pr.stderr.decode("utf-8", "replace")
+    ok("Hızlı MP4: H.264 video + AAC ses, 320x240", "h264" in info and "aac" in info and "320x240" in info, info[info.find("Stream"):info.find("Stream") + 120] if "Stream" in info else info[-120:])
+    ab = client.post("/video/start", data={"fps": "24"}, files={"audio": ("a.wav", sil, "audio/wav")}).json()["id"]
+    client.delete(f"/video/{ab}")
+    ok("Hızlı MP4: iptal işi siler", ab not in main._VIDEO_JOBS)
+bad = client.post("/video/frames/yok", content=b"x")
+ok("Hızlı MP4: bilinmeyen iş 404", bad.status_code == 404)
+
+
+# ---------------------------------------------------------------- 0.6.0: VRAM koruması, motor tanısı, hata ipuçları
+unloaded = []
+main._free_vram_gb = lambda: (3.0, 24.0)
+main._ollama_loaded = lambda: ["qwen3.8:27b"]
+orig_unload = main.ollama_unload
+main.ollama_unload = lambda: (unloaded.append(1), ["qwen3.8:27b"])[1]
+got = main.vram_guard(6.0)
+ok("VRAM koruması: boş bellek yetmezse Ollama modeli boşaltılır", got == ["qwen3.8:27b"] and unloaded == [1])
+main._free_vram_gb = lambda: (20.0, 24.0)
+unloaded.clear()
+ok("VRAM koruması: bellek yeterliyse dokunulmaz", main.vram_guard(6.0) == [] and not unloaded)
+main._free_vram_gb = lambda: (3.0, 24.0)
+os.environ["DEFTER_UNLOAD_OLLAMA"] = "0"
+ok("VRAM koruması: DEFTER_UNLOAD_OLLAMA=0 ile kapatılır", main.vram_guard(6.0) == [] and not unloaded)
+del os.environ["DEFTER_UNLOAD_OLLAMA"]
+
+tries = []
+orig_inner = main._gpu_synth_inner
+def oom_once(eng, text, gender, lang, ref, j, repo=None):
+    tries.append(eng)
+    if len(tries) == 1:
+        raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+    return WAV
+main._gpu_synth_inner = oom_once
+unloaded.clear()
+data = ORIG_GPU("omnivoice", "Merhaba", "f", "tr", None, {})
+ok("OOM: Ollama boşaltılıp bir kez yeniden denenir", data == WAV and len(tries) == 2 and unloaded, f"{len(tries)} deneme, boşaltma {len(unloaded)}")
+main._gpu_synth_inner = lambda *a, **k: (_ for _ in ()).throw(ValueError("başka hata"))
+try:
+    ORIG_GPU("omnivoice", "Merhaba", "f", "tr", None, {}); other = ""
+except ValueError as e:
+    other = str(e)
+ok("OOM dışı hata yeniden denenmeden iletilir", other == "başka hata")
+main._gpu_synth_inner = orig_inner
+main._free_vram_gb = lambda: (None, None); main.ollama_unload = orig_unload
+
+ok("Hata ipucu: RTX 50xx / sm_120", "cu128" in main.hint_for("CUDA error: no kernel image is available for execution on the device (sm_120)"))
+ok("Hata ipucu: VRAM", "ollama stop" in main.hint_for("CUDA out of memory"))
+ok("Hata ipucu: eksik paket", "kur-gpu" in main.hint_for("ModuleNotFoundError: No module named 'omnivoice'"))
+ok("Hata ipucu: edge 403", "baslat.bat" in main.hint_for("403, message='Invalid response status', url='wss://speech.platform.bing.com'"))
+ok("Hata ipucu: bilinmeyen hata boş", main.hint_for("tuhaf bir şey") == "")
+
+reset(["omnivoice", "edge"], fail=["omnivoice"])
+main._ollama_loaded = lambda: []
+st = client.get("/tts/selftest").json()
+rows = {r["engine"]: r for r in st["results"]}
+ok("Motor tanısı: çalışan motor ✓, çöken motor gerçek hatayla ✗", rows["edge"]["ok"] and not rows["omnivoice"]["ok"] and "CUDA bellek" in rows["omnivoice"]["error"], str(rows)[:200])
+ok("Motor tanısı: kadın ve erkek ayrı denenir, süre bildirilir", rows["edge"]["f"]["ok"] and rows["edge"]["m"]["ok"] and "seconds" in rows["edge"])
+ok("Motor tanısı: ortam bilgisi (VRAM/Ollama/edge sürümü) döner", "vramFreeGb" in st["info"] and "ollamaLoaded" in st["info"] and "edge" in st["info"])
+one = client.get("/tts/selftest?engines=edge").json()
+ok("Motor tanısı: engines= ile yalnız seçilen motor denenir", [r["engine"] for r in one["results"]] == ["edge"])
 
 n = sum(results)
 print(f"\n{n}/{len(results)} sunucu kontrolü geçti")

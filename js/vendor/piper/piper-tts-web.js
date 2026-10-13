@@ -11,8 +11,9 @@ var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 var _createPiperPhonemize, _modelConfig, _ort, _ortSession, _progressCallback, _wasmPaths, _logger, _TtsSession_instances, predictChunk_fn;
 const HF_BASE = "https://huggingface.co/diffusionstudio/piper-voices/resolve/main";
-const ONNX_BASE = "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.18.0/";
-const WASM_BASE = "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize";
+// 0.6.0: onnxruntime ve fonemleştirici artık depodan sunulur (CDN'e bağlı değil, çevrimdışı çalışır, her açılışta ağ gerekmez)
+const ONNX_BASE = new URL("./", import.meta.url).href;
+const WASM_BASE = new URL("./piper_phonemize", import.meta.url).href;
 const PATH_MAP = {
   "ar_JO-kareem-low": "ar/ar_JO/kareem/low/ar_JO-kareem-low.onnx",
   "ar_JO-kareem-medium": "ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx",
@@ -271,7 +272,7 @@ const _TtsSession = class _TtsSession {
     this.waitReady = this.init();
     __privateSet(this, _wasmPaths, wasmPaths ?? DEFAULT_WASM_PATHS);
     (_a = __privateGet(this, _logger)) == null ? void 0 : _a.call(this, `Loaded WASMPaths at: ${JSON.stringify(__privateGet(this, _wasmPaths))}`);
-    _TtsSession._instance = this;
+    // 0.6.0: tek örnek (singleton) kaldırıldı: her ses kendi oturumunu tutar; aksi hâlde ikinci ses ilk sesin modelini kullanıyordu
     return this;
   }
   static async create(options) {
@@ -283,7 +284,7 @@ const _TtsSession = class _TtsSession {
     var _a, _b;
     const { createPiperPhonemize } = await import("./piper-o91UDS6e.js");
     __privateSet(this, _createPiperPhonemize, createPiperPhonemize);
-    const ortModule = await import("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/esm/ort.wasm.min.js");
+    const ortModule = await import(new URL("./ort.wasm.min.js", import.meta.url).href);
     const ort = ortModule.default || ortModule;
     __privateSet(this, _ort, ort);
     (_b = __privateGet(this, _logger)) == null ? void 0 : _b.call(

@@ -170,6 +170,12 @@ def form_field(raw, name):
     return m.group(1).decode("utf-8", "replace") if m else ""
 
 
+def form_file(raw):
+    """Çok parçalı gövdedeki ilk dosya parçasının ham baytları."""
+    m = re.search(rb'filename="[^"]*"\r\nContent-Type: [^\r]*\r\n\r\n(.*?)\r\n--', raw, re.S)
+    return m.group(1) if m else b""
+
+
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -190,7 +196,13 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         if p.startswith("/health"):
-            return self.send(200, {"ok": True, "version": "mock", "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None})
+            return self.send(200, {"ok": True, "version": "mock", "ffmpeg": True, "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None})
+        if p.startswith("/tts/selftest"):
+            return self.send(200, {"info": {"vramFreeGb": 3.1, "vramTotalGb": 24.0, "ollamaLoaded": ["qwen3.8:27b"], "edge": "7.2.8", "torch": "2.9.1+cu128", "cuda": True, "gpu": "NVIDIA GeForce RTX 5090 Laptop GPU", "capability": "sm_120"},
+                                   "results": [{"engine": "edge", "ok": True, "seconds": 1.2, "f": {"ok": True}, "m": {"ok": True}},
+                                               {"engine": "omnivoice", "ok": False, "seconds": 0.4, "error": "RuntimeError: CUDA out of memory", "hint": "VRAM yetmedi: Ollama modeli GPU belleğini tutuyor."}]})
+        if p == "/_video":
+            return self.send(200, ST.get("video", {}))
         if p == "/voices/presets":
             have = list(ST["voices"])
             return self.send(200, {"presets": [{"id": i, "label": l, "gender": g, "created": any(h == i or h.startswith(i + "-") for h in have)} for i, l, g in PRESETS], "motors": ["mock"]})
@@ -232,6 +244,17 @@ class H(http.server.BaseHTTPRequestHandler):
             n = form_field(raw, "name") or "ses"
             ST["voices"][n] = {"gender": form_field(raw, "gender") or "f", "label": form_field(raw, "label") or n, "source": "klon", "text": form_field(raw, "text") or None}
             return self.send(200, {"ok": True, "name": n, "textState": "otomatik"})
+        if p == "/video/start":  # sahte hızlı MP4: gelen ses ve kareleri sayar
+            ST["video"] = {"frames": 0, "batches": 0, "jpeg_ok": True, "audio": len(form_file(raw)), "fps": form_field(raw, "fps"), "w": form_field(raw, "width"), "h": form_field(raw, "height"), "finished": False}
+            return self.send(200, {"id": "mockvid"})
+        if p.startswith("/video/frames/"):
+            v = ST.setdefault("video", {})
+            v["batches"] = v.get("batches", 0) + 1; v["frames"] = v.get("frames", 0) + raw.count(b"\xff\xd8\xff")
+            v["jpeg_ok"] = v.get("jpeg_ok", True) and raw[:3] == b"\xff\xd8\xff"
+            return self.send(200, {"ok": True})
+        if p.startswith("/video/finish/"):
+            ST.setdefault("video", {})["finished"] = True
+            return self.send(200, b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2mp41" + b"\x00" * 64, "video/mp4")
         body = json.loads(raw or b"{}")
         if p == "/voices/design":
             pr = next((x for x in PRESETS if x[0] == body.get("preset")), None)

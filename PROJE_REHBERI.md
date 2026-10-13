@@ -62,15 +62,15 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 | Taranmış PDF | `js/ocr.js` (Tesseract, kaldığı yerden devam) |
 | Halüsinasyon denetimi | `js/verify.js`: `findQuote`, `supports`, `verifyItem`, `summarize` |
 
-## 5. Ses — `js/tts.js` (581 satır)
+## 5. Ses — `js/tts.js` (~650 satır)
 
 | İş | Yer |
 |---|---|
 | Motorlar, varsayılanlar, sıra | `ENGINES`, `VOICES`, `DEFAULTS`, `availableEngines`, `resolveEngine`, `femaleOK` |
 | Ses atama | `voicePool`, `assignVoices` |
-| Motor çağrıları | `geminiChunk`, `elevenChunk`, `minimaxLine`, `azureLine`, `googleLine`, `openaiLine`, `serverLine`, `piperLine` |
+| Motor çağrıları | `geminiChunk`, `elevenChunk`, `minimaxLine`, `azureLine`, `googleLine`, `openaiLine`, `fishLine` (+`fishFetch`, `listFishVoices`), `serverLine`, `piperLine` (+`preloadPiper`) |
 | Klonlama | `minimaxUpload`, `minimaxClone`, `minimaxDesign`, `recordVoice`, `toWav`, `uploadServerVoice` |
-| Üretim ve karıştırma | `synthesize` (geri düşme), `synthWith` (önbellek, eşzamanlılık, `onPiece`), `mixPieces`, `encodeWav` |
+| Üretim ve karıştırma | `synthesize` (önce kayıtlı karışım; `fresh` yeniden üretir), `textKey`, `savedMix`, `hasSavedMix`, `synthWith` (önbellek, eşzamanlılık, `onPiece`), `mixPieces`, `encodeWav` |
 | Tarayıcı sesi | `browserVoices`, `speakBrowser` (Türkçe ses yoksa konuşmaz) |
 | Türkçe okunuş | `js/textnorm.js`: `normalizeTR` |
 | Ayarlar arayüzü | `js/voice-settings.js` |
@@ -110,11 +110,18 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 - Görüntüleyiciler: `slides.js` (`.s-bg`, `.s-pic`), `infographic.js` (`.ip-hero`, `.ip-ic img`), `video.js` (`sceneImage` + `drawScene` paneli).
 - İçerik alanları: slayt/sahne `visual` + `imgKey`; infografik `heroVisual` + `heroKey`, kutu `visual` + `imgKey`.
 
+### 8d. 0.6.0: ses onarımı, kayıtlı podcast, Video v2
+- `server/main.py` (0.6.0): Pocket TTS Türkçe (`POCKETTR_VOICES`, `tts_pockettr`, motor `pockettr`, 6 hazır ses `/voices` başında), Edge 403 onarımı (`_edge_try_upgrade`), `vram_guard` (TTS öncesi Ollama'yı `keep_alive=0` ile boşaltır; `DEFTER_UNLOAD_OLLAMA=0` kapatır) + OOM yeniden deneme + `hint_for`, `GET /tts/selftest[?engines=a,b]` (Ayarlar › "Motorları sına").
+- Video: `POST /video/start` (ses+fps+boyut) → `POST /video/frames/{id}` (JPEG'ler) → `POST /video/finish/{id}` (MP4) ; `DELETE /video/{id}`; ffmpeg `imageio-ffmpeg`'ten ya da sistemden (`ffmpeg_exe`).
+- `js/studio/views/video.js`: `drawFrame` (geçiş `TRANSITION_SEC`), `wordPlan`/`wordCaption`/`drawCaption` (kelime altyazısı), hızlı MP4 döngüsü (`fastBtn`, 24 fps, 48'lik JPEG grupları).
+- `js/piper-worker.js`: ses başına kalıcı oturum; `js/vendor/piper/*`: ORT ve fonemleştirici yerel; `sw.js` `IMMUTABLE` önbellek-öncelikli.
+- Ayrıntı: `docs/SES_ALTYAPI.md`.
+
 ## 9. Testler ve teslim
 
 | İş | Yer |
 |---|---|
 | Sahte model + sahte sunucu | `tests/mock_llm.py`. Yeni istem → yeni anahtar ifade. |
-| Uçtan uca | `tests/e2e.py` (78 kontrol + 26 sunucu kontrolü) |
+| Uçtan uca | `tests/e2e.py` (95 kontrol) + `tests/server_test.py` (56) |
 | Teslim | `tools/teslim.sh` |
 | Elle test listesi | `docs/TEST_PLANI.md` |
