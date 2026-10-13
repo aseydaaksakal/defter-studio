@@ -258,6 +258,70 @@ def list_models():
     return out
 
 
+# ---------------------------------------------------------------- Dayanıklı indirme (alt süreç: takılırsa öldürülür, gerçek hata okunur, kaldığı yerden sürer)
+INDIR_DENEME = 4        # en çok bu kadar deneme (her seferinde kaldığı yerden)
+INDIR_DURGUN_SN = 120   # bu sürede diskte hiç büyüme yoksa takıldı say, öldür, yeniden dene
+_DL_KOD = ("import sys\nfrom huggingface_hub import snapshot_download\n"
+           "snapshot_download(repo_id=sys.argv[1])\n")
+
+
+def _dl_cmd(rid):
+    return [sys.executable, "-c", _DL_KOD, rid]
+
+
+def _dl_env(deneme):
+    env = dict(os.environ)
+    env["HF_HUB_DISABLE_XET"] = "1"                 # hf_xet Windows'ta takılıp 4 MB'ta kalabiliyor; klasik indirme güvenilir
+    env["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+    env["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+    env["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
+    env["HF_HUB_ETAG_TIMEOUT"] = "30"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def indir_hata_tr(ham):
+    t = (ham or "").lower()
+    if "no space" in t or "disk full" in t or "errno 28" in t:
+        return "Diskte yer kalmadı. Yer açıp yeniden deneyin."
+    if "401" in t or "403" in t or "gated" in t or "access to model" in t:
+        return "Bu model Hugging Face'te erişim onayı istiyor (giriş/izin gerekir)."
+    if "404" in t or "repository not found" in t or "entry not found" in t:
+        return "Hugging Face'te bu depo bulunamadı (taşınmış ya da silinmiş olabilir)."
+    if any(k in t for k in ("connection", "timeout", "timed out", "ssl", "proxy", "name resolution", "getaddrinfo", "network")):
+        return "Hugging Face'e bağlanılamadı (internet/güvenlik duvarı/VPN). Bağlantıyı denetleyip yeniden deneyin; indirme kaldığı yerden sürer."
+    if "no module named" in t:
+        return "huggingface_hub eksik: kur.bat'ı yeniden çalıştırın."
+    return "İndirme başarısız."
+
+
+def _indir_depo(model_id, rid, j):
+    import subprocess
+    son = ""
+    for deneme in range(1, INDIR_DENEME + 1):
+        j["msg"] = f"deneme {deneme}/{INDIR_DENEME}" if deneme > 1 else ""
+        proc = subprocess.Popen(_dl_cmd(rid), env=_dl_env(deneme), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+        out = []
+        threading.Thread(target=lambda: [out.append(x) for x in proc.stdout], daemon=True).start()
+        last, last_t = local_size(model_id), time.time()
+        while proc.poll() is None:
+            time.sleep(1)
+            now_size = local_size(model_id)
+            j["received"] = now_size
+            if now_size > last:
+                last, last_t = now_size, time.time()
+            elif time.time() - last_t > INDIR_DURGUN_SN:
+                proc.kill()
+                out.append("zaman aşımı: indirme takıldı (timeout)")
+                break
+        proc.wait()
+        if proc.returncode == 0:
+            return
+        son = " ".join("".join(out).split())[-300:]
+        time.sleep(min(2 * deneme, 6))
+    raise RuntimeError(f"{indir_hata_tr(son)} Ayrıntı: {son}")
+
+
 # ---------------------------------------------------------------- İndir / sil
 def start_download(model_id):
     if not entry(model_id):
@@ -272,22 +336,13 @@ def start_download(model_id):
         j = _jobs[model_id] = {"state": "kuyrukta", "received": local_size(model_id), "total": remote_size(model_id) or 0, "msg": ""}
 
     def run():
-        stop = threading.Event()
-
-        def watch():
-            while not stop.is_set():
-                j["received"] = local_size(model_id)
-                time.sleep(1)
-        threading.Thread(target=watch, daemon=True).start()
         try:
             j["state"] = "iniyor"
             for rid in _repos(model_id):
-                h.snapshot_download(repo_id=rid)
+                _indir_depo(model_id, rid, j)
             j.update(state="bitti", received=local_size(model_id), msg="")
         except Exception as e:
-            j.update(state="hata", msg=str(e)[:300])
-        finally:
-            stop.set()
+            j.update(state="hata", msg=str(e)[:400])
     threading.Thread(target=run, daemon=True).start()
     return j
 

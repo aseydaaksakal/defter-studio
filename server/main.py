@@ -39,6 +39,8 @@ import io
 import json
 import mimetypes
 import os
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # hf_xet Windows'ta takılabiliyor; klasik indirme
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 import re
 import shutil
 import random

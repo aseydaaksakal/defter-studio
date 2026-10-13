@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- Model indirme: alt süreç, XET kapalı, takılma tespiti, yeniden deneme, Türkçe hata
+
+## 2026-10-14 — teslim
 - /health motor denetimini beklemez (arka plan + kalıcı önbellek), sunucu.log, kur.bat 120 sn ve günlük gösterimi
 
 ## 2026-10-14 — teslim

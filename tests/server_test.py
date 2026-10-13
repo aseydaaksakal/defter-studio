@@ -732,6 +732,34 @@ ok("OmniVoice ile tasarlanmış ses varsa model çalışıyor sayılır (tam_haz
 os.remove(os.path.join(_vd, "kadin-genc.json")); modeller.kanit_yaz(_oid)
 ok("Başarılı üretim kaydı model hazırlığını kalıcı kılar", modeller.kanitli(_oid) and modeller.tam_hazir(_oid))
 
+# ---- Dayanıklı indirme: hata → yeniden dene, takılma → öldür, Türkçe hata
+import textwrap as _tw
+_mid = next(m["id"] for m in modeller.catalog())
+_sz = {"n": 0}
+_orig_ls, _orig_cmd, _orig_dur = modeller.local_size, modeller._dl_cmd, modeller.INDIR_DURGUN_SN
+modeller.local_size = lambda mid: _sz["n"]
+_state_f = os.path.join(tempfile.mkdtemp(), "st")
+def _bekle(j):
+    for _i in range(200):
+        if j["state"] in ("bitti", "hata"): return
+        _t.sleep(0.1)
+_flag = os.path.join(tempfile.mkdtemp(), "ilk")
+modeller._dl_cmd = lambda rid: [sys.executable, "-c", f"import os,sys\nf={_flag!r}\nif not os.path.exists(f):\n    open(f,'w').write('x'); print('ConnectionError: ag yok'); sys.exit(1)\nsys.exit(0)"]
+j = modeller.start_download(_mid); _bekle(j)
+ok("İndirme: ilk deneme ağ hatası verse de yeniden denenir ve biter", j["state"] == "bitti", str(j))
+modeller._jobs.pop(_mid, None)
+modeller.INDIR_DURGUN_SN = 2; modeller.INDIR_DENEME = 2
+modeller._dl_cmd = lambda rid: [sys.executable, "-c", "import time; time.sleep(60)"]
+_t0 = _t.time(); j = modeller.start_download(_mid); _bekle(j)
+ok("İndirme: boyut büyümüyorsa takıldı sayılıp öldürülür, süresiz beklemez", j["state"] == "hata" and _t.time() - _t0 < 15 and "bağlanılamadı" in j["msg"], j["msg"][:160])
+modeller._jobs.pop(_mid, None)
+modeller._dl_cmd = lambda rid: [sys.executable, "-c", "import sys; print('HfHubHTTPError: 403 Client Error gated repo'); sys.exit(1)"]
+j = modeller.start_download(_mid); _bekle(j)
+ok("İndirme: 403 gated → Türkçe 'erişim onayı' + ham ayrıntı", j["state"] == "hata" and "erişim onayı" in j["msg"] and "403" in j["msg"], j["msg"][:200])
+modeller._jobs.pop(_mid, None)
+modeller.local_size, modeller._dl_cmd, modeller.INDIR_DURGUN_SN, modeller.INDIR_DENEME = _orig_ls, _orig_cmd, _orig_dur, 4
+ok("İndirme alt sürecinde XET kapalı ve zaman aşımı ayarlı", modeller._dl_env(1)["HF_HUB_DISABLE_XET"] == "1" and modeller._dl_env(1)["HF_HUB_DOWNLOAD_TIMEOUT"] == "60")
+
 srv.shutdown()
 
 n = sum(results)

@@ -322,3 +322,8 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 ## 0.8.1c (2026-10-14) — kur.bat "Sunucu 90 sn içinde açılmadı"
 - **Kök neden:** `/health` ilk çağrıda motor denetimini (torch/omnivoice/voxcpm importları, Windows'ta soğuk açılışta dakikalarca) BEKLİYORDU; kur.bat'ın 2 sn'lik isteği hep zaman aşımına düştü. Hata ayrıntısı da boştu (günlük yoktu).
 - **Önlem:** `/health` asla beklemez: denetim arka planda, sonuç `server/veri/probe.json`'a yazılır (yeniden başlatmada anında), bekleyenler `tts.probing`; arayüz "kontrol ediliyor…" yazar. Sunucu çıktısı `server/sunucu.log`; kur.bat başarısızlıkta son 25 satırı gösterir, 120 sn bekler. Kural: sağlık ucu hiçbir zaman yavaş işe bağlanmaz.
+
+## 0.8.1d (2026-10-14) — Hugging Face model indirme "yarım 4 MB"da kalıyor
+- **Belirti:** Ses stüdyosu › Modeller: indirme başlamıyor/ilerlemiyor, kartlar "yarım · 4 MB", hata görünmüyor.
+- **Muhtemel kök neden (Windows'ta gerçek hata görülmedi):** `snapshot_download` sunucu iş parçacığında ve hf_xet ile çalışıyordu; takılınca ne öldürülebiliyor ne de hata okunabiliyordu.
+- **Önlem:** indirme alt süreçte (öldürülebilir), XET kapalı, 60 sn ağ zaman aşımı, 120 sn büyüme yoksa öldür + en çok 4 deneme (kaldığı yerden sürer), stderr'den Türkçe hata + ham ayrıntı kartta görünür. Gerçek ağda **denenmedi**; kullanıcıdan kart hata metni istenecek.
