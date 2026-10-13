@@ -58,5 +58,8 @@ git push -q origin main
 echo "✓ Teslim edildi: $(git log --oneline -1)"
 echo "  GitHub Pages 1-2 dakika içinde güncellenir."
 
-# 5) Bütün bağlantılar
-echo; echo "Bağlantılar:"; grep -oE 'https?://[^ |)]+' LINKLER.md | awk '!seen[$0]++' | sed 's/^/  /'
+# 5) Yerel = Pages eşitliği (Pages yayınlanana dek bekler)
+python3 tools/esitlik.py || echo "! Eşitlik doğrulanamadı (ağ ya da Pages gecikmesi); kanıtlanana dek 'bitti' deme."
+
+# 6) Bağlantı (yalnız kur.bat)
+echo; echo "Bağlantı:"; echo "  https://github.com/aseydaaksakal/defter-studio/raw/main/tools/kur.bat"

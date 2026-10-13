@@ -3,8 +3,9 @@
 //   Podcast karakterleri (Ayşe, Fatma, Hasan… adlı kadro, her birine ses) · Modeller (klonlayan / klonlamayan, Hugging Face).
 // Kütüphanedeki her ses bir referans kayıttır: OmniVoice, VoxCPM2 ve Chatterbox aynı kayıtla aynı sesi sürdürür; hazır sesler Pocket TR'dir.
 import { h, toast } from './ui.js';
-import { serverUrl, serverInfo } from './server.js';
-import { serverVoices, uploadServerVoice, deleteServerVoice, patchServerVoice, serverVoiceUrl, serverPresets, designServerVoice, testVoice, recordVoice, toWav } from './tts.js';
+import { serverUrl, serverInfo, engineStatus, engineName, REINSTALL_HINT, onServerChange } from './server.js';
+import { sampleButton, showError } from './cast.js';
+import { serverVoices, uploadServerVoice, deleteServerVoice, patchServerVoice, serverVoiceUrl, serverPresets, designServerVoice, recordVoice, toWav } from './tts.js';
 import { modelManager } from './model-manager.js';
 
 const NAMES = { f: ['Ayşe', 'Fatma', 'Elif', 'Zeynep', 'Selin', 'Defne', 'Deniz'], m: ['Hasan', 'Hüseyin', 'Kaan', 'Emre', 'Murat', 'Can', 'Mert'] };
@@ -72,7 +73,7 @@ export function voiceLibrary({ cfg, onChange = () => {} }) {
   }, 'btn primary small');
   const diagBtn = btn('Motorları sına', async () => {
     const base = await serverUrl(true);
-    if (!base) { diag.replaceChildren(h('p', {}, '✗ Lokal sunucu çalışmıyor.')); return; }
+    if (!base) { diag.replaceChildren(h('p', {}, "✗ Lokal sunucu çalışmıyor. tools\\kur.bat'ı çalıştırın.")); return; }
     diagBtn.disabled = true; diag.replaceChildren(h('p', { class: 'muted' }, 'Motorlar deneniyor (ilk denemede model yüklenir; birkaç dakika sürebilir)…'));
     try {
       const r = await fetch(base + '/tts/selftest', { signal: AbortSignal.timeout(900000) });
@@ -81,7 +82,8 @@ export function voiceLibrary({ cfg, onChange = () => {} }) {
       const env = [i.gpu ? `${i.gpu} (${i.capability || '?'})` : 'GPU yok/görünmüyor', i.torch ? 'torch ' + i.torch : 'torch kurulu değil', i.vramFreeGb != null ? `boş VRAM ${i.vramFreeGb}/${i.vramTotalGb} GB` : '',
         (i.ollamaLoaded || []).length ? 'Ollama VRAM\'de: ' + i.ollamaLoaded.join(', ') : '', i.edge ? 'edge-tts ' + i.edge : ''].filter(Boolean).join(' · ');
       diag.replaceChildren(h('p', { class: 'muted' }, env),
-        ...j.results.map((x) => h('p', {}, x.ok ? `✓ ${x.engine} — kadın + erkek çalışıyor (${x.seconds} sn)` : `✗ ${x.engine} — ${x.error}`, x.hint ? h('br') : '', x.hint ? h('i', {}, '→ ' + x.hint) : '')),
+        ...j.results.map((x) => h('p', { class: x.ok ? 'engine-ok' : 'mm-warn engine-bad' }, x.ok ? `✓ ${x.engine} — çalışıyor: kadın + erkek sesi üretildi (${x.seconds} sn)` : `✗ ${x.engine} — çalışmıyor: ${x.error}`, x.hint ? h('br') : '', x.hint ? h('i', {}, '→ ' + x.hint) : '', !x.ok ? h('br') : '', !x.ok ? h('i', {}, '→ ' + REINSTALL_HINT) : '')),
+        ...(j.results.some((x) => x.ok) ? [] : [h('p', { class: 'mm-warn' }, 'Hiçbir motor çalışmıyor: podcast ve ses üretimi şimdilik yapılamaz.')]),
         h('p', { class: 'muted' }, 'Hata varsa bu çıktıyı kopyalayıp Claude\'a gönderin.'));
     } catch (e) { diag.replaceChildren(h('p', {}, '✗ Tanı çalışmadı: ' + e.message)); } finally { diagBtn.disabled = false; }
   });
@@ -95,7 +97,7 @@ export function voiceLibrary({ cfg, onChange = () => {} }) {
       try {
         const u = await serverVoiceUrl(v.name);
         await playUrl(u);
-      } catch (e) { toast('Dinlenemedi: ' + e.message, 'error'); } finally { playB.disabled = false; playB.textContent = old; }
+      } catch (e) { showError(status, e, `Dinlenemedi (${v.label}): `); } finally { playB.disabled = false; playB.textContent = old; }
     }, 'btn primary small');
     playB.title = 'Dinle'; playB.setAttribute('aria-label', 'Dinle: ' + v.label);
     const txt = h('textarea', { class: 'input', rows: 3, hidden: true, placeholder: 'Kaydın tam metni. Klonu iyileştirir; boşsa otomatik çıkarılır.' }, v.text || '');
@@ -127,28 +129,49 @@ export function voiceLibrary({ cfg, onChange = () => {} }) {
   const nOut = h('div', { class: 'small', role: 'status' });
   const used = () => new Set(voices.map((v) => v.label));
   const nextName = (g) => { const u = used(); for (let k = 0; k < 3; k++) for (const n of NAMES[g]) { const l = k ? `${n} ${k + 1}` : n; if (![...u].some((x) => x === l || x.startsWith(l + ' ·'))) return l; } return NAMES[g][0] + ' ' + Date.now().toString(36).slice(-3); };
+  // Tasarım motoru yoksa/çalışmıyorsa düğmeler kapalıdır ve nedeni yazılır
+  let designReason = '';
+  const designBusy = { on: false };
+  const applyDesign = () => {
+    const st = engineStatus(serverInfo());
+    const ok = motors.some((m) => !st.known || st.run.includes(m));
+    designReason = !motors.length ? `Yeni ses tasarlamak için OmniVoice ya da VoxCPM2 motoru gerekir; ikisi de kurulu değil. ${REINSTALL_HINT}`
+      : !ok ? `Tasarım motoru çalışmıyor (${motors.map((m) => `${engineName(m)}: ${st.bad[m] || 'kurulu değil'}`).join('; ')}). ${REINSTALL_HINT}` : '';
+    for (const b of [bF, bM, dBtn]) b.disabled = !!designReason || designBusy.on;
+    dWhy.textContent = designReason; dWhy.hidden = !designReason;
+  };
+  let designCtl = null;
+  const cancelB = btn('İptal', () => designCtl?.abort(), 'btn ghost small'); cancelB.hidden = true;
+  // Tasarım: 3 dk zaman aşımı, İptal düğmesi, sade hata; başarılıysa liste hemen yenilenir ve ses çalar
+  async function design(spec, doneMsg, what) {
+    designCtl = new AbortController(); designBusy.on = true; cancelB.hidden = false; applyDesign();
+    const t0 = Date.now(), tick = setInterval(() => (nOut.textContent = `${what} tasarlanıyor… ${Math.round((Date.now() - t0) / 1000)} sn (GPU modeli ilk seferde yükler, 1-2 dakika sürebilir; 3 dakikada zaman aşımı)`), 1000);
+    nOut.textContent = `${what} tasarlanıyor…`;
+    try {
+      const r = await designServerVoice(spec, designCtl.signal);
+      clearInterval(tick);
+      await refresh(); // yeni ses listede hemen görünür
+      nOut.textContent = doneMsg(r);
+      try { await playUrl(await serverVoiceUrl(r.name)); } catch (e) { showError(nOut, e, `✓ Eklendi ama çalınamadı: `); }
+    } catch (e) { showError(nOut, e); } finally { clearInterval(tick); designCtl = null; designBusy.on = false; cancelB.hidden = true; applyDesign(); }
+  }
   async function newVoice(g) {
-    if (!motors.length) { nOut.textContent = 'Yeni ses tasarlamak için bir tasarım motoru gerekir (OmniVoice ya da Trendyol-TTS/VoxCPM2). Şimdilik hazır sesleri kullanın ya da kendi sesinizi klonlayın.'; return; }
+    if (designReason) { nOut.textContent = designReason; return; }
     const tried = new Set(voices.map((v) => v.instruct).filter(Boolean));
     let a, p, instruct;
     for (let k = 0; k < 12; k++) { a = AGES[Math.floor(Math.random() * AGES.length)]; p = PITCH[Math.floor(Math.random() * PITCH.length)]; instruct = `${g === 'f' ? 'female' : 'male'}, ${a[0]}, ${p[0]}`; if (!tried.has(instruct)) break; }
     const nm = nextName(g);
     const label = `${nm} · ${a[1]}, ${p[1]}`;
     const desc = `${a[2]} ${g === 'f' ? 'woman' : 'man'}, ${a[3]} and ${p[2]} voice`;
-    nOut.textContent = `${G(g)} sesi tasarlanıyor… (GPU modeli ilk seferde yükler, 1-2 dakika sürebilir)`;
-    for (const b of [bF, bM]) b.disabled = true;
-    try {
-      const r = await designServerVoice({ gender: g, instruct, desc, name: slug(nm) + '-' + Math.random().toString(36).slice(2, 5), label, motor: mSel.value || undefined });
-      await refresh(); playUrl(await serverVoiceUrl(r.name)).catch(() => {});
-      nOut.textContent = `✓ "${label}" eklendi ve çalıyor. Beğenmediyseniz Sil'e basıp yeni bir tane üretin: her tasarım farklı çıkar.`;
-    } catch (e) { nOut.textContent = '✗ ' + e.message; } finally { for (const b of [bF, bM]) b.disabled = false; }
+    await design({ gender: g, instruct, desc, name: slug(nm) + '-' + Math.random().toString(36).slice(2, 5), label, motor: mSel.value || undefined },
+      () => `✓ "${label}" eklendi ve çalıyor. Beğenmediyseniz Sil'e basıp yeni bir tane üretin: her tasarım farklı çıkar.`, `${G(g)} sesi`);
   }
   const bF = btn('+ Yeni kadın sesi üret', () => newVoice('f'), 'btn primary'), bM = btn('+ Yeni erkek sesi üret', () => newVoice('m'), 'btn primary');
+  const dWhy = h('p', { class: 'small mm-warn design-why', hidden: true, role: 'status' });
   const pSel = h('select', { class: 'input' }), mSel = h('select', { class: 'input' });
   const dBtn = btn('Bu tarifi tasarla', async () => {
-    const p = presets.find((x) => x.id === pSel.value); if (!p) return;
-    dBtn.disabled = true; nOut.textContent = 'Tasarlanıyor…';
-    try { const r = await designServerVoice({ preset: p.id, motor: mSel.value || undefined }); await refresh(); playUrl(await serverVoiceUrl(r.name)).catch(() => {}); nOut.textContent = `✓ "${r.name}" eklendi (${r.motor}).`; } catch (e) { nOut.textContent = '✗ ' + e.message; } finally { dBtn.disabled = false; }
+    const p = presets.find((x) => x.id === pSel.value); if (!p || designReason) return;
+    await design({ preset: p.id, motor: mSel.value || undefined }, (r) => `✓ "${r.name}" eklendi (${r.motor}) ve çalıyor.`, 'Tarif');
   });
 
   // ---------- Kendi sesimi klonla (ücretsiz, bilgisayarda)
@@ -182,10 +205,7 @@ export function voiceLibrary({ cfg, onChange = () => {} }) {
       const gender = h('select', { class: 'input small-in' }, opt('f', 'Kadın', c.gender !== 'm'), opt('m', 'Erkek', c.gender === 'm'));
       voice.onchange = () => { c.voice = voice.value; onChange(); };
       gender.onchange = () => { c.gender = gender.value; if (c.voice && !voices.some((v) => v.name === c.voice && v.gender === c.gender)) c.voice = ''; onChange(); renderCast(); };
-      const hear = btn('▶', async () => {
-        hear.disabled = true;
-        try { const b = await testVoice(c.voice || (c.gender === 'm' ? 'm' : 'f'), c.gender, `Merhaba, ben ${c.name || 'konuşmacı'}. Bugün sizinle önemli bir konuyu konuşacağız.`); await playUrl(URL.createObjectURL(b)); } catch (e) { toast('Dinlenemedi: ' + e.message, 'error'); } finally { hear.disabled = false; }
-      }, 'btn primary small');
+      const hear = sampleButton({ get: () => ({ voice: c.voice, gender: c.gender, name: c.name }), onError: (e) => showError(status, e, `Dinlenemedi (${c.name}): `) });
       hear.title = 'Bu karakterin sesini dinle';
       return h('div', { class: 'row gap wrap cast-row' }, h('b', { class: 'cast-i' }, 'ABCDEF'[i]), name, gender, voice, hear, btn('Çıkar', () => { cfg.cast.splice(i, 1); onChange(); renderCast(); }));
     }));
@@ -211,7 +231,7 @@ export function voiceLibrary({ cfg, onChange = () => {} }) {
     h('div', { class: 'row gap wrap' }, kurBtn, diagBtn, kurOut), diag,
     h('div', { class: 'stack' }, libTitle, list),
     h('div', { class: 'stack' }, head('Yeni ses', 'Tek tıkla yeni bir kadın ya da erkek sesi tasarlanır (RTX GPU\'nuzda, ücretsiz). Hazır sesler Pocket TR\'dir.'),
-      h('div', { class: 'row gap wrap' }, bF, bM), nOut,
+      h('div', { class: 'row gap wrap' }, bF, bM, cancelB), dWhy, nOut,
       sec('Tarifle tasarla (gelişmiş)', false, h('div', { class: 'row gap wrap' }, pSel, mSel, dBtn))),
     h('div', { class: 'stack' }, head('Kendi sesimi klonla', 'Ücretsiz ve sınırsız: kayıt yalnız bilgisayarınızda, GPU\'nuzla işlenir; hiçbir buluta gitmez. Klonlanan ses kütüphaneye girer ve her yerde seçilebilir.'),
       input.el, h('div', { class: 'row gap wrap' }, cName, cGender), cText,
@@ -224,26 +244,40 @@ export function voiceLibrary({ cfg, onChange = () => {} }) {
     narr.replaceChildren(opt('', 'Otomatik', !cfg.narratorVoice), ...voices.map((v) => opt(v.name, `${v.label} · ${G(v.gender)}`, v.name === cfg.narratorVoice?.name)));
     pSel.replaceChildren(...presets.map((p) => opt(p.id, (p.created ? '✓ ' : '') + p.label)));
     mSel.replaceChildren(...(motors.length > 1 ? motors.map((m) => opt(m, { omnivoice: 'OmniVoice ile', voxcpm: 'VoxCPM2 ile' }[m] || m)) : motors.length ? [opt(motors[0], motors[0])] : [opt('', 'Tasarım motoru yok')]));
-    dBtn.disabled = bF.disabled = bM.disabled = !motors.length;
+    applyDesign();
   }
 
+  // Üstteki durum satırı: sunucu + her motorun GERÇEK durumu (çalışıyor / paket var ama hata / kurulu değil)
+  function paintStatus() {
+    const i = serverInfo(), s = engineStatus(i), t = i?.tts || {};
+    const head = s.run.length ? `✓ Sunucu çalışıyor · çalışan motorlar: ${s.run.join(', ')}` : 'Sunucu çalışıyor · ama çalışan ses motoru yok';
+    const bad = Object.entries(s.bad);
+    status.replaceChildren(
+      h('div', { class: s.run.length ? '' : 'mm-warn' }, head + (s.run.length && !t.design?.length ? ' · yeni ses tasarlamak için OmniVoice kurun' : '')),
+      s.known ? h('div', { class: 'row gap wrap engines' },
+        ...s.run.map((e) => h('span', { class: 'chip ok-chip small', 'data-engine': e }, `✓ ${engineName(e)} çalışıyor`)),
+        ...bad.map(([e, m]) => h('span', { class: 'chip warn small engine-bad', 'data-engine': e}, `✗ ${engineName(e)}: ${m}`)),
+        ...s.off.map((e) => h('span', { class: 'chip ghosty small', 'data-engine': e }, `${engineName(e)} kurulu değil`))) : null,
+      bad.length ? h('div', { class: 'small muted' }, `Paketi var ama çalışmayan motorlar için ${REINSTALL_HINT}`) : null);
+  }
+  const offChange = onServerChange(() => el.isConnected && refresh());
   async function refresh() {
     const u = await serverUrl(true);
     if (!u) {
-      status.textContent = 'Bilgisayarınızdaki sunucuya bağlanılamadı. Ayarlar › Bilgisayarım bölümünden bağlanın (kurulum: tek seferlik kur.bat).';
+      status.textContent = "Bilgisayarınızdaki sunucuya bağlanılamadı. Ayarlar › Bilgisayarım bölümünden bağlanın (kurulum: tools\\kur.bat'ı çalıştırın).";
       list.replaceChildren(h('p', { class: 'muted small' }, 'Sunucu açıkken sesleriniz burada görünür.')); kurBtn.hidden = true; return;
     }
     const i = serverInfo(), t = i?.tts || {};
     kurBtn.hidden = !!t.pocketTr;
-    status.textContent = `✓ Sunucu çalışıyor · motorlar: ${(t.engines || []).filter((e) => e !== 'piper').join(', ') || '—'}${t.design?.length ? '' : ' · yeni ses tasarlamak için OmniVoice kurun'}`;
+    paintStatus();
     try {
       voices = await serverVoices();
       const p = await serverPresets(); presets = p.presets; motors = p.motors;
-    } catch (e) { status.textContent += ' · ' + e.message; }
+    } catch (e) { status.append(' · ' + e.message); }
     libTitle.textContent = `Seslerim (${voices.length})`;
     list.replaceChildren(...(voices.length ? voices.map(voiceRow) : [h('p', { class: 'muted small' }, 'Henüz ses yok. “Pocket TR kur” ile 6 hazır ses ekleyin, “Yeni ses” ile tasarlayın ya da kendi sesinizi klonlayın.')]));
     fillSelects(); renderCast();
     if (voices.some((v) => v.textState === 'bekliyor')) setTimeout(() => el.isConnected && refresh(), 4000);
   }
-  return { el, refresh, stop };
+  return { el, refresh, stop: () => { stop(); offChange(); } };
 }

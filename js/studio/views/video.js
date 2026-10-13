@@ -317,7 +317,7 @@ export function render(root, art, api) {
   async function syncFast() { fastBtn.hidden = !(await fastReady().catch(() => false)); fastBtn.disabled = !audioBlob || !!recording; }
   fastBtn.onclick = async () => {
     if (recording || !audioBlob || !timings) return;
-    const base = await serverUrl(); if (!base) return toast('Hızlı MP4 için lokal sunucu gerekir (server\\baslat.bat).', 'error', 6000);
+    const base = await serverUrl(); if (!base) return toast('Hızlı MP4 için lokal sunucu gerekir. tools\\kur.bat’ı çalıştırın.', 'error', 6000);
     fastBtn.disabled = dlBtn.disabled = true; playing = false; audio?.pause(); setIcon();
     let id = null;
     try {

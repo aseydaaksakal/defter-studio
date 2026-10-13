@@ -3,7 +3,7 @@ import hashlib, json, os, re
 
 KOK = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KABUK = {"server/baslat.bat", "server/baslat.sh", "server/gizli-baslat.vbs"}
-DISLA = {"server/manifest.json", "tools/kur.bat"}  # kur.bat kullanıcının indirdiği dosyadır, kendini ezmez
+DISLA = {"server/manifest.json", "server/.guncel.json", "tools/kur.bat"}  # kur.bat kullanıcının indirdiği dosyadır, kendini ezmez; .guncel.json yerel durumdur
 
 
 def dosyalar():

@@ -61,6 +61,8 @@ def fake_piper(text, gender, lang):
 
 
 main._gpu_synth = fake_gpu
+ORIG_PROBE = main._probe_run
+main._probe_run = lambda mod: None  # testte alt süreç import denemesi yapılmaz (aşağıdaki "gerçek yüklenebilirlik" bölümü ayrıca sınar)
 main.tts_edge = fake_edge
 main.tts_piper = fake_piper
 main.ref_for = lambda gender, voice=None: REFS.get(gender)
@@ -360,6 +362,7 @@ ok("Motor tanısı: engines= ile yalnız seçilen motor denenir", [r["engine"] f
 # ---- Kendini güncelleme (0.7.0): yalnız değişenler indirilir, bozuk/güvensiz dosya yazılmaz
 import hashlib, http.server, json as _json, threading as _th  # noqa: E402
 import guncelle  # noqa: E402
+ORIG_UYGULA = guncelle.uygula
 
 site = tempfile.mkdtemp(); root = tempfile.mkdtemp(); sayac = []
 
@@ -473,9 +476,9 @@ _mf = json.load(open(os.path.join(os.path.dirname(SERVER), "server", "manifest.j
 ok("Manifest: uygulama dosyaları (index.html, js/, css/) 'app' grubunda", "index.html" in _mf.get("app", {}) and any(k.startswith("js/") for k in _mf.get("app", {})) and not any(k.startswith("js/") for k in _mf.get("files", {})))
 with tempfile.TemporaryDirectory() as _r:
     _m = {"version": "x", "files": {}, "app": {"js/a.js": "0" * 64}, "kabuk": {}}
-    ok("Güncelleyici: index.html yoksa (kur.bat kurulumu) uygulama dosyaları eşitlenmez", main.guncelle.plan(_m, _r)["degisen"] == [])
+    ok("Güncelleyici: index.html olmasa da (kur.bat kurulumu) uygulama dosyaları HER ZAMAN eşitlenir", main.guncelle.plan(_m, _r)["degisen"] == ["js/a.js"])
     open(os.path.join(_r, "index.html"), "w").write("x")
-    ok("Güncelleyici: index.html varsa (zip/depo kopyası) uygulama dosyaları eşitlenir", main.guncelle.plan(_m, _r)["degisen"] == ["js/a.js"])
+    ok("Güncelleyici: index.html varsa da uygulama dosyaları eşitlenir", main.guncelle.plan(_m, _r)["degisen"] == ["js/a.js"])
 ok("Güncelleyici: kök dosyalar izinli, üst dizin ve mutlak yol reddedilir", main.guncelle.guvenli("index.html") and not main.guncelle.guvenli("../index.html") and not main.guncelle.guvenli("/etc/passwd"))
 
 # ---- 0.8.0: eğitim veri seti hazırlayıcı (sahte döküm; ffmpeg gerekir)
@@ -494,6 +497,211 @@ if shutil.which("ffmpeg"):
         _rows = _vs.hazirla([_src], os.path.join(_d, "o"), dokum_fn=lambda w: [(0, 4, "Ee, birinci"), (4.2, 7, "ikinci"), (8, 11, "üçüncü")])
         _w = wave.open(os.path.join(_d, "o", "wavs", "00001.wav"))
         ok("Veri seti: 24 kHz mono parçalar + metadata.csv üretilir", len(_rows) == 2 and _w.getframerate() == 24000 and _w.getnchannels() == 1 and os.path.exists(os.path.join(_d, "o", "metadata.csv")))
+
+# ================================================================ 0.8.1: kur.bat tek bat, eşitlik, gerçek motor denetimi, /cast, hazır eşiği
+ROOT = os.path.dirname(SERVER)
+TOOLS = os.path.join(ROOT, "tools")
+kur = open(os.path.join(TOOLS, "kur.bat"), "rb").read()
+kurt = kur.decode("ascii")
+bats = [os.path.join(dp, f) for dp, _, fs in os.walk(ROOT) for f in fs if f.endswith(".bat") and ".git" not in dp and ".venv" not in dp]
+ok("Bat dosyaları: hepsi CRLF (çıplak LF yok)", all(b"\n" not in open(b, "rb").read().replace(b"\r\n", b"") for b in bats), str(len(bats)))
+ok("kur.bat: yalnız ASCII", all(c < 128 for c in kur))
+ok("kur.bat: 8765'i PowerShell ile kapatır (Get-NetTCPConnection + Stop-Process)", "Get-NetTCPConnection -LocalPort %PORT%" in kurt and "Stop-Process" in kurt and 'set "PORT=8765"' in kurt)
+ok("kur.bat: tarayıcıda YEREL adresi açar, Pages'i açmaz", 'set "YEREL=http://localhost:%PORT%/"' in kurt and 'start "" "%YEREL%"' in kurt and 'start "" "%SITE%' not in kurt and "?bagla=1" not in kurt)
+ok("kur.bat: dosyaları her çalışmada eşitler (--sync --kabuk) ve sonunda --dogrula çalıştırır", "guncelle.py\" --sync --kabuk --nopip" in kurt and "--dogrula" in kurt and "SONUC: localhost" in kurt)
+ok("kur.bat: /health bekler, sunucuyu gizli başlatıcıyla açar", "/health" in kurt.replace("health'", "/health'") or "%YEREL%health" in kurt)
+ok("kur.bat: eski sunucu, dosya eşitlemeden ÖNCE kapatılır (çalışan baslat.bat ezilmesin)", kurt.index("call :portkapat") < kurt.index("--sync --kabuk"))
+ok("kur.bat: hata adımı yazılır (ADIM + :hata)", kurt.count('set "ADIM=') >= 8 and "adiminda sorun cikti" in kurt)
+ilk = kurt.index(":ilksorular\r\necho")
+chs = [m.start() for m in re.finditer(r"choice /c", kurt)] if (re := __import__("re")) else []
+gpu_ch = [i for i in chs if "GPU sesleri" in kurt[i:i + 140]]
+ok("kur.bat: choice yalnız ilk kurulumda (Pocket + otomatik başlatma :ilksorular altında, GPU sorusu ILK=1 bloğunda)",
+   len(chs) == 4 and sum(1 for i in chs if ilk < i < kurt.index('\r\n:portkapat')) == 2 and len(gpu_ch) == 1 and 'if "%ILK%"=="1" (' in kurt[gpu_ch[0] - 40:gpu_ch[0]] and 'if "%ILK%"=="1" goto :ilksorular' in kurt,
+   f"{len(chs)} choice")
+ok("kur.bat: NVIDIA varsa torch bozuksa kur-gpu otomatik (soru yok), yoksa atlanır", "nvidia-smi" in kurt and "torch-denetim.py" in kurt and 'call "%HEDEF%\\tools\\kur-gpu.bat" /otomatik' in kurt and "otomatik onarim" in kurt)
+ok("kur.bat: eski Downloads kopyası için uyarı (silmez)", "Downloads\\defter-studio*" in kurt and "artik kullanmayin" in kurt and "rmdir" not in kurt.lower() and "del " not in kurt.lower())
+gpu = open(os.path.join(TOOLS, "kur-gpu.bat"), "rb").read().decode("ascii")
+iu, ie, ip = gpu.index("pip uninstall -y torch torchaudio torchvision"), gpu.index("install --upgrade omnivoice pocket-tts"), gpu.rindex('install "torch>=2.7" "torchaudio>=2.7"')
+ok("kur-gpu.bat: torch ailesi önce tamamen kaldırılır, omnivoice/pocket-tts önce, torch+torchaudio EN SON tek komutla cu128'den",
+   iu < ie < ip and "download.pytorch.org/whl/cu128" in gpu[ip:ip + 160] and "--force-reinstall" not in gpu and "--no-deps" not in gpu and gpu.count('"torchaudio>=2.7"') == 1)
+ok("kur-gpu.bat: bitişte sürüm/CUDA doğrulaması başarısızsa net hata", gpu.index('"%PY%" "%DEN%"') > ip and 'if errorlevel 1 goto :hata' in gpu[gpu.index('"%PY%" "%DEN%"'):][:80] and "KURULUM HATASI" in gpu)
+import py_compile  # noqa: E402
+py_compile.compile(os.path.join(TOOLS, "torch-denetim.py"), doraise=True); py_compile.compile(os.path.join(TOOLS, "esitlik.py"), doraise=True)
+ok("torch-denetim.py: Windows'ta SetErrorMode ve çıkış kodları (3/4/5)", "SetErrorMode(0x8003)" in open(os.path.join(TOOLS, "torch-denetim.py")).read() and "sys.exit(4)" in open(os.path.join(TOOLS, "torch-denetim.py")).read())
+msrc = open(os.path.join(SERVER, "main.py"), encoding="utf-8").read()
+ok("main.py: SetErrorMode(0x8003) diğer importlardan önce", 0 < msrc.index("SetErrorMode(0x8003)") < msrc.index("import asyncio") < msrc.index("from fastapi"))
+um = open(os.path.join(TOOLS, "uret-manifest.py"), encoding="utf-8").read()
+ok("uret-manifest: server/.guncel.json manifest dışı (DISLA)", '"server/.guncel.json"' in um.split("DISLA", 1)[1].split("\n", 1)[0] and ".guncel.json" not in _json.dumps(gm["files"]))
+ok("Manifest: esitlik.py ve torch-denetim.py dağıtılır", "tools/esitlik.py" in gm["files"] and "tools/torch-denetim.py" in gm["files"])
+
+# ---- guncelle --dogrula
+guncelle.uygula = ORIG_UYGULA
+import io, contextlib  # noqa: E402
+droot = tempfile.mkdtemp()
+dm = site_yaz({"server/main.py": b'VERSION = "1.2.3"\n', "tools/c.bat": b"@echo off\r\n"}, {"app": {"index.html": hashlib.sha256(b"<html>").hexdigest(), "js/a.js": hashlib.sha256(b"a=1").hexdigest()}})
+for _y, _v in (("index.html", b"<html>"), ("js/a.js", b"a=1")):
+    open(os.path.join(site, *_y.split("/")), "wb") if os.makedirs(os.path.dirname(os.path.join(site, *_y.split("/"))), exist_ok=True) is None else None
+    open(os.path.join(site, *_y.split("/")), "wb").write(_v)
+rr = guncelle.uygula(dm, droot, BASE, log=lambda *a: None)
+ok("Güncelle: kök dizinde index.html olmasa da uygulama dosyaları indirilir", os.path.exists(os.path.join(droot, "index.html")) and os.path.exists(os.path.join(droot, "js", "a.js")) and not rr["hatalar"], str(rr))
+ok("Güncelle: yerel manifest kopyası yazılır, durum dosyası manifestte yok", guncelle.yerel_surum(droot) == "1.2.3" and not any(".guncel" in k for g in ("files", "app", "kabuk") for k in dm.get(g, {})))
+
+
+def calistir(argv):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = guncelle.main(argv)
+    return rc, buf.getvalue()
+
+
+rc, out = calistir(["--dogrula", "--root", droot, "--base", BASE])
+ok("--dogrula: her şey eşitse 0 ve 'EŞİT'", rc == 0 and "EŞİT:" in out, out[:120])
+open(os.path.join(droot, "js", "a.js"), "w").write("a=2"); os.remove(os.path.join(droot, "tools", "c.bat"))
+rc, out = calistir(["--dogrula", "--root", droot, "--base", BASE])
+ok("--dogrula: fark varsa liste + çıkış 1", rc == 1 and "farklı: js/a.js" in out and "eksik: tools/c.bat" in out, out[:200])
+open(os.path.join(droot, "server", "manifest.json"), "w").write(_json.dumps({"version": "0.0.1"}))
+rc, out = calistir(["--dogrula", "--root", droot, "--base", BASE])
+ok("--dogrula: sürüm farkı da bildirilir", rc == 1 and "sürüm: yerel 0.0.1 ≠ Pages 1.2.3" in out, out[:200])
+rc, out = calistir(["--dogrula", "--root", droot, "--base", "http://127.0.0.1:9/"])
+ok("--dogrula: ağ yoksa çıkış 2 ve anlaşılır mesaj", rc == 2 and "ulaşılamadı" in out, out[:120])
+
+# ---- tools/esitlik.py
+_sp = importlib.util.spec_from_file_location("esitlik", os.path.join(TOOLS, "esitlik.py"))
+esit = importlib.util.module_from_spec(_sp); _sp.loader.exec_module(esit)
+ekok = tempfile.mkdtemp(); esite = tempfile.mkdtemp()
+efiles = {"server/main.py": b'VERSION = "9"\n', "tools/x.bat": b"@echo off\r\n", "index.html": b"<html>", "js/a.js": b"a=1"}
+for _y, _v in efiles.items():
+    for _b in (ekok, esite):
+        os.makedirs(os.path.dirname(os.path.join(_b, *_y.split("/"))), exist_ok=True); open(os.path.join(_b, *_y.split("/")), "wb").write(_v)
+_man = {"version": "9", "files": {"server/main.py": hashlib.sha256(efiles["server/main.py"]).hexdigest(), "tools/x.bat": hashlib.sha256(efiles["tools/x.bat"]).hexdigest()}, "kabuk": {},
+        "app": {k: hashlib.sha256(efiles[k]).hexdigest() for k in ("index.html", "js/a.js")}}
+for _b in (ekok, esite):
+    open(os.path.join(_b, "server", "manifest.json"), "w").write(_json.dumps(_man))
+
+
+class _EH(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k): super().__init__(*a, directory=esite, **k)
+    def log_message(self, *a): pass
+
+
+esrv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _EH); _th.Thread(target=esrv.serve_forever, daemon=True).start()
+EB = f"http://127.0.0.1:{esrv.server_port}/"
+
+
+def esit_run(base, bekle="0"):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = esit.main(["--bekle", bekle, "--base", base], kok=ekok, aralik=0.1)
+    return rc, buf.getvalue()
+
+
+rc, out = esit_run(EB)
+ok("esitlik.py: manifest + her dosya Pages ile aynıysa 0 ve 'EŞİT (4 dosya)'", rc == 0 and "EŞİT (4 dosya)" in out, out[:160])
+open(os.path.join(ekok, "js", "a.js"), "wb").write(b"a=2")
+rc, out = esit_run(EB)
+ok("esitlik.py: bir dosya farklıysa fark listesi ve çıkış 1", rc == 1 and "farklı: js/a.js" in out and "EŞİT DEĞİL" in out, out[:160])
+open(os.path.join(ekok, "js", "a.js"), "wb").write(b"a=1")
+os.remove(os.path.join(esite, "tools", "x.bat"))
+rc, out = esit_run(EB)
+ok("esitlik.py: Pages'te eksik dosya fark sayılır (1)", rc == 1 and "Pages'te yok" in out and "tools/x.bat" in out, out[:160])
+rc, out = esit_run("http://127.0.0.1:9/")
+ok("esitlik.py: ağ yoksa anlaşılır mesajla 2", rc == 2 and "ulaşılamadı" in out, out[:120])
+_man2 = dict(_man, version="10")
+open(os.path.join(esite, "server", "manifest.json"), "w").write(_json.dumps(_man2))
+import time as _t  # noqa: E402
+_t0 = _t.time(); rc, out = esit_run(EB, "1")
+ok("esitlik.py: manifest eşit olmazsa süre dolana dek yoklar, sonra 1", rc == 1 and _t.time() - _t0 >= 0.9 and "Pages sürümü 10" in out, out[:200])
+esrv.shutdown()
+
+# ---- Gerçek yüklenebilirlik: /health engines yalnız import edilebilenler
+ok("Alt süreç denetimi: var olan modül None, olmayan modül ModuleNotFoundError", ORIG_PROBE("json") is None and "ModuleNotFoundError" in (ORIG_PROBE("yok_boyle_modul_xyz") or ""))
+DLL = "OSError: [WinError 127] Belirtilen yordam bulunamadı. Error loading \"C:\\\\x\\\\torch\\\\lib\\\\c10_cuda.dll\" or one of its dependencies."
+probe_calls = []
+main._probe_run = lambda mod: (probe_calls.append(mod), DLL if mod == "omnivoice" else None)[1]
+_inst = main.tts_installed
+main.tts_installed = lambda: ["pockettr", "omnivoice", "edge", "piper"]
+main.tts_engines = ORIG_ENGINES; main.probe_reset(); main.TTS_PREF = "auto"
+h = client.get("/health").json()["tts"]
+ok("/health: engines yalnız gerçekten import edilebilenler (omnivoice DLL hatası → yok)", h["engines"] == ["pockettr", "edge", "piper"], str(h["engines"]))
+ok("/health: installed paketi diskte olanların hepsi", h["installed"] == ["pockettr", "omnivoice", "edge", "piper"], str(h["installed"]))
+er = h["engineErrors"]
+ok("/health: engineErrors {motor: kısa Türkçe ipucu ≤160, kur.bat}", list(er) == ["omnivoice"] and len(er["omnivoice"]) <= 160 and "kur.bat" in er["omnivoice"] and "c10_cuda" not in er["omnivoice"], str(er))
+n0 = len(probe_calls); client.get("/health"); client.get("/health")
+ok("Denetim sonucu önbelleğe alınır (tekrar /health alt süreç açmaz)", len(probe_calls) == n0 and sorted(set(probe_calls)) == ["edge_tts", "omnivoice", "piper", "pocket_tts_turkish"], str(probe_calls))
+main._probe_cache["omnivoice"] = (0, DLL)  # TTL doldu: eski sonuç hemen döner, arka planda tazelenir
+main._probe_run = lambda mod: None
+_ = main.engine_errors(); main._probe_bg["busy"] and _th.Event().wait(0.5)
+for _i in range(30):
+    if not main._probe_bg["busy"]: break
+    _t.sleep(0.1)
+ok("TTL: bayat hata arka planda yeniden denenir, düzelince engines'e girer", "omnivoice" in main.tts_engines() and main.engine_errors() == {}, str(main.tts_engines()))
+main._probe_run = lambda mod: DLL if mod == "omnivoice" else None; main.probe_reset()
+r = tts(engine="omnivoice")
+ok("/tts: çalışmayan kilitli motor 503 + Türkçe neden (ham DLL metni yok)", r.status_code == 503 and "kur.bat" in r.text and "c10_cuda" not in r.text and "WinError" not in r.text, r.text[:200])
+# ses tasarla: motor yok → 503 Türkçe; motor çöker → ham metin sızmaz; zaman aşımı → takılmaz
+main.tts_installed = lambda: ["omnivoice"]
+r = client.post("/voices/design", json={"preset": "kadin-sicak"} if any(p["id"] == "kadin-sicak" for p in main.PRESETS) else {"preset": main.PRESETS[0]["id"]})
+ok("/voices/design: motor çalışmıyorsa hemen 503, Türkçe ve ham DLL yok", r.status_code == 503 and "tasarlanamıyor" in r.text and "c10_cuda" not in r.text and "WinError" not in r.text, r.text[:200])
+main._probe_run = lambda mod: None; main.probe_reset()
+_old_omni, _old_vd = main._omni, main.VOICES_DIR
+main.VOICES_DIR = tempfile.mkdtemp()
+main._omni = lambda: (_ for _ in ()).throw(OSError("[WinError 127] torch_cuda.dll bulunamadı"))
+r = client.post("/voices/design", json={"preset": main.PRESETS[0]["id"]})
+ok("/voices/design: motor DLL hatasıyla çökerse 503 + Türkçe ipucu (ham metin yok)", r.status_code == 503 and "kur.bat" in r.text and "torch_cuda" not in r.text and "WinError" not in r.text, r.text[:200])
+main._omni = lambda: (_ for _ in ()).throw(RuntimeError("beklenmeyen"))
+_dt = main.DESIGN_TIMEOUT
+r = client.post("/voices/design", json={"preset": main.PRESETS[0]["id"]})
+ok("/voices/design: genel hata 500 + okunur metin", r.status_code == 500 and "beklenmeyen" in r.text)
+import threading as _thr  # noqa: E402
+_ev = _thr.Event(); main.DESIGN_TIMEOUT = 0.3
+main._omni = lambda: _ev.wait(1.5) or (_ for _ in ()).throw(RuntimeError("geç"))
+_t0 = _t.time(); r = client.post("/voices/design", json={"preset": main.PRESETS[0]["id"]})
+ok("/voices/design: zaman aşımında takılmaz (504, Türkçe)", r.status_code == 504 and "sn içinde bitmedi" in r.text, f"{r.status_code} {r.text[:120]}")
+_ev.set(); main.DESIGN_TIMEOUT = _dt; main._omni, main.VOICES_DIR = _old_omni, _old_vd
+main.GPU_WAIT = 0.2; main._gpu_lock.acquire()
+try:
+    ORIG_GPU("pockettr", "x", "f", "tr", None, {}); gt = None
+except TimeoutError as e:
+    gt = e
+finally:
+    main._gpu_lock.release(); main.GPU_WAIT = 120.0
+ok("GPU kilidi: meşgulse sonsuza beklemez (TimeoutError → 504)", gt is not None and main.tr_hata(gt)[0] == 504)
+ok("tr_hata: ImportError/DLL → 503 Türkçe, genel hata 500 ham mesaj", main.tr_hata(ImportError("DLL load failed"))[0] == 503 and "kur.bat" in main.tr_hata(OSError("x.dll"))[1] and main.tr_hata(RuntimeError("abc"))[0] == 500)
+main.tts_installed = _inst; main.tts_engines = lambda: []; main._probe_run = lambda mod: None
+
+# ---- /cast
+main.DATA_DIR = tempfile.mkdtemp(); main.CAST_FILE = os.path.join(main.DATA_DIR, "veri", "cast.json"); main.DATA_DIR = os.path.dirname(main.CAST_FILE)
+ok("/cast: kayıt yokken boş kadro", client.get("/cast").json()["cast"] == [])
+kadro = {"cast": [{"id": "a1", "name": "Ayşe", "gender": "f", "voice": "pt-kadin-1"}, {"id": "b2", "name": "Mehmet", "gender": "m", "voice": "pt-erkek-2", "fazla": "atılır"}]}
+r = client.put("/cast", json=kadro)
+ok("/cast PUT: kaydeder, bilinmeyen alanı atar", r.status_code == 200 and r.json()["n"] == 2 and "fazla" not in r.json()["cast"][1])
+ok("/cast GET: kalıcı dosyadan geri okur (cast.json)", client.get("/cast").json()["cast"] == [{k: c[k] for k in ("id", "name", "gender", "voice")} for c in kadro["cast"]] and os.path.exists(main.CAST_FILE))
+ok("/cast: 12'den fazla kişi 400", client.put("/cast", json={"cast": [{"id": str(i), "name": "x", "gender": "f", "voice": ""} for i in range(13)]}).status_code == 400)
+ok("/cast: 12 kişi kabul", client.put("/cast", json={"cast": [{"id": str(i), "name": "x", "gender": "f", "voice": ""} for i in range(12)]}).status_code == 200)
+ok("/cast: 80 karakterden uzun alan 400", client.put("/cast", json={"cast": [{"id": "a", "name": "x" * 81, "gender": "f", "voice": ""}]}).status_code == 400 and client.put("/cast", json={"cast": [{"id": "a", "name": "x" * 80, "gender": "f", "voice": ""}]}).status_code == 200)
+ok("/cast: metin olmayan alan ve liste olmayan gövde 400", client.put("/cast", json={"cast": [{"id": 5, "name": "x"}]}).status_code == 400 and client.put("/cast", json={"cast": "x"}).status_code == 400 and client.put("/cast", content=b"{boz").status_code == 400)
+r = client.put("/cast", content=_json.dumps({"cast": [{"id": "a", "name": "x", "gender": "f", "voice": ""}], "pad": "y" * 70000}).encode())
+ok("/cast: 64 KB'tan büyük gövde 413 ve eski kayıt bozulmaz", r.status_code == 413 and client.get("/cast").json()["cast"][0]["name"] == "x" * 80)
+
+# ---- Modeller: 'hazir' yalnız gerçekten inmişse (boyutun ≥%50'si)
+tid = "Trendyol/Trendyol-TTS"
+for rp in modeller._repos(tid):
+    fake_repo(rp)
+modeller._sizes[tid] = (_t.time(), 4_000_000_000)
+modeller.prefetch_sizes = lambda: None
+row = next(m for m in client.get("/models").json()["models"] if m["id"] == tid)
+ok("/models: 4 MB inmiş 2B model 'hazır' değil, 'diskte' gerçek boyut", row["hazir"] is False and row["diskte"] == modeller.local_size(tid) > 0 and modeller.is_ready(tid), str(row["diskte"]))
+modeller._sizes[tid] = (_t.time(), row["diskte"] * 2)
+ok("/models: boyutun tam %50'si inmişse hazır", next(m for m in client.get("/models").json()["models"] if m["id"] == tid)["hazir"] is True)
+modeller._sizes[tid] = (_t.time(), row["diskte"] * 2 + 1)
+ok("/models: %50'nin altındaysa hazır değil", next(m for m in client.get("/models").json()["models"] if m["id"] == tid)["hazir"] is False)
+modeller._sizes[tid] = (_t.time(), None)
+ok("/models: uzak boyut bilinmiyorsa parametre sayısından tahminle (2B ≥ ~1 GB) 10 bayt hazır değil", modeller.tam_hazir(tid) is False)
+modeller._sizes[tid] = (_t.time(), 20)
+modeller._jobs[tid] = {"state": "iniyor", "received": 0, "total": 20, "msg": ""}
+ok("/models: indirme sürüyorsa hazır değil", next(m for m in client.get("/models").json()["models"] if m["id"] == tid)["hazir"] is False)
+modeller._jobs.pop(tid)
+
 srv.shutdown()
 
 n = sum(results)

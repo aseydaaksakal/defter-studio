@@ -308,3 +308,9 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 - **Kullanılamayan model:** `hans00/MOSS-TTS-Nano-GGUF` yalnız codec içerir, LLM bölümü çevrilmemiş; Pages'e konmadı. Pages için gerçekçi yollar: ince ayarlı Kokoro q8 ONNX (~90 MB) ya da Piper (63 MB). Ayrıntı `docs/SES_EGITIMI.md`.
 - **Güncelleme:** manifestte `app` grubu; yerelde `index.html` varsa (zip/depo) uygulama dosyaları da eşitlenir. kur.bat kurulumunda uygulama için Pages kullanılır.
 - **Sandbox sınırı:** huggingface.co ve github.io kabuktan erişilemiyor; canlı kontrol Chrome ile. Windows kur.bat ve gerçek GPU motorları burada denenemedi.
+
+
+## 0.8.1 (2026-10-14) — yerel güncellenmiyor, sahte "kurulu", torch DLL
+- **Belirti:** kur.bat sonrası localhost eski; yalnız Pages açılıyor; "Entry Point Not Found c10_cuda.dll/torch_cuda.dll/libtorchaudio.pyd"; Ses stüdyosu "kurulu" derken motorlar çalışmıyor; podcast'te 2 karakter.
+- **Kök neden:** (1) eski sunucu 8765'i tutuyordu, yeni kod çalışmıyordu; kur.bat uygulama dosyalarını indirmiyor, Pages'i açıyordu. (2) pip omnivoice/voxcpm ile torch'u değiştirip torchaudio'yu karışık bırakmıştı. (3) /health yalnız paket varlığına bakıyordu. (4) kadro tarayıcı köküne bağlıydı (Pages ≠ localhost).
+- **Önlem:** kur.bat eski süreci kapatır, her şeyi eşitler, localhost açar; torch tek komutla çifti kurulur ve doğrulanır; motor sağlığı gerçek import ile; kadro `/cast`; teslimde `tools/esitlik.py`.

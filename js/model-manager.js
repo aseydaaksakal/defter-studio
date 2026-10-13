@@ -2,7 +2,7 @@
 // boyutlarını gösterir, indirir, sunucuda dinletir, "beğendim / beğenmedim" ile ayıklar; beğenilmeyen diskten silinir.
 // Hiçbir model sizin onayınız olmadan indirilmez. Yalnız lokal sunucu çalışırken görünür (Pages'ten de aynı sunucuya bağlanır).
 import { h } from './ui.js';
-import { serverUrl } from './server.js';
+import { needServer, engineState, REINSTALL_HINT, friendlyError } from './server.js';
 import { serverVoices } from './tts.js';
 import { normalizeTR } from './textnorm.js';
 
@@ -10,10 +10,9 @@ const TEST_TEXT = "Merhaba, ben bu modelin sesiyim. 1 Şubat 1999'da yürürlü�
 const PLATFORM = { cuda: 'NVIDIA GPU', mlx: 'Apple MLX', gguf: 'GGUF' };
 
 async function api(path, opt) {
-  const base = await serverUrl();
-  if (!base) throw new Error('Lokal sunucu çalışmıyor. server/baslat.bat ile açın.');
+  const base = await needServer(); // voice-library ile aynı çözücü: iki ekran çelişen durum göstermez
   const r = await fetch(base + path, opt);
-  if (!r.ok) { let m = await r.text(); try { m = JSON.parse(m).detail || m; } catch {} throw new Error(String(m).slice(0, 400)); }
+  if (!r.ok) throw new Error(friendlyError(await r.text(), r.status).msg);
   return r;
 }
 const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -84,17 +83,23 @@ export function modelManager(cfg, { onChange = () => {} } = {}) {
     return h('div', { class: 'stack mm-try' }, text, h('div', { class: 'row gap wrap' }, voice, go), player, status);
   }
 
+  // Katalogdaki çalıştırıcı adı -> sunucudaki motor adı (yalnız bilinenler denetlenir)
+  const ADAPTOR_ENGINE = { voxcpm: 'voxcpm', omnivoice: 'omnivoice', pocket: 'pockettr', chatterbox: 'chatterbox' };
+  const engineOf = (m) => (ADAPTOR_ENGINE[m.adaptor] ? engineState(ADAPTOR_ENGINE[m.adaptor]) : null);
   function row(m) {
     const job = m.is && ['kuyrukta', 'iniyor'].includes(m.is.state) ? m.is : null;
     const pct = job && (job.total || m.uzak) ? Math.min(100, Math.round((job.received / (job.total || m.uzak)) * 100)) : 0;
     const chips = [m.param, PLATFORM[m.platform] + (m.platformKesin ? '' : ' (?)'), m.lisans.toUpperCase(), m.tur === 'özgün' ? '' : m.tur].filter(Boolean).map((t) => h('span', { class: 'chip ghosty small' }, t));
+    const eng = engineOf(m); // motor çalışmıyorsa 'dinlenebilir' / 'Kullanılıyor' gösterme
     if (m.hazir) chips.unshift(h('span', { class: 'chip ok-chip small' }, `✓ indirildi · ${gb(m.diskte)}`));
     else if (m.diskte > 0 && !job) chips.unshift(h('span', { class: 'chip warn small' }, `yarım · ${gb(m.diskte)}`));
-    if (m.calistirilabilir && m.hazir) chips.push(h('span', { class: 'chip on small' }, 'dinlenebilir'));
+    const usable = m.calistirilabilir && m.hazir && (!eng || eng.state === 'ok' || eng.state === 'unknown');
+    if (usable) chips.push(h('span', { class: 'chip on small' }, 'dinlenebilir'));
+    if (m.hazir && m.calistirilabilir && eng && eng.state === 'ok') chips.push(h('span', { class: 'chip ok-chip small' }, '✓ motor çalışıyor'));
     if (!tryBoxes.has(m.id)) tryBoxes.set(m.id, h('div', { hidden: true }));
     const tryBox = tryBoxes.get(m.id);
-    const tryBtn = m.hazir && m.calistirilabilir ? btn('▶ Dene', () => { tryBox.hidden = !tryBox.hidden; if (!tryBox.hidden && !tryBox.children.length) tryBox.append(tryPanel(m)); }) : null;
-    const use = m.hazir && m.calistirilabilir ? btn(cfg.serverModel === m.id ? '✓ Kullanılıyor' : 'Bunu kullan', () => { cfg.serverModel = cfg.serverModel === m.id ? '' : m.id; onChange(); render(); }, cfg.serverModel === m.id ? 'btn primary small' : 'btn ghost small') : null;
+    const tryBtn = usable ? btn('▶ Dene', () => { tryBox.hidden = !tryBox.hidden; if (!tryBox.hidden && !tryBox.children.length) tryBox.append(tryPanel(m)); }) : null;
+    const use = usable ? btn(cfg.serverModel === m.id ? '✓ Kullanılıyor' : 'Bunu kullan', () => { cfg.serverModel = cfg.serverModel === m.id ? '' : m.id; onChange(); render(); }, cfg.serverModel === m.id ? 'btn primary small' : 'btn ghost small') : null;
     const dl = !m.hazir && !job ? btn(`İndir (${gb(m.uzak)})`, () => {
       if (m.platform === 'mlx' && !confirm('Bu model Apple Silicon (MLX) içindir; RTX/Windows bilgisayarda çalışmaz. Yine de indirilsin mi?')) return;
       download([m], `${m.ad} indirilecek:`);
@@ -107,6 +112,8 @@ export function modelManager(cfg, { onChange = () => {} } = {}) {
       h('p', { class: 'small' }, m.not),
       m.uyari ? h('p', { class: 'small mm-warn' }, '⚠ ' + m.uyari) : null,
       m.hazir && !m.calistirilabilir && m.adaptor ? h('p', { class: 'small muted' }, m.calistirNot) : null,
+      m.hazir && m.calistirilabilir && eng && eng.state === 'bad' ? h('p', { class: 'small mm-warn engine-bad' }, `${eng.text} · ${REINSTALL_HINT}`) : null,
+      m.hazir && m.calistirilabilir && eng && eng.state === 'off' ? h('p', { class: 'small muted engine-off' }, `Bu modelin motoru kurulu değil: indirildi ama çalıştırılamaz. ${REINSTALL_HINT}`) : null,
       job ? h('div', { class: 'stack' }, h('div', { class: 'meter thin' }, h('div', { style: { width: pct + '%' } })), h('span', { class: 'small muted' }, `İndiriliyor ${gb(job.received)} / ${gb(job.total || m.uzak)} (%${pct})`)) : null,
       m.is?.state === 'hata' ? h('p', { class: 'small mm-warn' }, '✗ İndirme hatası: ' + m.is.msg) : null,
       h('div', { class: 'row gap wrap' }, dl, tryBtn, use, del, h('span', { class: 'grow' }), like, dislike),

@@ -3,6 +3,8 @@
 Bu depo Codex, Gemini CLI, Cursor, Copilot ya da başka bir Claude oturumu tarafından devralınabilir. Kurallar
 [CLAUDE.md](CLAUDE.md) ile aynıdır; burada ajandan bağımsız özet var.
 
+Kullanıcı yeni oturumda yalnız "devam" yazar: DEVIR_TESLIM.md ve CLAUDE.md'deki **Değişmez kullanıcı kuralları**nı (yerel=Pages, tek bat, token ekonomisi, bitti=doğrulandı, ajanlara dağıt) uygula.
+
 ## 1. Önce oku (yalnız gerekeni)
 | Sıra | Dosya | Ne için |
 |---|---|---|

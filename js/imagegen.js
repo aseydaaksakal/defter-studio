@@ -118,8 +118,8 @@ async function minimaxImage(prompt, aspect, cfg, signal) {
 
 // Lokal sunucu: /image → ComfyUI (127.0.0.1:8188) üzerinde FLUX.1-schnell
 async function serverImage(prompt, aspect, _cfg, signal) {
-  const url = await serverUrl();
-  if (!url) throw new ImgError('Lokal sunucu çalışmıyor (server\\baslat.bat).');
+  const url = (await serverUrl()) || (await serverUrl(true));
+  if (!url) throw new ImgError("Lokal sunucu çalışmıyor. tools\\kur.bat'ı çalıştırın.");
   const [w, h] = ASPECTS[aspect] || ASPECTS['16:9'];
   const res = await fetch(url + '/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal, body: JSON.stringify({ prompt, width: w, height: h }) });
   if (!res.ok) throw await httpErr('Lokal görsel', res);

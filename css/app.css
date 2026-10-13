@@ -607,3 +607,16 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .cast-panel > summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
 .cast-panel .cast-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; }
 @media (max-width: 640px) { .tline-who { grid-template-columns: 1fr auto; } }
+
+/* Sunucu motor durumu, kadro seçici, alıştırma sesi düğmesi */
+.engine-bad, .chip.engine-bad { color: var(--no); border-color: var(--no); }
+.engine-ok { color: var(--ok); }
+.engines { margin: 4px 0; }
+.design-why { margin: 0; }
+.err-detail pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; max-height: 160px; overflow: auto; }
+.cast-pick { padding: 12px; gap: 8px; }
+.cast-pick-row { align-items: center; padding: 2px 0; }
+.cast-pick-row input[type=checkbox] { width: 18px; height: 18px; }
+.icon-btn.muted-fx { opacity: .45; }
+.tline-sel optgroup { font-style: normal; }
+.cast-pick-row select { min-width: 160px; }

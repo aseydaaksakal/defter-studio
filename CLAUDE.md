@@ -1,5 +1,17 @@
 # CLAUDE.md — Defter Studio çalışma kuralları
 
+> **Kullanıcı yeni oturumda yalnız "devam" yazar; istem yapıştırmaz.** Sen: DEVIR_TESLIM.md → bu dosya → yalnız gereken PROJE_REHBERI bölümü. Soru sormadan "Sıradaki iş"e başla. (claude.ai'de: Projeye bu depoyu bağla; talimat alanına tek satır: "aseydaaksakal/defter-studio deposundaki CLAUDE.md ve DEVIR_TESLIM.md'yi oku, kaldığı yerden devam et.")
+
+## Değişmez kullanıcı kuralları (hepsi bağlayıcı)
+1. **Yerel = Pages.** Pages'te canlı olan her şey `tools\kur.bat` sonrası `http://localhost:8765`'te de birebir olmalı (kod, arayüz, sunucu, paketler). Teslimde `tools/esitlik.py` EŞİT demeden "bitti" deme. Bir yerde olup ötekinde olmayan durum hatadır.
+2. **Tek bat:** kullanıcıya yalnız `kur.bat` verilir (ilk kurulum + her güncelleme + sunucuyu yeniden başlatma + yerel adresi açma). Başka bat/zip/komut isteme. Teslimde yalnız gerekli bağlantı verilir (kur.bat; istenirse zip). Depo, API anahtarı, Ollama vb. bağlantı listeleme.
+3. **Token ekonomisi:** kısa, sonuç odaklı yaz. Gereksiz detay, tekrar, süreç anlatımı, uzun düşünme yok. Büyük dosyayı baştan okuma (grep). Cevap: ne yapıldı + kanıt + kullanıcıdan tek net istek.
+4. **Takılırsan hızlı sor:** araştırıp çözemediğin şeyi saatlerce kurcalama; kullanıcıya tek soru sor (geçici kapat / tamamen kaldır seçenekleriyle) ve sormadan önce seçenekleri sun. Çözümsüz özellik kaldırılır.
+5. **Bitti = doğrulandı.** Aynı hatayı tekrar etme: "hallet" denen şey kanıtla (test + canlı kontrol + Pages/yerel eşitlik) bitmeden "tamam" denmez. Gerçek donanımda denenemeyen şeyi açıkça "denenmedi" yaz. Hata düzeltince NOT_DEFTERI'ne kök neden + önleyici kontrol ekle.
+6. **Ajanlara dağıt:** bağımsız işleri (sunucu/Windows betikleri, ön yüz, test, belge, araştırma) paralel alt ajanlara ver; sen mimari, entegrasyon, test ve teslimi yap. Ajan git çalıştırmaz, `manifest.json`'a dokunmaz; rapor ≤120 kelime.
+7. **Sade mimari:** tek doğruluk kaynağı (sunucu adresi `js/server.js`, kadro sunucuda `/cast`, güncelleme `manifest.json`), simetrik ve yalın arayüz, çift/gereksiz düğme yok, hiçbir yerde doğrulanmamış "kurulu" yazma.
+8. **Kesintisiz devir:** her teslimde DEVIR_TESLIM.md (durum, sıradaki iş, bilinen eksikler) ve NOT_DEFTERI.md güncel; yarım iş yoksa "yok" yaz. Sonraki oturum yalnız bu dosyalarla kaldığın yerden devam edebilmeli.
+
 Bu dosya projede çalışan bir sonraki Claude oturumu içindir. Diğer yapay zeka ajanları için aynı kurallar [AGENTS.md](AGENTS.md)'de.
 
 ## Ne bu?
@@ -52,7 +64,7 @@ NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
 ```bash
 python3 -m http.server 8099 &        # depo kökünde
 python3 tests/mock_llm.py &          # sahte model (OpenAI uyumlu SSE) + sahte lokal sunucu (/health, /tts) — 8098
-python3 tests/e2e.py [klasör]        # 111 uçtan uca kontrol (+ python3 tests/server_test.py: 85), ekran görüntüleri klasöre
+python3 tests/e2e.py [klasör]        # 142 uçtan uca kontrol (+ python3 tests/server_test.py: 85), ekran görüntüleri klasöre
 ```
 Sahte model istemdeki KAYNAKLAR bloğundan istenen sayıda, kaynaktan alıntılı öğe üretir.
 - Yeni bir istem eklersen `tests/mock_llm.py`'ye o isteme özgü bir anahtar ifade ekle.

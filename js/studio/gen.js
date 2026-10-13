@@ -117,14 +117,16 @@ export const TOOLS = {
       ] },
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
       { key: 'length', label: 'Uzunluk', type: 'seg', default: 'default', choices: [{ v: 'short', t: 'Kısa' }, { v: 'default', t: 'Varsayılan' }, { v: 'long', t: 'Uzun' }] },
-      { key: 'count', label: 'Konuşmacı sayısı', type: 'seg', default: 'auto', choices: [{ v: 'auto', t: 'Otomatik' }, { v: '3', t: '3' }, { v: '4', t: '4' }, { v: '5', t: '5' }] },
+      { key: 'count', label: 'Konuşmacı sayısı', type: 'seg', default: 'auto', choices: [{ v: 'auto', t: 'Otomatik' }, { v: '2', t: '2' }, { v: '3', t: '3' }, { v: '4', t: '4' }, { v: '5', t: '5' }, { v: '6', t: '6' }] },
       { key: 'voices', label: 'Sesler', type: 'seg', default: 'fm', choices: [{ v: 'fm', t: 'Kadın + erkek' }, { v: 'ff', t: 'Kadın' }, { v: 'mm', t: 'Erkek' }, { v: 'cast', t: 'Karakterlerim (Ses stüdyosu)' }] },
       { key: 'focus', label: 'Yapay zeka sunucuları bu bölümde neye odaklanmalı?', type: 'text', placeholder: 'Örn. Deniz sahaları ve zorunlu cihazlar' }
     ],
     async generate(nb, o, { signal, progress }) {
       const ctx = await buildContext(nb, o.focus);
       const segCount = { short: 2, default: 4, long: 7 }[o.length] || 4;
-      const speakers = castFor(o.format, o.voices, o.count, (await loadTTS()).cast);
+      let roster = (await loadTTS()).cast;
+      if (o.voices === 'cast' && Array.isArray(o.castPick) && o.castPick.length) roster = o.castPick.map((n) => roster.find((c) => c.name === n)).filter(Boolean); // üretim penceresinde işaretlenen karakterler
+      const speakers = castFor(o.format, o.voices, o.voices === 'cast' && roster.length > 1 ? 'auto' : o.count, roster);
       const nSp = speakers.length;
       const cast = speakers.map((s) => `${s.id}: ${s.name} (${s.gender === 'm' ? 'erkek' : 'kadın'}, ${s.role})`).join('; ') + (nSp > 2 ? `. Kadroda ${nSp} konuşmacı var: hepsi birkaç kez söz alsın, birbirlerine doğrudan seslensinler ve aynı anda iki kişi konuşmasın` : '');
       const style = {

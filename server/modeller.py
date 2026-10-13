@@ -17,6 +17,7 @@ Hiçbir model sizin onayınız olmadan indirilmez; TTS uçları indirilmemiş mo
 """
 import json
 import os
+import re
 import shutil
 import sys
 import threading
@@ -128,6 +129,30 @@ def is_ready(model_id):
     return all(_ready_one(r) for r in _repos(model_id))
 
 
+HAZIR_ORAN = 0.5  # diskteki boyut, katalogdaki (Hugging Face) boyutun en az bu oranı olmalı; "4 MB indi" modeli hazır sayılmaz
+
+
+def tam_hazir(model_id, uzak=None, diskte=None):
+    """'hazir' alanı: indirme gerçekten tamam (is_ready) VE bilinen uzak boyutun en az %50'si diskte.
+    Uzak boyut bilinmiyorsa (çevrimdışı/henüz çekilmedi) yalnızca tam indirme denetimi geçerlidir."""
+    if not is_ready(model_id):
+        return False
+    uzak = uzak if uzak is not None else (_sizes.get(model_id) or (0, None))[1]
+    diskte = diskte if diskte is not None else local_size(model_id)
+    if uzak:
+        return diskte >= HAZIR_ORAN * uzak
+    tahmin = _param_bayt(model_id)  # uzak boyut bilinmiyorsa parametre sayısından en az (1 bayt/parametre) tahmini
+    return diskte >= HAZIR_ORAN * tahmin if tahmin else diskte > 0
+
+
+def _param_bayt(model_id):
+    m = entry(model_id) or {}
+    mt = re.match(r"^\s*([\d.]+)\s*([BM])", str(m.get("param") or ""), re.I)
+    if not mt:
+        return 0
+    return int(float(mt.group(1)) * (1e9 if mt.group(2).upper() == "B" else 1e6))
+
+
 def snapshot_path(model_id):
     """Önbellekteki anlık görüntü klasörü (çalıştırıcılar yerel yol isterse)."""
     snaps = os.path.join(repo_path(model_id), "snapshots")
@@ -181,7 +206,8 @@ def list_models():
         mid = m["id"]
         j = _jobs.get(mid)
         ok, why = ADAPTER_STATUS(m.get("adaptor")) if m.get("adaptor") else (False, "Defter Studio'da bu model için çalıştırıcı yok; yalnız indirilebilir")
-        out.append({**m, "hazir": is_ready(mid), "diskte": local_size(mid), "uzak": (_sizes.get(mid) or (0, None))[1],
+        diskte, uzak = local_size(mid), (_sizes.get(mid) or (0, None))[1]
+        out.append({**m, "hazir": tam_hazir(mid, uzak, diskte), "diskte": diskte, "uzak": uzak,
                     "puan": puan.get(mid), "is": ({k: j[k] for k in ("state", "received", "total", "msg")} if j else None),
                     "calistirilabilir": bool(ok), "calistirNot": "" if ok else why, "sesler": ADAPTER_VOICES.get(m.get("adaptor"), [])})
     return out

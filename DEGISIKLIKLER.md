@@ -1,5 +1,8 @@
 # Değişiklikler
 
+## 2026-10-14 — teslim
+- 0.8.1: tek kur.bat (yerel=Pages), torch onarımı, gerçek motor sağlığı, sunucuda kadro, podcast karakterleri, kurallar
+
 ## 2026-10-13 — teslim
 - 0.8.0: Ses stüdyosu (yeni kadın/erkek ses, klonlama, karakterler, modeller), podcast satır başına konuşmacı, sade Ayarlar, kur.bat indirme/tek satır, güncelleyici uygulama dosyalarını da eşitler, ses eğitimi rehberi
 

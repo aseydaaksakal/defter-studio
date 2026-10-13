@@ -8,7 +8,9 @@ manifestle karşılaştırır ve YALNIZ değişenleri indirir. Hiçbir şey değ
 Kullanım:
     python guncelle.py --sync [--quiet] [--kabuk] [--nopip] [--root KLASÖR] [--base ADRES]   # farkları indir + gerekirse pip
     python guncelle.py --check                                                      # yalnız farkları yaz
-Uygulama dosyaları (index.html, js/, css/…) yalnız yerelde index.html varsa eşitlenir (zip/depo kopyası); kur.bat kurulumu yalnız sunucu + araçları tutar, uygulama için Pages kullanılır.
+    python guncelle.py --dogrula [--root KLASÖR] [--base ADRES]                     # yerel her dosya özeti == Pages manifesti? FARK varsa liste + çıkış 1 (ağ yoksa 2)
+Uygulama dosyaları (index.html, js/, css/…) HER ZAMAN eşitlenir (kur.bat kurulumu da uygulamayı yerelden sunar; localhost:8765 Pages ile aynı olur).
+Durum dosyası server/.guncel.json manifestte yer almaz (yerel durumdur).
 Güvenlik: adres yalnız ortam değişkeni DEFTER_UPDATE_URL ya da --base ile verilir (varsayılan: resmî GitHub Pages);
 dosya yolları server/ ve tools/ altında olmak zorundadır, `..` ve mutlak yol reddedilir, özet tutmayan dosya yazılmaz.
 """
@@ -60,7 +62,7 @@ def _yerel_sha(root, yol):
 def plan(m: dict, root=ROOT, kabuk=False) -> dict:
     """Değişen dosyaları bulur. {'degisen': [...], 'kabuk': [...], 'py': bool, 'pip': bool}"""
     files = {k: v for k, v in m.get("files", {}).items() if guvenli(k)}
-    if os.path.exists(os.path.join(root, "index.html")):  # zip/depo kopyası uygulamayı da sunuyor: uygulama dosyaları da eşitlenir (kur.bat kurulumunda yok; orada Pages kullanılır)
+    if True:  # uygulama dosyaları (index.html, js/, css/…) her kurulumda eşitlenir: localhost:8765 her zaman Pages ile aynı sürümü sunar
         files.update({k: v for k, v in m.get("app", {}).items() if guvenli(k)})
     shell = {k: v for k, v in m.get("kabuk", {}).items() if guvenli(k)}
     degisen = [k for k, v in files.items() if _yerel_sha(root, k) != v]
@@ -147,8 +149,51 @@ def uygula(m: dict, root=ROOT, base=None, kabuk=False, log=print, pip=True) -> d
         st["edgeAt"] = time.time()
     st["surum"] = m.get("version")
     _save_state(st)
+    if not hatalar:  # yerel manifest kopyası: --dogrula yerel sürümü buradan okur
+        try:
+            os.makedirs(os.path.join(root, "server"), exist_ok=True)
+            tmp = os.path.join(root, "server", "manifest.json.yeni")
+            with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+                json.dump({k: m.get(k) for k in ("version", "files", "kabuk", "app") if k in m}, f, indent=1, ensure_ascii=False)
+                f.write("\n")
+            os.replace(tmp, os.path.join(root, "server", "manifest.json"))
+        except OSError:
+            pass
     return {"yazilan": yazilan, "hatalar": hatalar, "py": any(k.endswith(".py") for k in yazilan), "pip": pip_yapildi,
             "kabuk": [k for k in p["kabuk"] if not kabuk], "surum": m.get("version")}
+
+
+def yerel_surum(root):
+    """Yerel sürüm: root/server/manifest.json 'version'; yoksa main.py VERSION."""
+    try:
+        with open(os.path.join(root, "server", "manifest.json"), encoding="utf-8") as f:
+            return json.load(f).get("version")
+    except Exception:
+        pass
+    try:
+        import re
+        with open(os.path.join(root, "server", "main.py"), encoding="utf-8") as f:
+            return re.search(r'VERSION\s*=\s*"([^"]+)"', f.read()).group(1)
+    except Exception:
+        return None
+
+
+def dogrula(m: dict, root=ROOT) -> list:
+    """Yerel her dosyanın özetini canlı manifestle karşılaştırır. Fark listesi döner (boşsa eşit)."""
+    fark = []
+    ys = yerel_surum(root)
+    if ys != m.get("version"):
+        fark.append(f"sürüm: yerel {ys} ≠ Pages {m.get('version')}")
+    for grup in ("files", "kabuk", "app"):
+        for yol, h in sorted((m.get(grup) or {}).items()):
+            if not guvenli(yol):
+                continue
+            y = _yerel_sha(root, yol)
+            if y is None:
+                fark.append(f"eksik: {yol}")
+            elif y != h:
+                fark.append(f"farklı: {yol}")
+    return fark
 
 
 def main(argv):
@@ -160,6 +205,21 @@ def main(argv):
         root = os.path.abspath(argv[argv.index("--root") + 1])
     if "--base" in argv:
         base = argv[argv.index("--base") + 1].rstrip("/") + "/"
+    if "--dogrula" in argv:
+        try:
+            m = manifest(base)
+        except Exception as e:
+            print(f"Doğrulanamadı: Pages'e ulaşılamadı ({e}). İnternet bağlantınızı denetleyin.")
+            return 2
+        fark = dogrula(m, root)
+        if fark:
+            print(f"EŞİT DEĞİL: yerel kopya Pages ile aynı değil ({len(fark)} fark):")
+            for x in fark[:40]:
+                print("  - " + x)
+            return 1
+        n = sum(len(m.get(g) or {}) for g in ("files", "kabuk", "app"))
+        print(f"EŞİT: yerel kopya Pages ile aynı (sürüm {m.get('version')}, {n} dosya özeti tutuyor).")
+        return 0
     try:
         m = manifest(base)
     except Exception as e:
@@ -186,7 +246,7 @@ def main(argv):
     if r["kabuk"]:
         log("  Not: başlatıcı dosyaları değişti; tools\\kur.bat dosyasını yeniden çalıştırırsanız yenilenir (zorunlu değil).")
     log(f"Tamam: {len(r['yazilan'])} dosya yazıldı.")
-    return 0
+    return 1 if r["hatalar"] else 0
 
 
 if __name__ == "__main__":

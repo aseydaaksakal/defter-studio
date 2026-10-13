@@ -23,6 +23,7 @@ export function h(tag, attrs = {}, ...kids) {
 }
 
 const P = {
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
   audio: 'M3 10v4M7 7v10M11 4v16M15 8v8M19 11v2',
   slides: 'M3 5h18v12H3zM8 21h8M12 17v4',
   video: 'M3 6h12v12H3zM15 10l6-3v10l-6-3',

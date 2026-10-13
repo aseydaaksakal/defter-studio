@@ -141,7 +141,14 @@ def tone_wav(text, gender):
 CAT = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server", "model_katalog.json"), encoding="utf-8"))["modeller"]
 PRESETS = [("kadin-genc", "Kadın · genç · canlı", "f"), ("kadin-orta", "Kadın · orta yaş · sakin", "f"), ("kadin-derin", "Kadın · derin sesli", "f"), ("kadin-olgun", "Kadın · olgun · öğretmen", "f"),
            ("erkek-genc", "Erkek · genç · enerjik", "m"), ("erkek-orta", "Erkek · orta yaş · net", "m"), ("erkek-derin", "Erkek · derin sesli · belgesel", "m"), ("erkek-olgun", "Erkek · olgun · hoca", "m")]
-ST = {"voices": {}, "jobs": {}, "ready": set(), "puan": {}, "log": [], "imglog": [], "fail_after": None, "calls": 0}
+ST = {"voices": {}, "jobs": {}, "ready": set(), "puan": {}, "log": [], "imglog": [], "fail_after": None, "calls": 0, "cast": [], "noeng": False}
+
+
+def tts_health():
+    """Gerçek sözleşme: engines = yalnız GERÇEKTEN çalışanlar, installed = paketi diskte olanlar, engineErrors = {motor: kısa Türkçe hata}."""
+    if ST["noeng"]:
+        return {"engines": [], "auto": [], "installed": ["voxcpm", "omnivoice", "pockettr"], "engineErrors": {"voxcpm": "torch DLL yüklenemedi", "omnivoice": "ekran kartı belleği yetmedi", "pockettr": "model dosyası eksik"}}
+    return {"engines": ["mock", "edge", "voxcpm", "pockettr"], "auto": ["mock"], "installed": ["mock", "edge", "voxcpm", "pockettr", "omnivoice"], "engineErrors": {"omnivoice": "ekran kartı belleği yetmedi"}}
 
 
 def models_list():
@@ -196,7 +203,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         if p.startswith("/health"):
-            return self.send(200, {"ok": True, "version": "mock", "ffmpeg": True, "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": [], "pocketTr": bool(ST.get("pocketTr"))}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None, "update": {"available": not ST.get("upd_applied"), "latest": "9.9.9", "n": 2}})
+            return self.send(200, {"ok": True, "version": "mock", "ffmpeg": True, "tts": {**tts_health(), "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": [], "pocketTr": bool(ST.get("pocketTr"))}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None, "update": {"available": not ST.get("upd_applied"), "latest": "9.9.9", "n": 2}})
         if p.startswith("/update/check"):
             av = not ST.get("upd_applied")
             return self.send(200, {"current": "mock", "latest": "9.9.9", "available": av, "n": 2 if av else 0, "files": ["server/main.py", "server/guncelle.py"], "pip": False, "kabuk": [], "error": None, "launcher": True})
@@ -217,6 +224,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.send(200, tone_wav("deneme sesi", v["gender"]), "audio/wav") if v else self.send(404, {"detail": "yok"})
         if p == "/voices":
             return self.send(200, {"voices": voices_list()})
+        if p == "/cast":
+            return self.send(200, {"cast": ST["cast"]})
         if p == "/models":
             return self.send(200, {"models": models_list(), "hf": True, "onbellek": "/mock/hf"})
         if p == "/_imglog":
@@ -235,6 +244,13 @@ class H(http.server.BaseHTTPRequestHandler):
             if k in body:
                 v[k] = body[k]
         return self.send(200, {"ok": True})
+
+    def do_PUT(self):
+        body = json.loads(self.raw() or b"{}")
+        if self.path == "/cast":
+            ST["cast"] = body.get("cast", [])
+            return self.send(200, {"ok": True, "cast": ST["cast"]})
+        return self.send(404, {"detail": "yok"})
 
     def do_DELETE(self):
         m = re.match(r"^/voices/([^/]+)$", self.path)
@@ -298,23 +314,28 @@ class H(http.server.BaseHTTPRequestHandler):
             ST["ready"].discard(body.get("id")); ST["jobs"].pop(body.get("id"), None)
             return self.send(200, {"ok": True, "serbest": 3 * 10 ** 9})
         if p == "/_reset":  # testler arası yalıtım
-            ST.update(voices={}, jobs={}, ready=set(), puan={}, pocketTr=False, upd_applied=False); ST["log"].clear(); ST["imglog"].clear()
+            ST.update(voices={}, jobs={}, ready=set(), puan={}, pocketTr=False, upd_applied=False, cast=[], noeng=False); ST["log"].clear(); ST["imglog"].clear()
             return self.send(200, {"ok": True})
         if p == "/_log/clear":
             ST["log"].clear(); ST["imglog"].clear(); ST["calls"] = 0
             return self.send(200, {"ok": True})
+        if p.startswith("/_engines"):  # ?none=1: hiçbir motor çalışmıyor (paketler var, hata veriyor); ?none=0 normal
+            ST["noeng"] = "none=1" in p
+            return self.send(200, {"ok": True})
         if p.startswith("/_tts_fail"):  # ?after=N: N başarılı satırdan sonra /tts 500 verir (motor çökmesi); after yoksa kapanır
             m = re.search(r"after=(\d+)", p)
-            ST["fail_after"] = int(m.group(1)) if m else None; ST["calls"] = 0
+            ST["fail_after"] = int(m.group(1)) if m else None; ST["calls"] = 0; ST["fail_dll"] = "dll=1" in p
             return self.send(200, {"ok": True})
         if p == "/image":
             ST["imglog"].append({"prompt": body.get("prompt"), "w": body.get("width"), "h": body.get("height")})
             return self.send(200, mock_png(body.get("prompt", ""), body.get("width", 64), body.get("height", 36)), "image/png")
+        if p.startswith("/tts") and ST["noeng"]:
+            return self.send(503, {"detail": "Hiçbir ses motoru çalışmıyor. Traceback: OSError: [WinError 126] C:\\Users\\x\\server\\.venv\\Lib\\site-packages\\torch\\lib\\fbgemm.dll yüklenemedi"})
         if p.startswith("/tts"):
             ST["log"].append({k: body.get(k) for k in ("speaker", "gender", "voice", "model", "engine")})
             ST["calls"] += 1
             if ST["fail_after"] is not None and ST["calls"] > ST["fail_after"]:
-                return self.send(500, {"detail": "mock motor çöktü"})
+                return self.send(500, {"detail": "OSError: [WinError 126] C:\\srv\\.venv\\Lib\\site-packages\\torch\\lib\\fbgemm.dll yüklenemedi"} if ST.get("fail_dll") else {"detail": "mock motor çöktü"})
             return self.send(200, tone_wav(body.get("text", ""), body.get("gender", "f")), "audio/wav")
         txt = "\n".join(m.get("content", "") for m in body.get("messages", []) if m.get("role") != "assistant")
         if DELAY:

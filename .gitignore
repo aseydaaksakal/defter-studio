@@ -7,3 +7,5 @@ __pycache__/
 server/models_state.json
 server/.venv-moss/
 ses-ornekleri/
+server/.guncel.json
+server/veri/

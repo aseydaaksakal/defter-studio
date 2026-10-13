@@ -9,7 +9,8 @@ import { seedDemo } from './demo.js';
 import { getStats, levelOf, xpForLevel, BADGES, updateXpPill, dueMistakes, readiness, sciencePage, resolveMistake } from './learn.js';
 import { typingPage } from './typing.js';
 import { looksScanned, runOcr, stopOcr, ocrRunning, onOcrProgress, ocrText } from './ocr.js';
-import { loadTTS, saveTTS, synthesize } from './tts.js';
+import { loadTTS, saveTTS, synthesize, syncCast } from './tts.js';
+import { castPicker } from './cast.js';
 import { voiceSettings } from './voice-settings.js';
 import { openVoiceStudio } from './voice-studio.js';
 import { imageSettings } from './image-settings.js';
@@ -45,6 +46,7 @@ let state = { nb: null, pane: 'chat', viewer: null, cleanup: null };
 // ===================== Başlangıç =====================
 async function boot() {
   applyTheme(await getSetting('theme', 'auto'));
+  syncCast().catch(() => {}); // kadro: sunucudan (varsa) çek; yoksa yerel yedek
   // Kalıcı depolama: üretilmiş ses/video dosyaları ve Piper modeli tarayıcı yer açarken silinmesin (izin verilmezse sessizce geçilir)
   try { navigator.storage?.persist?.(); } catch {}
   // Sayfa kapanırken yarıda kalan üretimleri işaretle
@@ -89,7 +91,7 @@ function topbar(extra = []) {
     pomodoroButton(),
     h('a', { id: 'xp-pill', class: 'status-pill xp', href: '#/bugun', title: 'Seri · seviye · bugünkü puan' }),
     h('span', { id: 'llm-status', class: 'status-pill', title: 'Model durumu' }),
-    h('button', { class: 'icon-btn', 'aria-label': 'Ses efektleri', title: 'Ses efektleri', onclick: (e) => { const off = localStorage.getItem('ds-sound') === 'off'; localStorage.setItem('ds-sound', off ? 'on' : 'off'); toast(off ? 'Ses efektleri açık' : 'Ses efektleri kapalı'); } }, icon('audio')),
+    h('button', { class: 'icon-btn' + (localStorage.getItem('ds-sound') === 'off' ? ' muted-fx' : ''), id: 'fx-btn', 'aria-label': 'Alıştırma sesleri', 'aria-pressed': String(localStorage.getItem('ds-sound') !== 'off'), title: 'Alıştırma sesleri: test ve kartlarda doğru/yanlış cevapta kısa bir ses çalar (açık/kapalı)', onclick: (e) => { const b = e.currentTarget, off = localStorage.getItem('ds-sound') === 'off'; localStorage.setItem('ds-sound', off ? 'on' : 'off'); b.setAttribute('aria-pressed', String(off)); b.classList.toggle('muted-fx', !off); toast(off ? 'Alıştırma sesleri açık' : 'Alıştırma sesleri kapalı'); } }, icon('bell')),
     h('button', { class: 'icon-btn', 'aria-label': 'Tema', onclick: cycleTheme }, icon('sun')),
     h('button', { class: 'icon-btn', 'aria-label': 'Ses stüdyosu', title: 'Ses stüdyosu: sesler, klonlama, karakterler', onclick: () => openVoiceStudio() }, icon('audio')),
     h('button', { class: 'icon-btn', 'aria-label': 'Ayarlar', onclick: openSettings }, icon('settings')));
@@ -476,7 +478,7 @@ async function connectionModal(err) {
           h('pre', { class: 'src-text' }, OLLAMA_SERVE), copy(OLLAMA_SERVE)),
         h('li', {}, `Model indirilmiş olmalı: `, h('code', {}, `ollama pull ${cfg.model || 'qwen3.8:27b'}`), ' ', copy(`ollama pull ${cfg.model || 'qwen3.8:27b'}`)),
         h('li', {}, 'Chrome "yerel ağ erişimi" izni sorarsa İzin ver deyin.'),
-        h('li', {}, h('b', {}, 'Ayarsız yol: '), 'depodaki ', h('code', {}, 'server/baslat.bat'), ' dosyasını çalıştırın; uygulama ', h('a', { href: 'http://localhost:8765/', target: '_blank', rel: 'noopener' }, 'localhost:8765'), ' adresinde açılır. Bu adreste Ollama izin ayarı gerekmez, verileriniz için yeni bir defter alanı kullanılır (yedekle / içe aktar ile taşıyabilirsiniz).'))) : null,
+        h('li', {}, h('b', {}, 'Ayarsız yol: '), 'depodaki ', h('code', {}, 'tools\\kur.bat'), ' dosyasını çalıştırın (sunucuyu kurar ve açar); uygulama ', h('a', { href: 'http://localhost:8765/', target: '_blank', rel: 'noopener' }, 'localhost:8765'), ' adresinde açılır. Bu adreste Ollama izin ayarı gerekmez, verileriniz için yeni bir defter alanı kullanılır (yedekle / içe aktar ile taşıyabilirsiniz).'))) : null,
     h('div', { class: 'card' }, h('h3', {}, 'Ya da hemen buluta geçin: Gemini (ücretsiz kota)'),
       h('p', { class: 'muted small' }, 'Anahtar yalnız bu tarayıcıda saklanır. Aynı anahtar doğal Türkçe çok sesli seslendirme için de kullanılır.'),
       h('div', { class: 'row gap' }, gKey, h('button', { class: 'btn primary', onclick: async () => {
@@ -576,7 +578,7 @@ function openCustomize(type, preset = {}) {
     const lang = await getSetting('lang', 'Türkçe');
     const srcs = await enabledSources(state.nb.id);
     const body = h('div', { class: 'cust' });
-    const roster = type === 'podcast' ? (await loadTTS()).cast || [] : [];
+    const roster = type === 'podcast' ? (await syncCast().catch(() => ({ cast: [] }))).cast || [] : []; // kadro sunucudan eşitlenir
     for (const o of t.options) {
       vals[o.key] = preset[o.key] ?? last[o.key] ?? (o.type === 'lang' ? lang : o.default ?? '');
       if (type === 'podcast' && o.key === 'voices' && roster.length >= 2 && !preset[o.key] && (last[o.key] == null || last[o.key] === 'fm')) vals[o.key] = 'cast'; // Ses stüdyosunda karakter kurulduysa varsayılan onlar
@@ -609,6 +611,13 @@ function openCustomize(type, preset = {}) {
         body.append(h('div', { class: 'field' }, h('label', {}, o.label), ta));
       }
     }
+    if (type === 'podcast') { // 'Karakterlerim' seçilince kadro listesi: kim konuşsun, ses, ▶, kaç kişilik
+      const cp = castPicker(vals), vseg = body.querySelector('.seg[aria-label="Sesler"]'), cnt = body.querySelector('.seg[aria-label="Konuşmacı sayısı"]')?.closest('.field');
+      const sync = () => { cnt && (cnt.hidden = vals.voices === 'cast'); cp.paint(); };
+      vseg?.closest('.field').after(cp.el);
+      vseg?.addEventListener('click', () => setTimeout(sync, 0));
+      sync();
+    }
     body.append(h('p', { class: 'muted small' }, `Kaynaklar: ${srcs.length} seçili kaynak (${srcs.map((s) => s.title).join(', ').slice(0, 160) || '—'})`));
     modal({ title: t.title, wide: true, body, actions: [
       { label: 'Vazgeç', run: (c) => c() },
@@ -617,7 +626,7 @@ function openCustomize(type, preset = {}) {
         const st = t.noLLM ? { ok: true } : await checkLLM();
         if (!st.ok) { c(); connectionModal(st.error); return; }
         c();
-        const { focus, ...keep } = vals; await setSetting('lastOpts:' + type, keep);
+        const { focus, castPick, ...keep } = vals; if (vals.voices !== 'cast') delete vals.castPick; await setSetting('lastOpts:' + type, keep);
         if (vals.lang) await setSetting('lang', vals.lang);
         const id = await db.artifacts.add({ notebookId: state.nb.id, type, title: t.label, status: 'queued', owner: TAB, options: { ...vals }, sourceIds: srcs.map((s) => s.id), sourceTitles: srcs.map((s) => s.title), createdAt: now(), updatedAt: now() });
         renderStudio(); runJob(id);

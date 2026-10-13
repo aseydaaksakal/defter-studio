@@ -1,9 +1,10 @@
 // Ses stüdyosu penceresi: Ayarlar'dan, üst çubuktan ve podcast'ten açılır. Değişiklikler anında kaydedilir (Kaydet düğmesi gerekmez).
 import { modal } from './ui.js';
-import { loadTTS, saveTTS } from './tts.js';
+import { loadTTS, saveTTS, syncCast } from './tts.js';
 import { voiceLibrary } from './voice-library.js';
 
 export async function openVoiceStudio({ onClose } = {}) {
+  await syncCast().catch(() => {}); // kadro sunucudan (doğruluk kaynağı) eşitlenir; farklı adreslerde aynı kadro görünür
   const cfg = await loadTTS();
   let timer = 0;
   const flush = async () => {

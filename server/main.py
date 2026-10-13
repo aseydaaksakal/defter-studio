@@ -4,7 +4,8 @@ Defter Studio — lokal yardımcı sunucu v2 (isteğe bağlı)
 Uygulamayı http://localhost:8765 adresinde sunar (bu adresten açınca Ollama için OLLAMA_ORIGINS ayarı gerekmez) ve
 tarayıcının tek başına yapamadığı işleri bilgisayarınızda yapar:
   GET  /              uygulamanın kendisi (depo kökündeki dosyalar)
-  GET  /health        hangi motorların hazır olduğunu söyler
+  GET  /health        hangi motorların GERÇEKTEN çalıştığını söyler (tts.engines=import edilebilen, tts.installed=diskte olan, tts.engineErrors)
+  GET/PUT /cast       karakter kadrosu (cast.json, kalıcı; Pages ile localhost ortak kaynağı)
   POST /tts           metni sese çevirir: Pocket TTS Türkçe (6 hazır ses) → OmniVoice → VoxCPM2/Trendyol-TTS → Chatterbox → Pocket → XTTS-v2 → edge-tts
                       ("model" ya da "engine" verilirse yalnız o, hata verirse sessizce başkasına düşmez; uygulama podcast
                       boyunca /health'teki "plan" motorunu "engine" olarak göndererek ses ve cinsiyetin değişmesini önler).
@@ -23,6 +24,15 @@ tarayıcının tek başına yapamadığı işleri bilgisayarınızda yapar:
 
 Çalıştırma:  python main.py   (yalnız 127.0.0.1'de dinler)   ·   Ayarlar: ortam değişkenleri, bkz. docs/KURULUM.md
 """
+import sys
+
+if sys.platform == "win32":  # DLL hataları ("Entry Point Not Found" penceresi) açılır pencere yerine Python ImportError olsun; DİĞER importlardan önce
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetErrorMode(0x8003)
+    except Exception:
+        pass
+
 import asyncio
 import importlib.util
 import io
@@ -50,7 +60,7 @@ import guncelle
 import gorsel
 import modeller
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
@@ -81,7 +91,11 @@ app = FastAPI(title="Defter Studio yardımcı sunucu", version=VERSION)
 # Chrome'un yerel ağ erişimi için özel ağ başlığına izin ver
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["*"], allow_headers=["*"], allow_private_network=True, expose_headers=["X-Defter-Engine"])
 
-has = lambda mod: importlib.util.find_spec(mod) is not None  # noqa: E731
+def has(mod):
+    try:
+        return importlib.util.find_spec(mod) is not None
+    except (ValueError, ImportError):  # sys.modules'a elle konmuş (spec'siz) modül
+        return mod in sys.modules
 
 modeller.ADAPTER_STATUS = adaptorler.durum
 modeller.ADAPTER_VOICES = adaptorler.SESLER
@@ -92,10 +106,11 @@ VOX_REPOS = [r for r in (os.getenv("DEFTER_VOXCPM"), "Trendyol/Trendyol-TTS", "n
 
 def vox_repo():
     """İndirilmiş ilk VoxCPM tabanlı model (indirme yöneticisinden); hiçbiri yoksa None."""
-    return next((r for r in VOX_REPOS if modeller.is_ready(r)), None)
+    return next((r for r in VOX_REPOS if modeller.tam_hazir(r)), None)
 
 
-def tts_engines():
+def tts_installed():
+    """Paketi diskte olan motorlar (import edilebildiği DENETLENMEZ; torch bozukken de burada görünür)."""
     e = []
     if has("pocket_tts_turkish"):  # CPU'da bile çalışır, 3 kadın + 3 erkek hazır ses (referans kaydı gerekmez)
         e.append("pockettr")
@@ -114,6 +129,101 @@ def tts_engines():
     if has("piper"):
         e.append("piper")
     return e if TTS_PREF in ("auto", "") else [x for x in [TTS_PREF] if x in e] + [x for x in e if x != TTS_PREF]
+
+
+# ---- Gerçek yüklenebilirlik denetimi: paket diskte var diye motor "hazır" sayılmaz (torch/DLL bozukken üretimde patlıyordu).
+# Her modül AYRI bir alt süreçte import edilir (DLL çökmesi sunucuyu düşürmesin, zaman aşımı sunucuyu kilitlemesin); sonuç kısa süre önbelleğe alınır.
+PROBE_MODS = {"pockettr": "pocket_tts_turkish", "omnivoice": "omnivoice", "voxcpm": "voxcpm", "chatterbox": "chatterbox", "pocket": "pocket_tts",
+              "xtts": "TTS", "edge": "edge_tts", "piper": "piper"}
+PROBE_TIMEOUT = float(os.getenv("DEFTER_PROBE_TIMEOUT", "90"))
+PROBE_TTL_OK, PROBE_TTL_ERR = 600.0, 60.0
+_PROBE_CODE = (
+    "import sys\n"
+    "if sys.platform == 'win32':\n"
+    "    import ctypes; ctypes.windll.kernel32.SetErrorMode(0x8003)\n"
+    "import importlib\n"
+    "try:\n"
+    "    importlib.import_module(sys.argv[1])\n"
+    "except BaseException as e:\n"
+    "    print(type(e).__name__ + ': ' + ' '.join(str(e).split())[:300]); sys.exit(1)\n"
+)
+_probe_cache = {}          # modül -> (zaman, None | ham hata metni)
+_probe_lock = threading.Lock()
+_probe_bg = {"busy": False}
+
+
+def _probe_run(mod):
+    """Modülü alt süreçte import eder. None = tamam, str = ham hata metni."""
+    import subprocess
+    try:
+        r = subprocess.run([sys.executable, "-c", _PROBE_CODE, mod], capture_output=True, text=True, timeout=PROBE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return "zaman aşımı: modül yüklenemedi"
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+    if r.returncode == 0:
+        return None
+    return (r.stdout or r.stderr or f"süreç çöktü (kod {r.returncode})").strip().splitlines()[-1][:300]
+
+
+def _probe_refresh(mods):
+    from concurrent.futures import ThreadPoolExecutor
+    with _probe_lock:
+        with ThreadPoolExecutor(max_workers=max(1, min(4, len(mods)))) as ex:
+            for m, err in zip(mods, ex.map(_probe_run, mods)):
+                _probe_cache[m] = (time.time(), err)
+
+
+def _probe_status(mods):
+    """{modül: None | hata}. Önbellekte olmayanlar için bekler; bayatlayanları arka planda tazeler (sunucu takılmaz)."""
+    if os.getenv("DEFTER_PROBE", "1") == "0":
+        return {m: None for m in mods}
+    need = [m for m in mods if m not in _probe_cache]
+    if need:
+        _probe_refresh(need)
+    now = time.time()
+    stale = [m for m in mods if now - _probe_cache[m][0] > (PROBE_TTL_OK if _probe_cache[m][1] is None else PROBE_TTL_ERR)]
+    if stale and not _probe_bg["busy"]:
+        _probe_bg["busy"] = True
+
+        def work():
+            try:
+                _probe_refresh(stale)
+            finally:
+                _probe_bg["busy"] = False
+        threading.Thread(target=work, daemon=True).start()
+    return {m: _probe_cache[m][1] for m in mods}
+
+
+def probe_reset():
+    _probe_cache.clear()
+
+
+def engine_errors():
+    """{motor: 'kısa Türkçe hata'} — paketi diskte olup import EDİLEMEYEN motorlar."""
+    inst = tts_installed()
+    st = _probe_status([PROBE_MODS[e] for e in inst if e in PROBE_MODS])
+    return {e: _engine_err_text(st[PROBE_MODS[e]]) for e in inst if e in PROBE_MODS and st.get(PROBE_MODS[e])}
+
+
+def _engine_err_text(raw):
+    t = (raw or "").lower()
+    if any(k in t for k in ("dll", "entry point", "winerror", "c10", "torch_cuda", "libtorchaudio", "undefined symbol", "çöktü")):
+        kisa = "PyTorch/DLL uyumsuz"
+    elif "zaman aşımı" in t:
+        kisa = "yükleme zaman aşımına uğradı"
+    elif "no module named" in t or "modulenotfound" in t:
+        kisa = "bağımlı paket eksik"
+    else:
+        kisa = " ".join((raw or "yüklenemedi").split())[:80]
+    return (kisa + ". kur.bat'ı yeniden çalıştırın")[:160]
+
+
+def tts_engines():
+    """Gerçekten ÇALIŞAN (import edilebilen) motorlar; /health tts.engines ve tüm seçim mantığı bunu kullanır."""
+    inst = tts_installed()
+    st = _probe_status([PROBE_MODS[e] for e in inst if e in PROBE_MODS])
+    return [e for e in inst if e not in PROBE_MODS or not st.get(PROBE_MODS[e])]
 
 
 def tts_auto():
@@ -310,7 +420,9 @@ async def voices_audio(name: str):
             try:
                 data = await asyncio.to_thread(_gpu_synth, "pockettr", ORNEK_METIN, _PT_BY_NAME[n][1][0], "tr", None, {"voice": n})
             except Exception as e:
-                raise HTTPException(500, f"Örnek ses üretilemedi: {e}")
+                print(f"[örnek ses/{n}] {type(e).__name__}: {e}")
+                code, msg = tr_hata(e, "pockettr")
+                raise HTTPException(code, "Örnek ses üretilemedi. " + msg)
             os.makedirs(os.path.dirname(cache), exist_ok=True)
             with open(cache, "wb") as f:
                 f.write(data)
@@ -344,12 +456,8 @@ VOX_DEFAULT = {"f": "A middle-aged woman, calm and warm voice", "m": "A middle-a
 
 
 def design_motors():
-    m = []
-    if has("omnivoice"):
-        m.append("omnivoice")
-    if adaptorler.durum("voxcpm")[0] and vox_repo():
-        m.append("voxcpm")
-    return m
+    eng = tts_engines()
+    return [m for m in ("omnivoice", "voxcpm") if m in eng]
 
 
 @app.get("/voices/presets")
@@ -370,7 +478,9 @@ async def voices_design(req: Request):
     motors = design_motors()
     motor = j.get("motor") if j.get("motor") in motors else (motors[0] if motors else None)
     if not motor:
-        raise HTTPException(503, "Ses tasarlamak için OmniVoice kurulu (tools\\kur-gpu.bat) ya da Trendyol-TTS / VoxCPM2 indirilmiş olmalı")
+        hata = engine_errors()
+        ek = f" ({hata['omnivoice']})" if "omnivoice" in hata else ""
+        raise HTTPException(503, "Ses tasarlanamıyor: çalışan bir tasarım motoru yok" + ek + ". tools\\kur-gpu.bat ile OmniVoice kurun ya da Trendyol-TTS / VoxCPM2 indirin.")
     base = _clean(j.get("name") or (p or {}).get("id") or "ses")
     n, k = base, 2
     while os.path.exists(os.path.join(VOICES_DIR, n + ".wav")):
@@ -380,7 +490,7 @@ async def voices_design(req: Request):
     def run():
         import numpy as np
         import soundfile as sf
-        with _gpu_lock:
+        with _GpuSlot(20):
             if motor == "omnivoice":
                 audio, sr = np.asarray(_omni().generate(text=DESIGN_TEXT, instruct=omni)[0], dtype="float32"), 24000
             else:
@@ -388,9 +498,13 @@ async def voices_design(req: Request):
         os.makedirs(VOICES_DIR, exist_ok=True)
         sf.write(os.path.join(VOICES_DIR, n + ".wav"), audio, sr)
     try:
-        await asyncio.to_thread(run)
+        await asyncio.wait_for(asyncio.to_thread(run), DESIGN_TIMEOUT)
+    except asyncio.TimeoutError:
+        raise HTTPException(504, f"Ses tasarlama {DESIGN_TIMEOUT:g} sn içinde bitmedi ({motor}). GPU meşgul olabilir; biraz sonra yeniden deneyin.")
     except Exception as e:
-        raise HTTPException(500, f"Ses tasarlanamadı ({motor}): {e}")
+        print(f"[ses tasarla/{motor}] {type(e).__name__}: {e}")
+        code, msg = tr_hata(e, motor)
+        raise HTTPException(code, "Ses tasarlanamadı. " + msg)
     label = (j.get("label") or (p or {}).get("label") or n) + ("" if n == base else f" #{n.rsplit('-', 1)[-1]}")
     _save_meta(n, {"gender": gender, "label": label, "source": "tasarım", "engine": motor, "text": DESIGN_TEXT, "textState": "var", "instruct": omni, "desc": vox, "seed": seed})
     return {"ok": True, "name": n, "motor": motor}
@@ -683,6 +797,38 @@ def tts_piper(text, gender, lang):
 
 
 _gpu_lock = threading.Lock()  # aynı anda tek GPU üretimi
+GPU_WAIT = float(os.getenv("DEFTER_GPU_WAIT", "120"))   # başka üretim bitmediyse en çok bu kadar bekle (sonsuza takılma)
+DESIGN_TIMEOUT = float(os.getenv("DEFTER_DESIGN_TIMEOUT", "300"))
+
+
+class _GpuSlot:
+    def __init__(self, wait=None):
+        self.wait = GPU_WAIT if wait is None else wait
+
+    def __enter__(self):
+        if not _gpu_lock.acquire(timeout=self.wait):
+            raise TimeoutError("GPU başka bir ses işiyle meşgul")
+        return self
+
+    def __exit__(self, *a):
+        _gpu_lock.release()
+
+
+def _is_load_error(e):
+    t = str(e).lower()
+    return isinstance(e, (ImportError, OSError)) or any(k in t for k in (".dll", "entry point", "winerror", "libtorchaudio", "c10_cuda", "torch_cuda", "undefined symbol"))
+
+
+def tr_hata(e, motor=""):
+    """Kullanıcıya gösterilecek Türkçe hata (ham Python/DLL metni DEĞİL). (durum_kodu, metin) döner."""
+    ad = f"{motor}: " if motor else ""
+    if isinstance(e, TimeoutError) or "zaman aşımı" in str(e).lower():
+        return 504, ad + "işlem zaman aşımına uğradı (GPU meşgul olabilir). Biraz bekleyip yeniden deneyin."
+    if _is_load_error(e):
+        return 503, ad + "ses motoru yüklenemedi (PyTorch/DLL uyumsuzluğu olabilir). kur.bat dosyasını yeniden çalıştırın."
+    h = hint_for(e)
+    ham = " ".join(str(e).split())[:200]
+    return 500, ad + (ham if ham else type(e).__name__) + (" — " + h if h else "")
 
 # ---- VRAM koruması: RTX 5090 (24 GB) üzerinde Ollama'daki 27B model VRAM'in büyük kısmını tutar; TTS modeli sığmayınca "çalışmıyor" görünür.
 # Çözüm (sıralı çalıştırma): TTS'ten önce Ollama'nın yüklü modellerini boşalt (keep_alive=0); sohbet sırası gelince Ollama kendisi yeniden yükler.
@@ -806,7 +952,7 @@ async def tts_selftest(engines: str = ""):
 
 def _gpu_synth(eng, text, gender, lang, ref, j, repo=None):
     """GPU/PyTorch motorları; aynı anda tek üretim. Referansı olmayan klon motorları LookupError verir (sıradaki motora geçilir)."""
-    with _gpu_lock:
+    with _GpuSlot():
         try:
             vram_guard(GPU_NEED_GB.get(eng, 6.0))
             return _gpu_synth_inner(eng, text, gender, lang, ref, j, repo)
@@ -864,7 +1010,7 @@ async def _tts_model(model_id, j, text, gender, lang, ref):
     ok, why = adaptorler.durum(m["adaptor"])
     if not ok:
         raise HTTPException(503, f"{m['ad']}: {why}")
-    if not modeller.is_ready(model_id):
+    if not modeller.tam_hazir(model_id):
         raise HTTPException(409, f"{m['ad']} indirilmemiş. Ayarlar › Seslendirme › Lokal modeller bölümünden indirin.")
     eng = m["adaptor"]
     try:
@@ -872,7 +1018,9 @@ async def _tts_model(model_id, j, text, gender, lang, ref):
     except LookupError as e:
         raise HTTPException(409, f"{m['ad']}: {e}. Ses kütüphanesine bir kayıt ekleyin ya da bir ses tasarlayın.")
     except Exception as e:
-        raise HTTPException(500, f"{m['ad']} çalışmadı: {e}")
+        print(f"[tts/{eng}] {type(e).__name__}: {e}")
+        code, msg = tr_hata(e)
+        raise HTTPException(code, f"{m['ad']} çalışmadı: {msg}")
     return Response(data, media_type="audio/wav", headers={"X-Defter-Engine": eng + ":" + model_id})
 
 
@@ -893,7 +1041,8 @@ async def tts(req: Request):
     want = _engine_for_voice(j.get("voice"), want)
     if want:
         if want not in tts_engines():
-            raise HTTPException(503, f"Kilitli motor '{want}' bu sunucuda hazır değil (kurulu: {', '.join(tts_engines()) or 'yok'}).")
+            hata = engine_errors().get(want)
+            raise HTTPException(503, f"Kilitli motor '{want}' bu sunucuda çalışmıyor" + (f": {hata}" if hata else f" (çalışan motorlar: {', '.join(tts_engines()) or 'yok'})") + ".")
         order = [want]
     else:
         order = tts_auto()
@@ -913,9 +1062,11 @@ async def tts(req: Request):
                 raise HTTPException(409, f"{eng}: {e}. Ses kütüphanesine bir kayıt ekleyin ya da bir ses tasarlayın.")
             errors.append(f"{eng}: {e}")
         except Exception as e:  # motor kurulmamış/çevrimdışı olabilir
+            print(f"[tts/{eng}] {type(e).__name__}: {e}")
+            code, msg = tr_hata(e)
             if want:  # kilitliyse sessizce başka sese geçme: gerçek hatayı göster
-                raise HTTPException(500, f"{eng} çalışmadı: {e}")
-            errors.append(f"{eng}: {e}")
+                raise HTTPException(code, f"{eng} çalışmadı: {msg}")
+            errors.append(f"{eng}: {msg}")
     raise HTTPException(500, "Hiçbir seslendirme motoru çalışmadı. " + " | ".join(errors) if errors else "Seslendirme motoru kurulu değil. tools\\kur-gpu.bat ile OmniVoice/Pocket TTS ya da pip install edge-tts kurun.")
 
 
@@ -1140,16 +1291,75 @@ async def update_apply_ep():
     return {**r, "restart": "auto" if auto else ("manual" if restart else "none")}
 
 
+# ---------------------------------------------------------------- Karakter kadrosu (sunucuda kalıcı): Pages ile localhost farklı köken olduğundan ortak kaynak burası
+DATA_DIR = os.getenv("DEFTER_DATA", os.path.join(HERE, "veri"))
+CAST_FILE = os.path.join(DATA_DIR, "cast.json")
+CAST_MAX_BYTES, CAST_MAX_ITEMS, CAST_FIELD_MAX = 64 * 1024, 12, 80
+CAST_FIELDS = ("id", "name", "gender", "voice")
+
+
+def cast_dogrula(j):
+    """Gövdeyi doğrular; temiz kadro listesini döner ya da HTTPException(400) fırlatır."""
+    if not isinstance(j, dict) or not isinstance(j.get("cast"), list):
+        raise HTTPException(400, 'Gövde {"cast":[...]} biçiminde olmalı')
+    if len(j["cast"]) > CAST_MAX_ITEMS:
+        raise HTTPException(400, f"Kadro en çok {CAST_MAX_ITEMS} kişi olabilir")
+    out = []
+    for i, c in enumerate(j["cast"]):
+        if not isinstance(c, dict):
+            raise HTTPException(400, f"{i + 1}. kişi nesne olmalı")
+        row = {}
+        for k in CAST_FIELDS:
+            v = c.get(k, "")
+            if v is None:
+                v = ""
+            if not isinstance(v, str):
+                raise HTTPException(400, f"{i + 1}. kişi: '{k}' metin olmalı")
+            if len(v) > CAST_FIELD_MAX:
+                raise HTTPException(400, f"{i + 1}. kişi: '{k}' en çok {CAST_FIELD_MAX} karakter olabilir")
+            row[k] = v
+        out.append(row)
+    return out
+
+
+@app.get("/cast")
+def cast_get():
+    try:
+        with open(CAST_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        return {"cast": d.get("cast", []) if isinstance(d, dict) else [], "updatedAt": d.get("updatedAt") if isinstance(d, dict) else None}
+    except (OSError, ValueError):
+        return {"cast": [], "updatedAt": None}
+
+
+@app.put("/cast")
+async def cast_put(req: Request):
+    raw = await req.body()
+    if len(raw) > CAST_MAX_BYTES:
+        raise HTTPException(413, "Kadro verisi 64 KB'tan büyük olamaz")
+    try:
+        j = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(400, "Geçersiz JSON")
+    cast = cast_dogrula(j)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = CAST_FILE + ".yeni"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"cast": cast, "updatedAt": int(time.time())}, f, ensure_ascii=False)
+    os.replace(tmp, CAST_FILE)
+    return {"ok": True, "cast": cast, "n": len(cast)}
+
+
 @app.get("/health")
 def health():
     eng = tts_engines()
     vs = list_voices()
     clone = any(e in eng for e in ("chatterbox", "xtts", "pocket", "omnivoice", "voxcpm"))
     female = "edge" in eng or "pockettr" in eng or "omnivoice" in eng or "voxcpm" in eng or (clone and any(v["gender"] == "f" for v in vs))
-    ready = [m["id"] for m in modeller.catalog() if m.get("adaptor") and modeller.is_ready(m["id"])]
+    ready = [m["id"] for m in modeller.catalog() if m.get("adaptor") and modeller.tam_hazir(m["id"])]
     plan = tts_plan()
     return {"ok": True, "version": VERSION, "app": os.path.exists(os.path.join(APP_DIR, "index.html")),
-            "tts": {"pref": TTS_PREF, "engines": eng, "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs) + len(builtin_voices()), "models": ready, "design": design_motors(),
+            "tts": {"pref": TTS_PREF, "engines": eng, "installed": tts_installed(), "engineErrors": engine_errors(), "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs) + len(builtin_voices()), "models": ready, "design": design_motors(),
                     "edgeVersion": _edge_version(), "pocketTr": has("pocket_tts_turkish")},
             "ffmpeg": bool(ffmpeg_exe()),
             "update": {"available": bool(_UPD.get("n")) or bool(_UPD.get("pip")), "latest": _UPD.get("latest"), "n": _UPD.get("n", 0)},
@@ -1287,7 +1497,8 @@ if os.path.exists(os.path.join(APP_DIR, "index.html")):
 if __name__ == "__main__":
     import uvicorn
     url = f"http://localhost:{PORT}/"
-    print(f"Defter Studio {VERSION}: {url}  ·  TTS={','.join(tts_engines()) or 'yok'}  ·  Whisper={WHISPER_MODEL}/{DEVICE}  ·  Ollama={OLLAMA}")
+    threading.Thread(target=tts_engines, daemon=True).start()  # motor yüklenebilirlik denetimini ısıt (/health ilk çağrıda beklemesin)
+    print(f"Defter Studio {VERSION}: {url}  ·  TTS(kurulu)={','.join(tts_installed()) or 'yok'}  ·  Whisper={WHISPER_MODEL}/{DEVICE}  ·  Ollama={OLLAMA}")
     threading.Thread(target=update_check, args=(True,), daemon=True).start()  # güncelleme var mı (arka planda; /health bildirir)
     if os.getenv("DEFTER_OPEN", "1") != "0":
         import webbrowser

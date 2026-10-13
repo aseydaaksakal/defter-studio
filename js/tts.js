@@ -5,7 +5,7 @@
 // Çıktı: tek parça, ses seviyesi dengelenmiş WAV + satır zamanlamaları. Parçalar hazır oldukça onPiece ile bildirilir
 // (oynatıcı beklemeden çalmaya başlar). Otomatik modda bir motor hata verirse sıradakine geçilir.
 import { db, getSetting, setSetting } from './db.js';
-import { serverUrl, serverInfo } from './server.js';
+import { serverUrl, serverInfo, needServer, friendlyError, engineStatus, engineName, REINSTALL_HINT, SERVER_DOWN, pushCast, pullCast, keepLocalCast, localCast } from './server.js';
 import { normalizeTR } from './textnorm.js';
 import { loadConfig } from './llm.js';
 
@@ -29,7 +29,12 @@ export const ENGINES = {
 // Ayarlar'daki motor listesi: Piper ve tarayıcı sesi kaldırıldı (robot/yalnız erkek ya da Türkçe sesi yok); eski kayıtlar otomatiğe taşınır.
 export const ENGINE_CHOICES = ['auto', 'server', 'elevenlabs', 'gemini', 'minimax', 'fish', 'google', 'azure', 'openai'];
 export const ENGINE_SHORT = { elevenlabs: 'ElevenLabs', gemini: 'Gemini TTS', minimax: 'MiniMax', fish: 'Fish Audio', google: 'Google Cloud TTS', azure: 'Azure Speech', openai: 'OpenAI TTS', server: 'Lokal sunucu', piper: 'Piper (tarayıcı)', browser: 'Tarayıcı sesi', none: 'Ses motoru yok' };
-export const NO_ENGINE = 'Ses motoru yok. Lokal sunucu çalışmıyor ya da ses motoru kurulu değil: Ayarlar › Bilgisayarım bölümünden sunucuya bağlanın (kurulum: tek seferlik kur.bat). İsteğe bağlı: Ayarlar › Bulut API anahtarları.';
+export const NO_ENGINE = "Ses motoru yok: lokal sunucu kapalı ya da motor kurulu değil. tools\\kur.bat'ı çalıştırın (sunucu kendiliğinden açılır); ya da Ayarlar › Bulut API anahtarları.";
+// Sunucu açık ama hiçbir motor gerçekten çalışmıyorsa nedenini (engineErrors) tek cümleyle söyler
+export function noEngineMsg() {
+  const s = engineStatus(), bad = Object.entries(s.bad)[0];
+  return bad ? `Sunucu açık ama ses motoru çalışmıyor (${engineName(bad[0])}: ${bad[1]}). ${REINSTALL_HINT}` : NO_ENGINE;
+}
 
 export const VOICES = {
   gemini: { f: ['Kore', 'Aoede', 'Leda', 'Zephyr', 'Sulafat', 'Despina', 'Achernar', 'Vindemiatrix'], m: ['Charon', 'Puck', 'Orus', 'Iapetus', 'Algenib', 'Sadaltager', 'Alnilam', 'Schedar'] },
@@ -61,10 +66,23 @@ const DEFAULTS = {
 export async function loadTTS() {
   const s = { ...DEFAULTS, ...(await getSetting('tts', {})) };
   if (!s.schema) { if (s.elevenModel === 'eleven_v3') s.elevenModel = 'eleven_v4'; s.schema = 3; }
+  if (!s.cast?.length) { const l = localCast(); if (l.length) s.cast = l; } // başka yerde kurulan kadro yerel yedekten gelir
   if (s.engine === 'browser') s.engine = 'auto'; // bu tarayıcıda Türkçe ses yok → "Ses motoru yok" hatası veriyordu
   return s;
 }
-export async function saveTTS(cfg) { await setSetting('tts', { ...cfg, schema: 3 }); }
+let lastCast = null;
+export async function saveTTS(cfg) {
+  await setSetting('tts', { ...cfg, schema: 3 });
+  if (Array.isArray(cfg.cast)) { const j = JSON.stringify(cfg.cast); if (j !== lastCast) { lastCast = j; keepLocalCast(cfg.cast); pushCast(cfg.cast); } } // kadro sunucuya da yazılır (doğruluk kaynağı)
+}
+// Kadroyu sunucudan çek (sunucu doluysa o kazanır; boşsa yerel kadro sunucuya taşınır) ve yerel ayara işle.
+export async function syncCast() {
+  const cur = await getSetting('tts', {});
+  const { cast, from } = await pullCast(cur.cast || []);
+  lastCast = JSON.stringify(cast);
+  if (JSON.stringify(cur.cast || []) !== lastCast) await setSetting('tts', { ...DEFAULTS, ...cur, cast, schema: 3 });
+  return { cast, from };
+}
 
 const geminiKey = async (cfg) => { if (cfg.geminiKey) return cfg.geminiKey; const l = await loadConfig(); return l.provider === 'gemini' ? l.apiKey : ''; };
 
@@ -157,7 +175,9 @@ async function withRetry(fn, tries = 6, onWait) {
   }
 }
 // Parça önbelleği: kota ya da hata yüzünden yarıda kalan seslendirme baştan değil kaldığı yerden sürer
+const usedPieces = {}; // artifactId -> bu üretimde kullanılan parça anahtarları (bitince yalnız bunlar saklanır)
 async function cachedPiece(artifactId, key, make) {
+  (usedPieces[artifactId] ||= new Set()).add(key);
   const hit = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'piece' && b.key === key).first();
   if (hit) return hit.blob;
   const blob = await make();
@@ -356,35 +376,47 @@ async function openaiLine(line, voice, cfg, style) {
 }
 
 async function serverLine(line, voice, cfg, style, lang, speaker) {
-  const base = await serverUrl();
-  if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor. server\\baslat.bat ile başlatın.');
+  const base = (await serverUrl()) || (await serverUrl(true));
+  if (!base) throw new TTSError(SERVER_DOWN);
   const g = speaker.gender === 'm' ? 'm' : 'f';
   // Motor sabitleme: sunucunun cinsiyet için seçtiği motor her satırda gönderilir; hata olursa sunucu başka motora (robot sese) düşmez
   const plan = serverInfo()?.tts?.plan;
   if (plan && !cfg.serverModel && !plan[g]) throw new TTSError(`Lokal sunucuda ${g === 'f' ? 'kadın' : 'erkek'} ses için hazır motor yok. Ses kütüphanesine bir kayıt ekleyin ya da tools\\kur-gpu.bat çalıştırın.`);
   const lock = cfg.serverModel ? '' : plan?.[g] || '';
   const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(line.text), speaker: speaker.id, gender: g, voice, model: cfg.serverModel || '', engine: lock, tone: line.tone || '', lang: langCode(lang) }) });
-  if (!r.ok) throw new TTSError('Sunucu TTS: ' + (await r.text()).slice(0, 240), r.status, r.status === 502 || r.status === 504);
+  if (!r.ok) throw await serverFail(r);
   return r.blob();
+}
+// Sunucu /tts hatası: ham {"detail":…} yerine sade Türkçe ileti (kök neden + tek eylem); ham metin .detail'de kalır
+async function serverFail(r) {
+  const raw = (await r.text().catch(() => '')).slice(0, 1500);
+  const f = friendlyError(raw, r.status);
+  return new TTSError(f.msg, r.status, r.status === 502 || r.status === 504, { detail: f.detail });
 }
 
 // Tek satırı (karakterin seçili sesiyle) dinlet: podcast'te "bu satırı bu kişiden duy". Parça önbelleğine yazmaz.
 export async function speakLine(line, speaker, speakers, lang, format = 'deep') {
+  const ex = withOverrides([line], speakers); line = ex.lines[0]; speakers = ex.speakers; speaker = speakers.find((s) => s.id === line.speaker) || speaker; // satıra özel konuşmacı (kadrodan)
   const cfg = await loadTTS();
   const engine = await resolveEngine(cfg);
-  if (engine === 'none') throw new TTSError(NO_ENGINE);
+  if (engine === 'none') throw new TTSError(noEngineMsg());
   const fn = LINE_FN[engine];
   if (!fn) throw new TTSError(`${ENGINE_SHORT[engine] || engine} toplu üretir; tek satır dinleme yalnız lokal sunucu ve satır satır çalışan bulut motorlarında var.`);
   if (engine === 'server') await serverUrl(true);
   const voices = await assignVoices(speakers, engine, cfg);
   return withRetry(() => fn(line, voices[speaker.id], cfg, STYLE[format] || STYLE.deep, lang, speaker), 2);
 }
+// İki iptal sinyalinden biri tetiklenince iptal eden sinyal (AbortSignal.any her tarayıcıda yok)
+function anySignal(...sigs) { const c = new AbortController(); for (const s of sigs) { if (s.aborted) c.abort(); else s.addEventListener('abort', () => c.abort(), { once: true }); } return c.signal; }
 // Ses stüdyosu: bir kütüphane/hazır sesi kısa cümleyle dinlet
-export async function testVoice(voice, gender, text) {
-  const base = await serverUrl(); if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
-  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(text), gender: gender === 'm' ? 'm' : 'f', voice, lang: 'tr-TR', engine: serverInfo()?.tts?.plan?.[gender === 'm' ? 'm' : 'f'] || '' }) });
-  if (!r.ok) throw new TTSError('Sunucu TTS: ' + (await r.text()).slice(0, 240));
-  return r.blob();
+export async function testVoice(voice, gender, text, signal) {
+  const base = await needServer().catch((e) => { throw new TTSError(e.message); });
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 180000); // 3 dk zaman aşımı
+  try {
+    const r = await fetch(base + '/tts', { method: 'POST', signal: signal ? anySignal(signal, ctl.signal) : ctl.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(text), gender: gender === 'm' ? 'm' : 'f', voice, lang: 'tr-TR', engine: serverInfo()?.tts?.plan?.[gender === 'm' ? 'm' : 'f'] || '' }) });
+    if (!r.ok) throw await serverFail(r);
+    return await r.blob();
+  } catch (e) { throw e.name === 'AbortError' ? new TTSError(signal?.aborted ? 'İptal edildi.' : 'Ses 3 dakikada gelmedi (zaman aşımı). Motor takılmış olabilir: ' + REINSTALL_HINT) : e; } finally { clearTimeout(timer); }
 }
 
 export async function serverVoices() {
@@ -392,10 +424,10 @@ export async function serverVoices() {
   const r = await fetch(base + '/voices'); return r.ok ? (await r.json()).voices || [] : [];
 }
 export async function uploadServerVoice(name, gender, blob, { label = '', text = '' } = {}) {
-  const base = await serverUrl(); if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
+  const base = await needServer().catch((e) => { throw new TTSError(e.message); });
   const fd = new FormData(); fd.append('name', name); fd.append('gender', gender); fd.append('label', label); fd.append('text', text); fd.append('file', blob, name + '.wav');
   const r = await fetch(base + '/voices', { method: 'POST', body: fd });
-  if (!r.ok) throw new TTSError('Sunucu: ' + (await r.text()).slice(0, 200));
+  if (!r.ok) throw await serverFail(r);
   return r.json();
 }
 export async function deleteServerVoice(name) {
@@ -404,16 +436,20 @@ export async function deleteServerVoice(name) {
 }
 // Ses kütüphanesi: dinleme adresi, ad/cinsiyet/transkript güncelleme, hazır tasarımlar, yeni ses tasarlama
 export async function serverVoiceUrl(name) { const base = await serverUrl(); return base ? `${base}/voices/${encodeURIComponent(name)}/audio` : ''; }
-async function srvJson(path, opt) {
-  const base = await serverUrl(); if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
-  const r = await fetch(base + path, opt);
-  if (!r.ok) { let m = await r.text(); try { m = JSON.parse(m).detail || m; } catch {} throw new TTSError(String(m).slice(0, 300), r.status); }
-  return r.json();
+// timeout: ms (varsayılan 30 sn; tasarım/üretim 3 dk); signal: kullanıcı iptali
+async function srvJson(path, opt = {}, { timeout = 30000, signal } = {}) {
+  const base = await needServer().catch((e) => { throw new TTSError(e.message); });
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const r = await fetch(base + path, { ...opt, signal: signal ? anySignal(signal, ctl.signal) : ctl.signal });
+    if (!r.ok) throw await serverFail(r);
+    return await r.json();
+  } catch (e) { throw e.name === 'AbortError' ? new TTSError(signal?.aborted ? 'İptal edildi.' : `İstek ${Math.round(timeout / 60000) || 1} dakikada bitmedi (zaman aşımı). Motor takılmış olabilir: ${REINSTALL_HINT}`) : e; } finally { clearTimeout(timer); }
 }
 const jsonOpt = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export const patchServerVoice = (name, patch) => srvJson('/voices/' + encodeURIComponent(name), jsonOpt('PATCH', patch));
 export const serverPresets = () => srvJson('/voices/presets');
-export const designServerVoice = (spec) => srvJson('/voices/design', jsonOpt('POST', spec));
+export const designServerVoice = (spec, signal) => srvJson('/voices/design', jsonOpt('POST', spec), { timeout: 180000, signal });
 
 let piperW = null, piperSeq = 0;
 const piperWaits = {};
@@ -454,7 +490,7 @@ async function fishFetch(path, key, init = {}) {
   try { return await fetch(url, { ...init, headers }); }
   catch { // tarayıcı doğrudan erişemezse (CORS) lokal sunucunun vekilinden dene
     const base = await serverUrl();
-    if (!base) throw new TTSError('Fish Audio’ya tarayıcıdan erişilemedi (CORS) ve lokal sunucu kapalı. server\\baslat.bat ile sunucuyu açın; istek sunucu üzerinden gider.');
+    if (!base) throw new TTSError('Fish Audio’ya tarayıcıdan erişilemedi (CORS) ve lokal sunucu kapalı. tools\\kur.bat’ı çalıştırın; istek sunucu üzerinden gider.');
     return fetch(base + '/proxy?url=' + encodeURIComponent(url), { ...init, headers });
   }
 }
@@ -512,8 +548,22 @@ function chunkLines(lines, maxChars = 1600, maxSpeakers = 2) {
 // Anahtar: konuşmacı + metin + ton; motor/ayar değişse de değişmez. Tek istisna: bu podcast'in karakterlerine AÇIKÇA atanmış sesler
 // (Ses stüdyosu/podcast karakter paneli): atama değişince ses de değişmelidir. Atama yoksa anahtar eski sürümle aynıdır.
 const voiceMark = (speakers) => (speakers || []).some((s) => s.serverVoice || s.voice) ? JSON.stringify(speakers.map((s) => [s.id, s.serverVoice || s.voice || ''])) : '';
+// Satıra özel konuşmacı: line.as = {name, gender, voice} (Ses stüdyosu kadrosundan ya da hazır sesten). Üretim için bu satır
+// kendi sentetik konuşmacısını alır ('x:<ses>'); böylece parça önbelleği ses başına anahtarlanır ve yalnız o satır yeniden üretilir.
+export function withOverrides(lines, speakers) {
+  if (!lines.some((l) => l.as)) return { lines, speakers };
+  const extra = new Map();
+  const out = lines.map((l) => {
+    if (!l.as) return l;
+    const a = l.as, g = a.gender === 'm' ? 'm' : 'f', id = 'x:' + (a.voice || `${a.name || ''}-${g}`);
+    if (!extra.has(id)) extra.set(id, { id, name: a.name || 'Konuk', gender: g, role: 'konuk', ...(a.voice ? { serverVoice: a.voice } : {}) });
+    const { as, ...rest } = l; return { ...rest, speaker: id };
+  });
+  return { lines: out, speakers: [...speakers, ...extra.values()] };
+}
 const textKey = (lines, speakers) => hash('t1' + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone || ''])) + voiceMark(speakers));
 export async function savedMix(artifactId, lines, speakers) {
+  ({ lines, speakers } = withOverrides(lines, speakers));
   const tk = textKey(lines, speakers);
   const all = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.blob).toArray();
   let hit = all.find((b) => b.textKey === tk);
@@ -535,6 +585,7 @@ const inflight = {};
  */
 export async function synthesize(artifactId, lines, speakers, lang, { format = 'deep', onProgress = () => {}, onPiece, engine: forced, fresh = false } = {}) {
   if (!lines?.length) throw new TTSError('Seslendirilecek metin yok.');
+  ({ lines, speakers } = withOverrides(lines, speakers));
   // KAYITLI SES ÖNCE: bu metnin tamamı daha önce seslendirildiyse (hangi motorla olursa olsun) kayıtlı dosya çalınır;
   // ağa/API'ye hiç gidilmez, kota harcanmaz. Yeniden üretim yalnız 'Sesi yeniden üret' ile (fresh) ya da metin değişince olur.
   if (!fresh) { const saved = await savedMix(artifactId, lines, speakers); if (saved) return saved; }
@@ -546,12 +597,12 @@ export async function synthesize(artifactId, lines, speakers, lang, { format = '
     const av = await availableEngines(cfg);
     engine = av.find(femaleOK) || av[0] || 'none'; // kadın konuşmacı varsa kadın sesi verebilen ilk motor
   }
-  if (engine === 'none') throw new TTSError(NO_ENGINE);
+  if (engine === 'none') throw new TTSError(noEngineMsg());
   if (engine === 'browser') return { engine: 'browser', blob: null, timings: null };
   try { return await synthWith(engine, cfg, artifactId, lines, speakers, lang, format, onProgress, onPiece); }
   catch (e) {
     const n = e.doneLines || 0;
-    e.engine = engine;
+    e.engine = engine; e.short = e.message;
     e.message = `${e.message}${/[.!?]$/.test(e.message) ? '' : '.'} ${n ? `İlk ${n}/${lines.length} satır hazır ve kalıcı saklandı; ${e.daily ? 'kota yenilenince' : 'sorun giderilince'} bu podcast’i açmanız yeterli, kaldığı yerden devam eder. ` : ''}Ses aynı kalsın diye başka motora (ör. robot Piper) geçilmedi.`;
     throw e;
   }
@@ -566,6 +617,7 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
   if (cached) return { engine, blob: cached.blob, timings: cached.timings, cached: true };
   if (inflight[key]) return inflight[key]; // aynı ses zaten üretiliyorsa onu bekle
   const job = (async () => {
+    usedPieces[artifactId] = new Set();
     const style = STYLE[format] || STYLE.deep;
     const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
     const pieces = []; // {blob, idx:[satır no]}
@@ -610,7 +662,9 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
     } catch (e) { e.doneLines = pieces.reduce((a, p) => a + p.idx.length, 0); throw e; } // kaç satır hazır kaldı (kalıcı parça önbelleği)
     onProgress('Ses birleştiriliyor ve dengeleniyor…');
     const { blob, timings } = await mixPieces(pieces, lines);
-    await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' || b.kind === 'piece').delete();
+    // Eski karışımlar silinir; bu üretimde kullanılan satır parçaları KALIR: bir satırın sesi değişince yalnız o satır yeniden üretilir
+    const keep = usedPieces[artifactId] || new Set();
+    await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' || (b.kind === 'piece' && !keep.has(b.key))).delete();
     await db.blobs.add({ artifactId, kind: 'mix', key, textKey: textKey(lines, speakers), blob, timings, engine });
     return { engine, blob, timings };
   })();
