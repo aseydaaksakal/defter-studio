@@ -14,12 +14,23 @@ def dosyalar():
                 yield yol
 
 
+def uygulama():
+    for y in ("index.html", "sw.js", "icon.svg", "manifest.webmanifest"):
+        yield y
+    for klasor in ("css", "js"):
+        for dp, dn, fn in os.walk(os.path.join(KOK, klasor)):
+            dn.sort()
+            for f in sorted(fn):
+                yield os.path.relpath(os.path.join(dp, f), KOK).replace(os.sep, "/")
+
+
+app = {y: hashlib.sha256(open(os.path.join(KOK, *y.split("/")), "rb").read()).hexdigest() for y in uygulama()}
 files, kabuk = {}, {}
 for y in dosyalar():
     h = hashlib.sha256(open(os.path.join(KOK, *y.split("/")), "rb").read()).hexdigest()
     (kabuk if y in KABUK else files)[y] = h
 surum = re.search(r'VERSION\s*=\s*"([^"]+)"', open(os.path.join(KOK, "server", "main.py"), encoding="utf-8").read()).group(1)
 with open(os.path.join(KOK, "server", "manifest.json"), "w", encoding="utf-8", newline="\n") as f:
-    json.dump({"version": surum, "files": files, "kabuk": kabuk}, f, indent=1, ensure_ascii=False)
+    json.dump({"version": surum, "files": files, "kabuk": kabuk, "app": app}, f, indent=1, ensure_ascii=False)
     f.write("\n")
-print(f"manifest: sürüm {surum}, {len(files)} dosya, {len(kabuk)} kabuk dosyası")
+print(f"manifest: sürüm {surum}, {len(files)} sunucu/araç dosyası, {len(kabuk)} kabuk, {len(app)} uygulama dosyası")

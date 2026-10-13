@@ -1,52 +1,118 @@
-// Lokal sunucudaki ses kütüphanesi arayüzü (Ayarlar › Seslendirme › Lokal sunucu):
-//   ses kütüphanem (dinle, adlandır, cinsiyet, transkript, sil) · ses tasarla (hazır tasarımlar + yeniden dene) ·
-//   kendi sesimi klonla (sınırsız) · ses kadrosu (podcast için 2-6 konuşmacı, video anlatıcısı) · lokal modeller.
-// Kütüphanedeki her ses bir referans kayıttır: OmniVoice, VoxCPM2, Pocket ve Chatterbox aynı kayıtla aynı sesi sürdürür.
-import { h } from './ui.js';
+// Ses stüdyosu (Ayarlar'dan ve podcast'ten açılır): lokal sunucudaki (RTX GPU'nuz) bütün sesler ve modeller tek yerde.
+//   Seslerim (hazır + tasarlanmış + klon: dinle, adlandır, sil) · Yeni ses (tek tıkla kadın/erkek) · Kendi sesimi klonla (ücretsiz, bilgisayarda kalır) ·
+//   Podcast karakterleri (Ayşe, Fatma, Hasan… adlı kadro, her birine ses) · Modeller (klonlayan / klonlamayan, Hugging Face).
+// Kütüphanedeki her ses bir referans kayıttır: OmniVoice, VoxCPM2 ve Chatterbox aynı kayıtla aynı sesi sürdürür; hazır sesler Pocket TR'dir.
+import { h, toast } from './ui.js';
 import { serverUrl, serverInfo } from './server.js';
-import { serverVoices, uploadServerVoice, deleteServerVoice, patchServerVoice, serverVoiceUrl, serverPresets, designServerVoice } from './tts.js';
+import { serverVoices, uploadServerVoice, deleteServerVoice, patchServerVoice, serverVoiceUrl, serverPresets, designServerVoice, testVoice, recordVoice, toWav } from './tts.js';
 import { modelManager } from './model-manager.js';
 
-const NAMES = { f: ['Deniz', 'Elif', 'Zeynep', 'Ayşe', 'Selin', 'Defne'], m: ['Kaan', 'Emre', 'Murat', 'Can', 'Mert', 'Berk'] };
+const NAMES = { f: ['Ayşe', 'Fatma', 'Elif', 'Zeynep', 'Selin', 'Defne', 'Deniz'], m: ['Hasan', 'Hüseyin', 'Kaan', 'Emre', 'Murat', 'Can', 'Mert'] };
 export const MAX_CAST = 6;
 const G = (g) => (g === 'm' ? 'erkek' : 'kadın');
 const slug = (s) => (s || '').toLocaleLowerCase('tr').replace(/[^a-z0-9ığüşöç_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+const AGES = [['young adult', 'genç', 'A young', 'lively'], ['middle-aged', 'orta yaşlı', 'A middle-aged', 'calm'], ['elderly', 'olgun', 'An elderly', 'wise and gentle']];
+const PITCH = [['low pitch', 'tok', 'deep'], ['moderate pitch', 'dengeli', 'clear'], ['high pitch', 'ince', 'bright']];
+const READ_TEXT = 'Merhaba, bu kayıt ses klonlama için hazırlanıyor. Sakin ve net bir sesle, her zamanki konuşma hızımla okuyorum. Bugün hava güzel; denizde rüzgâr hafif, dalgalar küçük. Gemiler limana yaklaşırken telsizden kısa ve açık mesajlar duyuluyor. Öğrenmek, tekrar etmek ve anlamak için bu cümleleri doğal bir tonla seslendiriyorum.';
 
-export function voiceLibrary({ cfg, voiceInput, onChange = () => {} }) {
-  let voices = [], presets = [], motors = [];
+// Kayıt / dosya seçme bileşeni: { el, get(): Promise<{blob, seconds}|null> }
+export function voiceInput() {
+  let rec = null, data = null, t0 = 0, timer = 0;
+  const info = h('span', { class: 'muted small' }, 'Kayıt yok');
+  const file = h('input', { type: 'file', accept: 'audio/*,video/*', class: 'input' });
+  const recBtn = h('button', { class: 'btn ghost small', type: 'button' }, '● Kayda başla');
+  const player = h('audio', { controls: true, hidden: true, class: 'w100' });
+  const show = (d) => { data = d; info.textContent = `${d.seconds.toFixed(1)} sn hazır`; player.src = URL.createObjectURL(d.blob); player.hidden = false; };
+  recBtn.onclick = async () => {
+    if (!rec) {
+      try { rec = await recordVoice(); } catch (e) { toast('Mikrofon açılamadı: ' + e.message, 'error'); return; }
+      t0 = Date.now(); recBtn.textContent = '■ Kaydı bitir';
+      timer = setInterval(() => (info.textContent = `Kaydediliyor ${Math.round((Date.now() - t0) / 1000)} sn — aşağıdaki metni okuyun`), 500);
+    } else {
+      clearInterval(timer); recBtn.textContent = '● Yeniden kaydet';
+      const r = rec; rec = null; show(await r.stop());
+    }
+  };
+  file.onchange = async () => { const f = file.files[0]; if (f) { info.textContent = 'Dönüştürülüyor…'; try { show(await toWav(f)); } catch (e) { info.textContent = 'Okunamadı: ' + e.message; } } };
+  return {
+    el: h('div', { class: 'stack' },
+      h('p', { class: 'muted small' }, 'Okunacak metin (≈30 sn): ', h('i', {}, READ_TEXT)),
+      h('div', { class: 'row gap wrap' }, recBtn, h('span', {}, 'ya da'), file, info), player),
+    get: async () => data
+  };
+}
+
+export function voiceLibrary({ cfg, onChange = () => {} }) {
+  let voices = [], presets = [], motors = [], playing = null;
   const status = h('div', { class: 'small', role: 'status' });
   const btn = (text, fn, cls = 'btn ghost small') => h('button', { class: cls, type: 'button', onclick: fn }, text);
   const opt = (v, t, sel) => h('option', { value: v, selected: sel ? true : null }, t);
   const sec = (title, open, ...body) => h('details', { class: 'vsec', open: open ? true : null }, h('summary', {}, title), h('div', { class: 'stack vpad' }, ...body));
+  const head = (t, hint) => h('div', { class: 'stack' }, h('h3', {}, t), hint ? h('p', { class: 'muted small' }, hint) : null);
   const field = (label, ...el) => h('div', { class: 'field' }, h('label', {}, label), ...el);
+  const stop = () => { try { playing?.pause(); } catch {} playing = null; };
+  const playUrl = async (u) => { stop(); playing = new Audio(u); await playing.play(); };
 
-  // ---------- Varsayılan sesler
-  const sF = h('select', { class: 'input' }), sM = h('select', { class: 'input' });
-  sF.onchange = () => { cfg.serverF = sF.value; onChange(); }; sM.onchange = () => { cfg.serverM = sM.value; onChange(); };
+  // ---------- Durum + motor kurulumu + tanı
+  const diag = h('div', { class: 'small stack', role: 'status' });
+  const kurOut = h('span', { class: 'muted small' });
+  const kurBtn = btn('Pocket TR kur (6 hazır ses)', async () => {
+    const base = await serverUrl(true); if (!base) return;
+    kurBtn.disabled = true; kurOut.textContent = 'Başlıyor…';
+    try {
+      await fetch(base + '/kur/pockettr', { method: 'POST' });
+      for (let k = 0; k < 600; k++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const d = await (await fetch(base + '/kur/durum')).json();
+        kurOut.textContent = d.msg;
+        if (d.state === 'done') { await refresh(); toast('Pocket TR hazır: 3 kadın + 3 erkek ses', 'info'); break; }
+        if (d.state === 'error') { kurOut.textContent = '✗ ' + d.msg; break; }
+      }
+    } catch (e) { kurOut.textContent = '✗ ' + e.message; } finally { kurBtn.disabled = false; }
+  }, 'btn primary small');
+  const diagBtn = btn('Motorları sına', async () => {
+    const base = await serverUrl(true);
+    if (!base) { diag.replaceChildren(h('p', {}, '✗ Lokal sunucu çalışmıyor.')); return; }
+    diagBtn.disabled = true; diag.replaceChildren(h('p', { class: 'muted' }, 'Motorlar deneniyor (ilk denemede model yüklenir; birkaç dakika sürebilir)…'));
+    try {
+      const r = await fetch(base + '/tts/selftest', { signal: AbortSignal.timeout(900000) });
+      if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+      const j = await r.json(), i = j.info || {};
+      const env = [i.gpu ? `${i.gpu} (${i.capability || '?'})` : 'GPU yok/görünmüyor', i.torch ? 'torch ' + i.torch : 'torch kurulu değil', i.vramFreeGb != null ? `boş VRAM ${i.vramFreeGb}/${i.vramTotalGb} GB` : '',
+        (i.ollamaLoaded || []).length ? 'Ollama VRAM\'de: ' + i.ollamaLoaded.join(', ') : '', i.edge ? 'edge-tts ' + i.edge : ''].filter(Boolean).join(' · ');
+      diag.replaceChildren(h('p', { class: 'muted' }, env),
+        ...j.results.map((x) => h('p', {}, x.ok ? `✓ ${x.engine} — kadın + erkek çalışıyor (${x.seconds} sn)` : `✗ ${x.engine} — ${x.error}`, x.hint ? h('br') : '', x.hint ? h('i', {}, '→ ' + x.hint) : '')),
+        h('p', { class: 'muted' }, 'Hata varsa bu çıktıyı kopyalayıp Claude\'a gönderin.'));
+    } catch (e) { diag.replaceChildren(h('p', {}, '✗ Tanı çalışmadı: ' + e.message)); } finally { diagBtn.disabled = false; }
+  });
 
-  // ---------- Ses kütüphanem
+  // ---------- Seslerim
   const list = h('div', { class: 'stack' });
-  const libTitle = h('summary', {}, 'Ses kütüphanem');
+  const libTitle = h('h3', {}, 'Seslerim');
   function voiceRow(v) {
-    const audio = h('audio', { controls: true, preload: 'none', class: 'vl-audio' });
-    serverVoiceUrl(v.name).then((u) => { audio.src = u; });
+    const playB = btn('▶', async () => {
+      playB.disabled = true; const old = playB.textContent; playB.textContent = '…';
+      try {
+        const u = await serverVoiceUrl(v.name);
+        await playUrl(u);
+      } catch (e) { toast('Dinlenemedi: ' + e.message, 'error'); } finally { playB.disabled = false; playB.textContent = old; }
+    }, 'btn primary small');
+    playB.title = 'Dinle'; playB.setAttribute('aria-label', 'Dinle: ' + v.label);
     const txt = h('textarea', { class: 'input', rows: 3, hidden: true, placeholder: 'Kaydın tam metni. Klonu iyileştirir; boşsa otomatik çıkarılır.' }, v.text || '');
     const save = btn('Metni kaydet', async () => { await patchServerVoice(v.name, { text: txt.value }); await refresh(); }, 'btn primary small');
     save.hidden = true;
-    const textBtn = btn('Transkript', () => { txt.hidden = !txt.hidden; save.hidden = txt.hidden; });
-    const state = { var: 'transkript var', bekliyor: 'transkript çıkarılıyor…', otomatik: 'transkript otomatik' }[v.textState] || '';
-    return h('div', { class: 'card vl-row' },
+    const textBtn = v.builtin ? null : btn('Transkript', () => { txt.hidden = !txt.hidden; save.hidden = txt.hidden; });
+    const src = v.builtin ? 'hazır · Pocket TR' : v.source === 'tasarım' ? `tasarım · ${v.engine || ''}` : 'klon';
+    return h('div', { class: 'card vl-row', 'data-voice': v.name },
       h('div', { class: 'row gap wrap' },
-        h('b', {}, v.label),
-        h('button', { class: 'chip small', type: 'button', title: 'Cinsiyeti değiştirmek için tıklayın', onclick: async () => { await patchServerVoice(v.name, { gender: v.gender === 'm' ? 'f' : 'm' }); await refresh(); } }, G(v.gender) + ' sesi'),
-        h('span', { class: 'chip ghosty small' }, v.source === 'tasarım' ? `tasarım · ${v.engine || ''}` : 'klon'),
-        v.seconds ? h('span', { class: 'chip ghosty small' }, v.seconds + ' sn') : null,
-        h('span', { class: 'muted small' }, state)),
-      audio,
-      h('div', { class: 'row gap wrap' },
-        btn('Adı değiştir', async () => { const n = prompt('Sesin adı', v.label); if (n && n.trim()) { await patchServerVoice(v.name, { label: n.trim() }); await refresh(); } }),
+        playB, h('b', {}, v.label),
+        v.builtin ? h('span', { class: 'chip small' }, G(v.gender) + ' sesi') : h('button', { class: 'chip small', type: 'button', title: 'Cinsiyeti değiştirmek için tıklayın', onclick: async () => { await patchServerVoice(v.name, { gender: v.gender === 'm' ? 'f' : 'm' }); await refresh(); } }, G(v.gender) + ' sesi'),
+        h('span', { class: 'chip ghosty small' }, src),
+        v.seconds ? h('span', { class: 'chip ghosty small' }, v.seconds + ' sn' ) : null,
+        h('span', { class: 'grow' }),
+        v.builtin ? null : btn('Adı', async () => { const n = prompt('Sesin adı', v.label); if (n && n.trim()) { await patchServerVoice(v.name, { label: n.trim() }); await refresh(); } }),
         textBtn,
-        btn('Sil', async () => {
+        v.builtin ? null : btn('Sil', async () => {
           if (!confirm(`"${v.label}" sesi silinsin mi?`)) return;
           await deleteServerVoice(v.name);
           cfg.cast = (cfg.cast || []).map((c) => (c.voice === v.name ? { ...c, voice: '' } : c));
@@ -57,38 +123,42 @@ export function voiceLibrary({ cfg, voiceInput, onChange = () => {} }) {
       txt, save);
   }
 
-  // ---------- Ses tasarla
-  const pSel = h('select', { class: 'input' }), mSel = h('select', { class: 'input' });
-  const dOut = h('div', { class: 'small', role: 'status' });
-  const play = async (name) => { const u = await serverVoiceUrl(name); if (u) new Audio(u).play().catch(() => {}); };
-  const design = async (p, label) => {
-    const r = await designServerVoice({ preset: p.id, motor: mSel.value || undefined });
-    await refresh(); play(r.name); return r;
-  };
-  const dBtn = btn('Bu sesi tasarla', async () => {
-    const p = presets.find((x) => x.id === pSel.value); if (!p) return;
-    dBtn.disabled = true; dOut.textContent = 'Tasarlanıyor… (GPU modeli ilk seferde yükler, 1-2 dakika sürebilir)';
-    try { const r = await design(p); dOut.textContent = `✓ "${r.name}" kütüphaneye eklendi (${r.motor}). Beğenmediyseniz silip yeniden tasarlayın: her tasarım farklı çıkar.`; } catch (e) { dOut.textContent = '✗ ' + e.message; } finally { dBtn.disabled = false; }
-  }, 'btn primary small');
-  const dAll = btn('Hazır 8 sesin hepsini oluştur', async () => {
-    dAll.disabled = dBtn.disabled = true;
+  // ---------- Yeni ses (tek tıkla) + tarifle tasarım
+  const nOut = h('div', { class: 'small', role: 'status' });
+  const used = () => new Set(voices.map((v) => v.label));
+  const nextName = (g) => { const u = used(); for (let k = 0; k < 3; k++) for (const n of NAMES[g]) { const l = k ? `${n} ${k + 1}` : n; if (![...u].some((x) => x === l || x.startsWith(l + ' ·'))) return l; } return NAMES[g][0] + ' ' + Date.now().toString(36).slice(-3); };
+  async function newVoice(g) {
+    if (!motors.length) { nOut.textContent = 'Yeni ses tasarlamak için bir tasarım motoru gerekir (OmniVoice ya da Trendyol-TTS/VoxCPM2). Şimdilik hazır sesleri kullanın ya da kendi sesinizi klonlayın.'; return; }
+    const tried = new Set(voices.map((v) => v.instruct).filter(Boolean));
+    let a, p, instruct;
+    for (let k = 0; k < 12; k++) { a = AGES[Math.floor(Math.random() * AGES.length)]; p = PITCH[Math.floor(Math.random() * PITCH.length)]; instruct = `${g === 'f' ? 'female' : 'male'}, ${a[0]}, ${p[0]}`; if (!tried.has(instruct)) break; }
+    const nm = nextName(g);
+    const label = `${nm} · ${a[1]}, ${p[1]}`;
+    const desc = `${a[2]} ${g === 'f' ? 'woman' : 'man'}, ${a[3]} and ${p[2]} voice`;
+    nOut.textContent = `${G(g)} sesi tasarlanıyor… (GPU modeli ilk seferde yükler, 1-2 dakika sürebilir)`;
+    for (const b of [bF, bM]) b.disabled = true;
     try {
-      for (const [i, p] of presets.filter((x) => !x.created).entries()) {
-        dOut.textContent = `Tasarlanıyor ${i + 1}… ${p.label}`;
-        await designServerVoice({ preset: p.id, motor: mSel.value || undefined }); await refresh();
-      }
-      dOut.textContent = '✓ Hazır sesler kütüphanede. Dinleyip beğenmediğinizi silin.';
-    } catch (e) { dOut.textContent = '✗ ' + e.message; } finally { dAll.disabled = dBtn.disabled = false; }
+      const r = await designServerVoice({ gender: g, instruct, desc, name: slug(nm) + '-' + Math.random().toString(36).slice(2, 5), label, motor: mSel.value || undefined });
+      await refresh(); playUrl(await serverVoiceUrl(r.name)).catch(() => {});
+      nOut.textContent = `✓ "${label}" eklendi ve çalıyor. Beğenmediyseniz Sil'e basıp yeni bir tane üretin: her tasarım farklı çıkar.`;
+    } catch (e) { nOut.textContent = '✗ ' + e.message; } finally { for (const b of [bF, bM]) b.disabled = false; }
+  }
+  const bF = btn('+ Yeni kadın sesi üret', () => newVoice('f'), 'btn primary'), bM = btn('+ Yeni erkek sesi üret', () => newVoice('m'), 'btn primary');
+  const pSel = h('select', { class: 'input' }), mSel = h('select', { class: 'input' });
+  const dBtn = btn('Bu tarifi tasarla', async () => {
+    const p = presets.find((x) => x.id === pSel.value); if (!p) return;
+    dBtn.disabled = true; nOut.textContent = 'Tasarlanıyor…';
+    try { const r = await designServerVoice({ preset: p.id, motor: mSel.value || undefined }); await refresh(); playUrl(await serverVoiceUrl(r.name)).catch(() => {}); nOut.textContent = `✓ "${r.name}" eklendi (${r.motor}).`; } catch (e) { nOut.textContent = '✗ ' + e.message; } finally { dBtn.disabled = false; }
   });
 
-  // ---------- Kendi sesimi klonla
+  // ---------- Kendi sesimi klonla (ücretsiz, bilgisayarda)
   const input = voiceInput();
   const cName = h('input', { class: 'input', placeholder: 'Ses adı, örn. Benim sesim' });
   const cGender = h('select', { class: 'input' }, opt('f', 'Kadın sesi'), opt('m', 'Erkek sesi'));
   const cText = h('textarea', { class: 'input', rows: 2, placeholder: '(İsteğe bağlı) Kaydın tam metni. Boşsa kendiliğinden çıkarılır.' });
   const consent = h('input', { type: 'checkbox' });
   const cOut = h('div', { class: 'small', role: 'status' });
-  const cBtn = btn('Kütüphaneye ekle', async () => {
+  const cBtn = btn('Klonla ve kütüphaneye ekle', async () => {
     if (!consent.checked) return (cOut.textContent = 'Önce izni onaylayın.');
     const d = await input.get(); if (!d) return (cOut.textContent = 'Önce kayıt yapın ya da dosya seçin.');
     if (d.seconds < 6) return (cOut.textContent = 'Kayıt en az 6–10 saniye olmalı.');
@@ -96,78 +166,84 @@ export function voiceLibrary({ cfg, voiceInput, onChange = () => {} }) {
     const name = slug(label) || 'ses-' + Date.now().toString(36);
     if (voices.some((v) => v.name === name) && !confirm(`"${name}" adlı ses var; üzerine yazılsın mı?`)) return;
     cBtn.disabled = true;
-    try { await uploadServerVoice(name, cGender.value, d.blob, { label, text: cText.value.trim() }); cOut.textContent = `✓ "${label}" eklendi. Artık podcast ve videolarda seçebilirsiniz.`; cName.value = ''; cText.value = ''; await refresh(); } catch (e) { cOut.textContent = '✗ ' + e.message; } finally { cBtn.disabled = false; }
-  }, 'btn primary small');
+    try { await uploadServerVoice(name, cGender.value, d.blob, { label, text: cText.value.trim() }); cOut.textContent = `✓ "${label}" eklendi (RTX GPU'nuzla çalışır, hiçbir yere gönderilmez). Karakterlere atayabilirsiniz.`; cName.value = ''; cText.value = ''; await refresh(); } catch (e) { cOut.textContent = '✗ ' + e.message; } finally { cBtn.disabled = false; }
+  }, 'btn primary');
 
-  // ---------- Ses kadrosu
+  // ---------- Podcast karakterleri
   cfg.cast = Array.isArray(cfg.cast) ? cfg.cast : [];
   const castBox = h('div', { class: 'stack' });
-  const nextName = (g) => NAMES[g].find((n) => !cfg.cast.some((c) => c.name === n)) || NAMES[g][0];
+  const castNextName = (g) => NAMES[g].find((n) => !cfg.cast.some((c) => c.name === n)) || NAMES[g][0];
   function renderCast() {
     castBox.replaceChildren(...cfg.cast.map((c, i) => {
-      const name = h('input', { class: 'input small-in', value: c.name || '', placeholder: 'Konuşmacı adı' });
+      const name = h('input', { class: 'input small-in', value: c.name || '', placeholder: 'Karakter adı' });
       name.oninput = () => { c.name = name.value.trim(); onChange(); };
-      const voice = h('select', { class: 'input small-in' }, opt('', 'Otomatik ses', !c.voice), ...voices.map((v) => opt(v.name, `${v.label} · ${G(v.gender)}`, v.name === c.voice)));
-      const gender = h('select', { class: 'input small-in', disabled: c.voice ? true : null }, opt('f', 'Kadın', c.gender !== 'm'), opt('m', 'Erkek', c.gender === 'm'));
-      voice.onchange = () => { c.voice = voice.value; const v = voices.find((x) => x.name === c.voice); if (v) c.gender = v.gender; onChange(); renderCast(); };
-      gender.onchange = () => { c.gender = gender.value; onChange(); };
-      return h('div', { class: 'row gap wrap' }, h('b', { class: 'cast-i' }, 'ABCDEF'[i]), name, voice, gender, btn('Çıkar', () => { cfg.cast.splice(i, 1); onChange(); renderCast(); }));
+      const pool = voices.filter((v) => v.gender === (c.gender === 'm' ? 'm' : 'f'));
+      const voice = h('select', { class: 'input small-in' }, opt('', 'Otomatik ses', !c.voice), ...pool.map((v) => opt(v.name, v.label, v.name === c.voice)));
+      const gender = h('select', { class: 'input small-in' }, opt('f', 'Kadın', c.gender !== 'm'), opt('m', 'Erkek', c.gender === 'm'));
+      voice.onchange = () => { c.voice = voice.value; onChange(); };
+      gender.onchange = () => { c.gender = gender.value; if (c.voice && !voices.some((v) => v.name === c.voice && v.gender === c.gender)) c.voice = ''; onChange(); renderCast(); };
+      const hear = btn('▶', async () => {
+        hear.disabled = true;
+        try { const b = await testVoice(c.voice || (c.gender === 'm' ? 'm' : 'f'), c.gender, `Merhaba, ben ${c.name || 'konuşmacı'}. Bugün sizinle önemli bir konuyu konuşacağız.`); await playUrl(URL.createObjectURL(b)); } catch (e) { toast('Dinlenemedi: ' + e.message, 'error'); } finally { hear.disabled = false; }
+      }, 'btn primary small');
+      hear.title = 'Bu karakterin sesini dinle';
+      return h('div', { class: 'row gap wrap cast-row' }, h('b', { class: 'cast-i' }, 'ABCDEF'[i]), name, gender, voice, hear, btn('Çıkar', () => { cfg.cast.splice(i, 1); onChange(); renderCast(); }));
     }));
   }
-  const addCast = btn('+ Konuşmacı ekle', () => { if (cfg.cast.length >= MAX_CAST) return; const g = cfg.cast.length % 2 ? 'm' : 'f'; cfg.cast.push({ name: nextName(g), gender: g, voice: '' }); onChange(); renderCast(); });
-  const fillCast = btn('Kütüphaneden doldur', () => {
-    if (!voices.length) return (status.textContent = 'Kütüphane boş: önce ses tasarlayın ya da klonlayın.');
-    const used = { f: 0, m: 0 };
-    cfg.cast = voices.slice(0, 5).map((v) => ({ name: NAMES[v.gender][used[v.gender]++ % 6], gender: v.gender, voice: v.name }));
+  const addCast = btn('+ Karakter ekle', () => { if (cfg.cast.length >= MAX_CAST) return; const g = cfg.cast.length % 2 ? 'm' : 'f'; cfg.cast.push({ name: castNextName(g), gender: g, voice: '' }); onChange(); renderCast(); });
+  const fillCast = btn('Hazır kadro: Ayşe, Fatma, Hasan, Hüseyin', () => {
+    if (!voices.length) return (status.textContent = 'Önce ses ekleyin: Pocket TR kurun ya da yeni ses üretin.');
+    const plan = [['Ayşe', 'f'], ['Fatma', 'f'], ['Hasan', 'm'], ['Hüseyin', 'm']];
+    const idx = { f: 0, m: 0 };
+    cfg.cast = plan.map(([name, g]) => { const pool = voices.filter((v) => v.gender === g); const v = pool.length ? pool[idx[g]++ % pool.length] : null; return { name, gender: g, voice: v ? v.name : '' }; });
     onChange(); renderCast();
   });
   const narr = h('select', { class: 'input' });
   narr.onchange = () => { const v = voices.find((x) => x.name === narr.value); cfg.narratorVoice = v ? { name: v.name, gender: v.gender } : null; onChange(); };
 
-  // ---------- Lokal modeller
+  // ---------- Modeller (Hugging Face): klonlayan / klonlamayan
   const mm = modelManager(cfg, { onChange });
-  const mmSec = sec('Lokal modeller (Hugging Face) — indir, dene, beğen / sil', false, mm.el);
+  const mmSec = sec('Modeller (Hugging Face) — indir, dene, beğen / sil', false, mm.el);
   mmSec.addEventListener('toggle', () => mmSec.open && mm.refresh());
 
-  const el = h('div', { class: 'stack' },
+  const el = h('div', { class: 'stack studio' },
     status,
-    h('div', { class: 'grid2' }, field('Başlangıç kadın sesi', sF), field('Başlangıç erkek sesi', sM)),
-    h('p', { class: 'muted small' }, 'Bir konuşmacıya ses seçilmediyse kütüphanedeki sesler cinsiyete göre sırayla dağıtılır. Ayarlar Kaydet’e basınca geçerli olur.'),
-    h('details', { class: 'vsec', open: true }, libTitle, h('div', { class: 'stack vpad' }, list)),
-    sec('Ses tasarla — tarifle yeni ses (kadın / erkek, yaş, perde)', false,
-      h('p', { class: 'muted small' }, 'Tarif bir kez örnek kayda çevrilir ve kütüphaneye klon referansı olarak girer; böylece her motor aynı sesi sürdürür. Her tasarım farklı çıkar: beğenmediğinizi silip yeniden deneyin.'),
-      h('div', { class: 'row gap wrap' }, pSel, mSel, dBtn, dAll), dOut),
-    sec('Kendi sesimi klonla (sınırsız, bilgisayarınızda kalır)', false, input.el,
-      h('div', { class: 'row gap wrap' }, cName, cGender), cText,
+    h('div', { class: 'row gap wrap' }, kurBtn, diagBtn, kurOut), diag,
+    h('div', { class: 'stack' }, libTitle, list),
+    h('div', { class: 'stack' }, head('Yeni ses', 'Tek tıkla yeni bir kadın ya da erkek sesi tasarlanır (RTX GPU\'nuzda, ücretsiz). Hazır sesler Pocket TR\'dir.'),
+      h('div', { class: 'row gap wrap' }, bF, bM), nOut,
+      sec('Tarifle tasarla (gelişmiş)', false, h('div', { class: 'row gap wrap' }, pSel, mSel, dBtn))),
+    h('div', { class: 'stack' }, head('Kendi sesimi klonla', 'Ücretsiz ve sınırsız: kayıt yalnız bilgisayarınızda, GPU\'nuzla işlenir; hiçbir buluta gitmez. Klonlanan ses kütüphaneye girer ve her yerde seçilebilir.'),
+      input.el, h('div', { class: 'row gap wrap' }, cName, cGender), cText,
       h('label', { class: 'row gap small' }, consent, 'Bu ses benim ya da sahibinden açık izin aldım.'), h('div', { class: 'row gap' }, cBtn), cOut),
-    sec('Ses kadrosu — podcast (2–6 konuşmacı) ve video anlatıcısı', false,
-      h('p', { class: 'muted small' }, 'Konuşmacıları adlandırın ve kütüphaneden ses seçin. Podcast oluştururken “Sesler › Ses kadrom” ve “Konuşmacı sayısı”nı seçin.'),
-      castBox, h('div', { class: 'row gap wrap' }, addCast, fillCast),
-      field('Video anlatıcısı', narr)),
+    h('div', { class: 'stack' }, head('Podcast karakterleri', 'Karakterleri adlandırın ve her birine bir ses seçin. Podcast üretirken “Karakterlerim (Ses stüdyosu)” seçin; üretilmiş podcast’te de karakter sesi ve satır konuşmacısı değiştirilebilir.'),
+      castBox, h('div', { class: 'row gap wrap' }, addCast, fillCast), field('Video anlatıcısı', narr)),
     mmSec);
 
   function fillSelects() {
-    const o = (g, cur) => [opt('', 'Otomatik', !cur), ...voices.filter((v) => v.gender === g).map((v) => opt(v.name, v.label, v.name === cur))];
-    sF.replaceChildren(...o('f', cfg.serverF)); sM.replaceChildren(...o('m', cfg.serverM));
-    narr.replaceChildren(opt('', 'Otomatik (ayarlardaki erkek / kadın anlatıcı)', !cfg.narratorVoice), ...voices.map((v) => opt(v.name, `${v.label} · ${G(v.gender)}`, v.name === cfg.narratorVoice?.name)));
+    narr.replaceChildren(opt('', 'Otomatik', !cfg.narratorVoice), ...voices.map((v) => opt(v.name, `${v.label} · ${G(v.gender)}`, v.name === cfg.narratorVoice?.name)));
     pSel.replaceChildren(...presets.map((p) => opt(p.id, (p.created ? '✓ ' : '') + p.label)));
     mSel.replaceChildren(...(motors.length > 1 ? motors.map((m) => opt(m, { omnivoice: 'OmniVoice ile', voxcpm: 'VoxCPM2 ile' }[m] || m)) : motors.length ? [opt(motors[0], motors[0])] : [opt('', 'Tasarım motoru yok')]));
-    dBtn.disabled = dAll.disabled = !motors.length;
+    dBtn.disabled = bF.disabled = bM.disabled = !motors.length;
   }
 
   async function refresh() {
     const u = await serverUrl(true);
-    if (!u) { status.textContent = 'Lokal sunucu kapalı. server/baslat.bat ile açın (docs/KURULUM.md).'; list.replaceChildren(h('p', { class: 'muted small' }, 'Sunucu açıkken ses kütüphanesi burada görünür.')); return; }
-    const i = serverInfo();
-    status.textContent = `✓ Sunucu çalışıyor · seslendirme: ${i?.tts?.engines?.join(', ') || '—'}${i?.tts?.design?.length ? '' : ' · ses tasarlamak için OmniVoice kurun ya da Trendyol-TTS / VoxCPM2 indirin'}${i?.tts?.female === false ? ' · kadın sesi için bir kadın ses ekleyin' : ''}`;
+    if (!u) {
+      status.textContent = 'Bilgisayarınızdaki sunucuya bağlanılamadı. Ayarlar › Bilgisayarım bölümünden bağlanın (kurulum: tek seferlik kur.bat).';
+      list.replaceChildren(h('p', { class: 'muted small' }, 'Sunucu açıkken sesleriniz burada görünür.')); kurBtn.hidden = true; return;
+    }
+    const i = serverInfo(), t = i?.tts || {};
+    kurBtn.hidden = !!t.pocketTr;
+    status.textContent = `✓ Sunucu çalışıyor · motorlar: ${(t.engines || []).filter((e) => e !== 'piper').join(', ') || '—'}${t.design?.length ? '' : ' · yeni ses tasarlamak için OmniVoice kurun'}`;
     try {
       voices = await serverVoices();
       const p = await serverPresets(); presets = p.presets; motors = p.motors;
     } catch (e) { status.textContent += ' · ' + e.message; }
-    libTitle.textContent = `Ses kütüphanem (${voices.length})`;
-    list.replaceChildren(...(voices.length ? voices.map(voiceRow) : [h('p', { class: 'muted small' }, 'Henüz ses yok. “Ses tasarla” ile hazır seslerden oluşturun ya da kendi sesinizi klonlayın.')]));
+    libTitle.textContent = `Seslerim (${voices.length})`;
+    list.replaceChildren(...(voices.length ? voices.map(voiceRow) : [h('p', { class: 'muted small' }, 'Henüz ses yok. “Pocket TR kur” ile 6 hazır ses ekleyin, “Yeni ses” ile tasarlayın ya da kendi sesinizi klonlayın.')]));
     fillSelects(); renderCast();
     if (voices.some((v) => v.textState === 'bekliyor')) setTimeout(() => el.isConnected && refresh(), 4000);
   }
-  return { el, refresh };
+  return { el, refresh, stop };
 }

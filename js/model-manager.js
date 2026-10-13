@@ -113,15 +113,26 @@ export function modelManager(cfg, { onChange = () => {} } = {}) {
       tryBox);
   }
 
+  // Klonlayan modeller referans kayıtla istenen sesi sürdürür (kendi sesiniz, yeni sesler); klonlamayanlar hazır seslerle konuşur.
+  const CLONERS = new Set(['voxcpm', 'omnivoice', 'chatterbox', 'xtts', 'moss', 'pocket']);
+  const open = new Set(); // liste yeniden çizilince açık gruplar kapanmasın
   function render() {
     const adap = models.filter((m) => m.adaptor);
+    const cloners = adap.filter((m) => CLONERS.has(m.adaptor));
+    const plain = adap.filter((m) => !CLONERS.has(m.adaptor));
     const onlyDl = models.filter((m) => !m.adaptor && m.platform !== 'mlx');
     const mlx = models.filter((m) => !m.adaptor && m.platform === 'mlx');
-    const grp = (title, desc, ms) => ms.length ? h('div', { class: 'stack' }, h('h4', {}, `${title} (${ms.length})`), h('p', { class: 'muted small' }, desc), ...ms.map(row)) : null;
+    const grp = (id, title, desc, ms) => {
+      if (!ms.length) return null;
+      const d = h('details', { class: 'vsec', 'data-grp': id, open: open.has(id) ? true : null }, h('summary', {}, `${title} (${ms.length})`), h('div', { class: 'stack vpad' }, h('p', { class: 'muted small' }, desc), ...ms.map(row)));
+      d.addEventListener('toggle', () => (d.open ? open.add(id) : open.delete(id)));
+      return d;
+    };
     list.replaceChildren(...[
-      grp('Dinleyebileceklerin', 'Defter Studio bu modelleri çalıştırabilir: indir, ▶ Dene ile dinle, beğendiğini "Bunu kullan" yap.', adap),
-      grp('Yalnız indirilebilir', 'Çalıştırıcı henüz yok (GGUF ya da kartı kod vermeyen modeller). İndirebilirsin ama burada dinleyemezsin; ilgini çekeni söyle, çalıştırıcısını ekleyelim.', onlyDl),
-      grp('Apple MLX', 'Yalnız Apple Silicon bilgisayarlarda çalışır; RTX 5090 dizüstünde işe yaramaz. İndirmeye değmez.', mlx)
+      grp('clone', 'Ses klonlayan modeller', 'Kayıttan ses klonlar ve yeni sesler tasarlar. İndir, ▶ Dene ile dinle, beğendiğini "Bunu kullan" yap.', cloners),
+      grp('plain', 'Ses klonlamayan modeller', 'Hazır seslerle konuşur (klon yok). Dinlemek ve karşılaştırmak içindir.', plain),
+      grp('dl', 'Yalnız indirilebilir', 'Çalıştırıcı henüz yok (GGUF ya da kartı kod vermeyen modeller). İndirebilirsin ama burada dinleyemezsin.', onlyDl),
+      grp('mlx', 'Apple MLX', 'Yalnız Apple Silicon bilgisayarlarda çalışır; RTX 5090 dizüstünde işe yaramaz.', mlx)
     ].filter(Boolean));
     const doneSize = models.reduce((t, m) => t + (m.diskte || 0), 0);
     info.textContent = `${models.length} model · diskte ${gb(doneSize)} · beğenilen ${models.filter((m) => m.puan === 'begen').length} · beğenilmeyen ${models.filter((m) => m.puan === 'begenme').length}`;

@@ -22,12 +22,14 @@ export const ENGINES = {
   google: 'Google Cloud TTS — Chirp 3 HD (aylık ücretsiz kota)',
   azure: 'Azure Speech — Emel / Ahmet (aylık ücretsiz kota)',
   openai: 'OpenAI TTS',
-  server: 'Lokal sunucu — GPU modelleri (OmniVoice, Trendyol-TTS…) / edge-tts; kota yok',
+  server: 'Lokal sunucu (RTX GPU\'nuz) — kota yok, sesler sabit',
   piper: 'Tarayıcıda Piper — robot gibi, yalnız erkek (otomatik sırada yok; yalnız elle seçilirse)',
   browser: 'Tarayıcı sesi (yalnız bu tarayıcıda Türkçe ses varsa)'
 };
+// Ayarlar'daki motor listesi: Piper ve tarayıcı sesi kaldırıldı (robot/yalnız erkek ya da Türkçe sesi yok); eski kayıtlar otomatiğe taşınır.
+export const ENGINE_CHOICES = ['auto', 'server', 'elevenlabs', 'gemini', 'minimax', 'fish', 'google', 'azure', 'openai'];
 export const ENGINE_SHORT = { elevenlabs: 'ElevenLabs', gemini: 'Gemini TTS', minimax: 'MiniMax', fish: 'Fish Audio', google: 'Google Cloud TTS', azure: 'Azure Speech', openai: 'OpenAI TTS', server: 'Lokal sunucu', piper: 'Piper (tarayıcı)', browser: 'Tarayıcı sesi', none: 'Ses motoru yok' };
-export const NO_ENGINE = 'Ses motoru yok. Seçenekler: 1) server\\baslat.bat ile lokal sunucuyu açın (kotasız); 2) Ayarlar › Seslendirme’ye Gemini, MiniMax ya da Azure anahtarı girin; 3) Ayarlar › Ses motoru’ndan Piper’ı elle seçin (yalnız erkek, robot gibi).';
+export const NO_ENGINE = 'Ses motoru yok. Lokal sunucu çalışmıyor ya da ses motoru kurulu değil: Ayarlar › Bilgisayarım bölümünden sunucuya bağlanın (kurulum: tek seferlik kur.bat). İsteğe bağlı: Ayarlar › Bulut API anahtarları.';
 
 export const VOICES = {
   gemini: { f: ['Kore', 'Aoede', 'Leda', 'Zephyr', 'Sulafat', 'Despina', 'Achernar', 'Vindemiatrix'], m: ['Charon', 'Puck', 'Orus', 'Iapetus', 'Algenib', 'Sadaltager', 'Alnilam', 'Schedar'] },
@@ -53,12 +55,13 @@ const DEFAULTS = {
   azureKey: '', azureRegion: 'westeurope', azureF: '', azureM: '',
   openaiKey: '', openaiModel: 'gpt-4o-mini-tts',
   serverF: '', serverM: '', serverModel: '',   // serverModel: lokal model kimliği ('' = otomatik)
-  cast: [],                                    // Ses kadrosu: [{name, gender, voice}] — podcast "Ses kadrom" seçeneği
+  cast: [],                                    // Ses kadrosu: [{name, gender, voice}] — podcast "Karakterlerim" seçeneği
   narratorVoice: null                          // Video anlatıcısı için ses kütüphanesinden {name, gender}
 };
 export async function loadTTS() {
   const s = { ...DEFAULTS, ...(await getSetting('tts', {})) };
   if (!s.schema) { if (s.elevenModel === 'eleven_v3') s.elevenModel = 'eleven_v4'; s.schema = 3; }
+  if (s.engine === 'browser') s.engine = 'auto'; // bu tarayıcıda Türkçe ses yok → "Ses motoru yok" hatası veriyordu
   return s;
 }
 export async function saveTTS(cfg) { await setSetting('tts', { ...cfg, schema: 3 }); }
@@ -365,6 +368,25 @@ async function serverLine(line, voice, cfg, style, lang, speaker) {
   return r.blob();
 }
 
+// Tek satırı (karakterin seçili sesiyle) dinlet: podcast'te "bu satırı bu kişiden duy". Parça önbelleğine yazmaz.
+export async function speakLine(line, speaker, speakers, lang, format = 'deep') {
+  const cfg = await loadTTS();
+  const engine = await resolveEngine(cfg);
+  if (engine === 'none') throw new TTSError(NO_ENGINE);
+  const fn = LINE_FN[engine];
+  if (!fn) throw new TTSError(`${ENGINE_SHORT[engine] || engine} toplu üretir; tek satır dinleme yalnız lokal sunucu ve satır satır çalışan bulut motorlarında var.`);
+  if (engine === 'server') await serverUrl(true);
+  const voices = await assignVoices(speakers, engine, cfg);
+  return withRetry(() => fn(line, voices[speaker.id], cfg, STYLE[format] || STYLE.deep, lang, speaker), 2);
+}
+// Ses stüdyosu: bir kütüphane/hazır sesi kısa cümleyle dinlet
+export async function testVoice(voice, gender, text) {
+  const base = await serverUrl(); if (!base) throw new TTSError('Lokal yardımcı sunucu çalışmıyor.');
+  const r = await fetch(base + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: normalizeTR(text), gender: gender === 'm' ? 'm' : 'f', voice, lang: 'tr-TR', engine: serverInfo()?.tts?.plan?.[gender === 'm' ? 'm' : 'f'] || '' }) });
+  if (!r.ok) throw new TTSError('Sunucu TTS: ' + (await r.text()).slice(0, 240));
+  return r.blob();
+}
+
 export async function serverVoices() {
   const base = await serverUrl(); if (!base) return [];
   const r = await fetch(base + '/voices'); return r.ok ? (await r.json()).voices || [] : [];
@@ -487,9 +509,12 @@ function chunkLines(lines, maxChars = 1600, maxSpeakers = 2) {
 }
 
 // Metin anahtarı: yalnız konuşmacı + metin + ton. Motor/ses/model ayarına BAĞLI DEĞİL (ayar değişince kayıtlı ses boşa gitmesin).
-const textKey = (lines) => hash('t1' + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone || ''])));
-export async function savedMix(artifactId, lines) {
-  const tk = textKey(lines);
+// Anahtar: konuşmacı + metin + ton; motor/ayar değişse de değişmez. Tek istisna: bu podcast'in karakterlerine AÇIKÇA atanmış sesler
+// (Ses stüdyosu/podcast karakter paneli): atama değişince ses de değişmelidir. Atama yoksa anahtar eski sürümle aynıdır.
+const voiceMark = (speakers) => (speakers || []).some((s) => s.serverVoice || s.voice) ? JSON.stringify(speakers.map((s) => [s.id, s.serverVoice || s.voice || ''])) : '';
+const textKey = (lines, speakers) => hash('t1' + JSON.stringify(lines.map((l) => [l.speaker, l.text, l.tone || ''])) + voiceMark(speakers));
+export async function savedMix(artifactId, lines, speakers) {
+  const tk = textKey(lines, speakers);
   const all = await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' && b.blob).toArray();
   let hit = all.find((b) => b.textKey === tk);
   if (!hit) { // 0.6.0 öncesi kayıt: metin anahtarı yok; satır sayısı tutuyorsa kabul et ve yükselt
@@ -498,7 +523,7 @@ export async function savedMix(artifactId, lines) {
   }
   return hit ? { engine: hit.engine, blob: hit.blob, timings: hit.timings, cached: true, saved: true } : null;
 }
-export const hasSavedMix = async (artifactId, lines) => !!(await savedMix(artifactId, lines).catch(() => null));
+export const hasSavedMix = async (artifactId, lines, speakers) => !!(await savedMix(artifactId, lines, speakers).catch(() => null));
 
 const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 const inflight = {};
@@ -512,7 +537,7 @@ export async function synthesize(artifactId, lines, speakers, lang, { format = '
   if (!lines?.length) throw new TTSError('Seslendirilecek metin yok.');
   // KAYITLI SES ÖNCE: bu metnin tamamı daha önce seslendirildiyse (hangi motorla olursa olsun) kayıtlı dosya çalınır;
   // ağa/API'ye hiç gidilmez, kota harcanmaz. Yeniden üretim yalnız 'Sesi yeniden üret' ile (fresh) ya da metin değişince olur.
-  if (!fresh) { const saved = await savedMix(artifactId, lines); if (saved) return saved; }
+  if (!fresh) { const saved = await savedMix(artifactId, lines, speakers); if (saved) return saved; }
   const cfg = await loadTTS();
   // SES KİLİDİ: bir seslendirme tek bir motorla yapılır. Motor başta seçilir; kota ya da hata olursa başka motora (özellikle robot
   // Piper'a) GEÇİLMEZ: podcast ortasında ses ve cinsiyet değişiyordu. Biten parçalar saklanır; yeniden açınca kaldığı yerden sürer.
@@ -586,7 +611,7 @@ async function synthWith(engine, cfg, artifactId, lines, speakers, lang, format,
     onProgress('Ses birleştiriliyor ve dengeleniyor…');
     const { blob, timings } = await mixPieces(pieces, lines);
     await db.blobs.where('artifactId').equals(artifactId).filter((b) => b.kind === 'mix' || b.kind === 'piece').delete();
-    await db.blobs.add({ artifactId, kind: 'mix', key, textKey: textKey(lines), blob, timings, engine });
+    await db.blobs.add({ artifactId, kind: 'mix', key, textKey: textKey(lines, speakers), blob, timings, engine });
     return { engine, blob, timings };
   })();
   inflight[key] = job;

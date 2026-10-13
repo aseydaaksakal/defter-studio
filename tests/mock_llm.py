@@ -161,7 +161,7 @@ def models_list():
 
 
 def voices_list():
-    return [{"name": n, "gender": v["gender"], "label": v["label"], "source": v["source"], "engine": v.get("engine"), "text": v.get("text"), "hasText": bool(v.get("text")), "textState": "var" if v.get("text") else "otomatik", "seconds": 8.0}
+    return [{"name": n, "gender": v["gender"], "label": v["label"], "source": v["source"], "engine": v.get("engine"), "instruct": v.get("instruct"), "builtin": bool(v.get("builtin")), "text": v.get("text"), "hasText": bool(v.get("text")), "textState": "var" if v.get("text") else "otomatik", "seconds": 8.0}
             for n, v in ST["voices"].items()]
 
 
@@ -196,7 +196,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         if p.startswith("/health"):
-            return self.send(200, {"ok": True, "version": "mock", "ffmpeg": True, "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": []}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None, "update": {"available": not ST.get("upd_applied"), "latest": "9.9.9", "n": 2}})
+            return self.send(200, {"ok": True, "version": "mock", "ffmpeg": True, "tts": {"engines": ["mock"], "auto": ["mock"], "plan": {"f": "mock", "m": "mock"}, "female": True, "clone": True, "design": ["mock"], "voices": len(ST["voices"]), "models": [], "pocketTr": bool(ST.get("pocketTr"))}, "image": {"ok": True, "model": "mock", "tur": "ckpt"}, "stt": None, "update": {"available": not ST.get("upd_applied"), "latest": "9.9.9", "n": 2}})
         if p.startswith("/update/check"):
             av = not ST.get("upd_applied")
             return self.send(200, {"current": "mock", "latest": "9.9.9", "available": av, "n": 2 if av else 0, "files": ["server/main.py", "server/guncelle.py"], "pip": False, "kabuk": [], "error": None, "launcher": True})
@@ -206,6 +206,8 @@ class H(http.server.BaseHTTPRequestHandler):
                                                {"engine": "omnivoice", "ok": False, "seconds": 0.4, "error": "RuntimeError: CUDA out of memory", "hint": "VRAM yetmedi: Ollama modeli GPU belleğini tutuyor."}]})
         if p == "/_video":
             return self.send(200, ST.get("video", {}))
+        if p == "/kur/durum":
+            return self.send(200, {"state": "done" if ST.get("pocketTr") else "idle", "msg": "Pocket TR hazır" if ST.get("pocketTr") else ""})
         if p == "/voices/presets":
             have = list(ST["voices"])
             return self.send(200, {"presets": [{"id": i, "label": l, "gender": g, "created": any(h == i or h.startswith(i + "-") for h in have)} for i, l, g in PRESETS], "motors": ["mock"]})
@@ -262,6 +264,16 @@ class H(http.server.BaseHTTPRequestHandler):
             ST.setdefault("video", {})["finished"] = True
             return self.send(200, b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2mp41" + b"\x00" * 64, "video/mp4")
         body = json.loads(raw or b"{}")
+        if p == "/kur/pockettr":
+            ST["pocketTr"] = True
+            for k in range(1, 4):
+                ST["voices"][f"pt-kadin-{k}"] = {"gender": "f", "label": f"Pocket kadın {k}", "source": "hazır", "builtin": True}
+                ST["voices"][f"pt-erkek-{k}"] = {"gender": "m", "label": f"Pocket erkek {k}", "source": "hazır", "builtin": True}
+            return self.send(200, {"started": True})
+        if p == "/voices/design" and not body.get("preset"):  # tek tıkla yeni ses: cinsiyet + tarif
+            n = body.get("name") or "yeni"
+            ST["voices"][n] = {"gender": body.get("gender", "f"), "label": body.get("label") or n, "source": "tasarım", "engine": "mock", "instruct": body.get("instruct"), "text": "Merhaba."}
+            return self.send(200, {"ok": True, "name": n, "motor": "mock"})
         if p == "/voices/design":
             pr = next((x for x in PRESETS if x[0] == body.get("preset")), None)
             if not pr:
@@ -286,7 +298,7 @@ class H(http.server.BaseHTTPRequestHandler):
             ST["ready"].discard(body.get("id")); ST["jobs"].pop(body.get("id"), None)
             return self.send(200, {"ok": True, "serbest": 3 * 10 ** 9})
         if p == "/_reset":  # testler arası yalıtım
-            ST.update(voices={}, jobs={}, ready=set(), puan={}); ST["log"].clear(); ST["imglog"].clear()
+            ST.update(voices={}, jobs={}, ready=set(), puan={}, pocketTr=False, upd_applied=False); ST["log"].clear(); ST["imglog"].clear()
             return self.send(200, {"ok": True})
         if p == "/_log/clear":
             ST["log"].clear(); ST["imglog"].clear(); ST["calls"] = 0

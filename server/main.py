@@ -30,6 +30,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import random
 import tempfile
 import time
@@ -49,7 +50,7 @@ import guncelle
 import gorsel
 import modeller
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
@@ -104,7 +105,7 @@ def tts_engines():
         e.append("voxcpm")
     if has("chatterbox"):
         e.append("chatterbox")
-    if has("pocket_tts"):
+    if has("pocket_tts") and os.getenv("DEFTER_POCKET_LEGACY") == "1":  # eski (referans gerektiren) adaptör; 0.8.0'dan beri kapalı: pockettr onun yerine geçti
         e.append("pocket")
     if has("TTS"):
         e.append("xtts")
@@ -131,6 +132,29 @@ def _engine_can(eng, gender):
     if eng == "pocket":
         return ref_for(gender) is not None or os.path.exists(os.path.join(VOICES_DIR, ("omni-kadin" if gender == "f" else "omni-erkek") + ".wav"))
     return False
+
+
+CLONERS = ("omnivoice", "voxcpm", "chatterbox", "xtts")  # referans kayıtla klonlayabilen motorlar (öncelik sırası)
+
+
+def clone_engine():
+    return next((e for e in CLONERS if e in tts_engines()), None)
+
+
+def _engine_for_voice(voice, want):
+    """Seçilen sese göre motor: hazır Pocket TR sesi → pockettr; kütüphanedeki klon/tasarım ses → klonlayabilen motor
+    (cinsiyet için kilitlenen motor klon yapamıyorsa — pockettr/edge/piper — klonlayabilen motora geçilir)."""
+    if not voice or voice in ("f", "m"):
+        return want
+    if voice in _PT_BY_NAME:
+        return "pockettr" if "pockettr" in tts_engines() else want
+    try:
+        lib = os.path.exists(os.path.join(VOICES_DIR, _clean(voice) + ".wav"))
+    except HTTPException:
+        return want
+    if lib and want in ("", "pockettr", "edge", "piper"):
+        return clone_engine() or want
+    return want
 
 
 def tts_plan():
@@ -183,7 +207,7 @@ def list_voices():
                 meta = _meta(n)
                 g = meta.get("gender") or ("m" if n.upper() == "B" else "f")
                 out.append({"name": n, "gender": g, "label": meta.get("label") or n, "source": meta.get("source") or "klon",
-                            "engine": meta.get("engine"), "text": meta.get("text"), "hasText": bool(meta.get("text")), "textState": meta.get("textState") or ("var" if meta.get("text") else "otomatik"),
+                            "engine": meta.get("engine"), "instruct": meta.get("instruct"), "text": meta.get("text"), "hasText": bool(meta.get("text")), "textState": meta.get("textState") or ("var" if meta.get("text") else "otomatik"),
                             "seconds": _seconds(os.path.join(VOICES_DIR, f))})
     return out
 
@@ -271,12 +295,27 @@ async def voices_patch(name: str, req: Request):
     return {"ok": True}
 
 
+ORNEK_METIN = "Merhaba, ben bu defterin sesiyim. Bugün birlikte önemli konulara bakacağız; hazırsan başlayalım."
+
+
 @app.get("/voices/{name}/audio")
-def voices_audio(name: str):
-    p = os.path.join(VOICES_DIR, _clean(name) + ".wav")
-    if not os.path.exists(p):
-        raise HTTPException(404, "Ses bulunamadı")
-    return FileResponse(p, media_type="audio/wav")
+async def voices_audio(name: str):
+    n = _clean(name)
+    p = os.path.join(VOICES_DIR, n + ".wav")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="audio/wav")
+    if n in _PT_BY_NAME and has("pocket_tts_turkish"):  # hazır ses: örnek kayıt ilk dinlemede üretilir ve saklanır
+        cache = os.path.join(HERE, ".ornek", n + ".wav")
+        if not os.path.exists(cache):
+            try:
+                data = await asyncio.to_thread(_gpu_synth, "pockettr", ORNEK_METIN, _PT_BY_NAME[n][1][0], "tr", None, {"voice": n})
+            except Exception as e:
+                raise HTTPException(500, f"Örnek ses üretilemedi: {e}")
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            with open(cache, "wb") as f:
+                f.write(data)
+        return FileResponse(cache, media_type="audio/wav")
+    raise HTTPException(404, "Ses bulunamadı")
 
 
 @app.delete("/voices/{name}")
@@ -605,15 +644,33 @@ async def tts_edge(text, gender, lang):
                            "server\\baslat.bat'ı kapatıp yeniden açın (açılışta edge-tts güncellenir) ya da Pocket TTS Türkçe'yi kurun: tools\\kur-pocket-tr.bat") from e
 
 
+def _piper_fetch(voice_name):
+    """tr_TR-dfki-medium → rhasspy/piper-voices deposundan .onnx + .onnx.json indirir (ilk kullanımda)."""
+    import urllib.request
+    m = re.fullmatch(r"([a-z]{2})_([A-Z]{2})-([A-Za-z0-9_]+)-([a-z_]+)", voice_name)
+    if not m:
+        raise RuntimeError(f"Piper ses adı geçersiz: {voice_name}")
+    fam, reg, name, q = m.group(1), m.group(1) + "_" + m.group(2), m.group(3), m.group(4)
+    os.makedirs(VOICES_DIR, exist_ok=True)
+    for ext in (".onnx", ".onnx.json"):
+        dest = os.path.join(VOICES_DIR, voice_name + ext)
+        if os.path.exists(dest):
+            continue
+        url = f"https://huggingface.co/rhasspy/piper-voices/resolve/main/{fam}/{reg}/{name}/{q}/{voice_name}{ext}"
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r, open(dest + ".part", "wb") as f:
+                shutil.copyfileobj(r, f)
+            os.replace(dest + ".part", dest)
+        except Exception as e:
+            raise RuntimeError(f"Piper sesi indirilemedi ({url}): {e}")
+
+
 @lru_cache(maxsize=8)
 def _piper(voice_name):
-    import subprocess
-    import sys
     from piper import PiperVoice  # pip install piper-tts
-    os.makedirs(VOICES_DIR, exist_ok=True)
     path = os.path.join(VOICES_DIR, voice_name + ".onnx")
-    if not os.path.exists(path):  # ilk kullanımda sesi indir
-        subprocess.run([sys.executable, "-m", "piper.download_voices", "--download-dir", VOICES_DIR, voice_name], check=True)
+    if not os.path.exists(path):
+        _piper_fetch(voice_name)
     return PiperVoice.load(path, use_cuda=False)
 
 
@@ -711,7 +768,7 @@ def hint_for(err):
 async def tts_selftest(engines: str = ""):
     """Kurulu bütün ses motorlarını kısa bir cümleyle dener; her biri için süre, boyut, gerçek hata ve çözüm ipucu döndürür."""
     import time
-    want = [e for e in engines.split(",") if e] or tts_engines()
+    want = [e for e in engines.split(",") if e] or [e for e in tts_engines() if e != "piper"]  # Piper otomatikte yok; elle istenirse ?engines=piper
     free, total = await asyncio.to_thread(_free_vram_gb)
     info = {"vramFreeGb": round(free, 1) if free is not None else None, "vramTotalGb": round(total, 1) if total is not None else None,
             "ollamaLoaded": await asyncio.to_thread(_ollama_loaded), "edge": _edge_version()}
@@ -833,6 +890,7 @@ async def tts(req: Request):
     if j.get("model"):
         return await _tts_model(j["model"], j, text, gender, lang, ref)
     want = (j.get("engine") or "").strip().lower()  # kilitli motor: yalnız o denenir, başkasına düşülmez
+    want = _engine_for_voice(j.get("voice"), want)
     if want:
         if want not in tts_engines():
             raise HTTPException(503, f"Kilitli motor '{want}' bu sunucuda hazır değil (kurulu: {', '.join(tts_engines()) or 'yok'}).")
@@ -859,6 +917,45 @@ async def tts(req: Request):
                 raise HTTPException(500, f"{eng} çalışmadı: {e}")
             errors.append(f"{eng}: {e}")
     raise HTTPException(500, "Hiçbir seslendirme motoru çalışmadı. " + " | ".join(errors) if errors else "Seslendirme motoru kurulu değil. tools\\kur-gpu.bat ile OmniVoice/Pocket TTS ya da pip install edge-tts kurun.")
+
+
+# ---------------------------------------------------------------- Motor kurulumu arayüzden (0.8.0): bat çalıştırmadan
+_KUR = {"state": "idle", "msg": "", "engine": None}
+
+
+def _pip_install(*pkgs):
+    import subprocess
+    import sys
+    r = subprocess.run([sys.executable, "-m", "pip", "install", "-U", "-q", *pkgs], capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError("pip hata verdi: " + (r.stderr or r.stdout).strip()[-400:])
+
+
+def _kur_pockettr():
+    try:
+        _KUR.update(state="running", engine="pockettr", msg="Paket kuruluyor (pocket-tts-turkish)…")
+        _pip_install("pocket-tts-turkish")
+        importlib.invalidate_caches()
+        _pockettr.cache_clear()
+        _KUR["msg"] = "Model indiriliyor ve deneniyor (ilk sefer ~440 MB)…"
+        tts_pockettr("Merhaba, bu bir ses denemesidir.", "pt-kadin-1", "f")
+        _KUR.update(state="done", msg="Pocket TTS Türkçe hazır: 3 kadın + 3 erkek ses.")
+    except Exception as e:
+        _KUR.update(state="error", msg=f"{type(e).__name__}: {str(e)[:400]}")
+
+
+@app.post("/kur/pockettr")
+def kur_pockettr():
+    if _KUR["state"] == "running":
+        return {"ok": True, **_KUR}
+    _KUR.update(state="running", engine="pockettr", msg="Başlıyor…")
+    threading.Thread(target=_kur_pockettr, daemon=True).start()
+    return {"ok": True, **_KUR}
+
+
+@app.get("/kur/durum")
+def kur_durum():
+    return {**_KUR, "pocketTr": has("pocket_tts_turkish")}
 
 
 # ---------------------------------------------------------------- Ses dökümü

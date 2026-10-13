@@ -64,10 +64,10 @@ echo Sunucu baslatiliyor...
 start "" wscript.exe "%HEDEF%\server\gizli-baslat.vbs"
 timeout /t 6 >nul
 echo.
-echo TAMAM. Bundan sonra yapmaniz gereken tek sey:
-echo   1) %SITE%/  adresini acin
-echo   2) Ayarlar ^> Lokal yardimci sunucu kutusuna  http://localhost:8765  yazip Kontrol et deyin ^(bir kez^)
-echo   3) Guncelleme gerekirse ayni yerde "Sunucuyu guncelle" dugmesi cikar; bat calistirmaniz gerekmez.
+echo TAMAM. Sunucu arka planda calisiyor. Site simdi acilacak ve sunucuya kendiliginden baglanacak
+echo ^(Chrome yerel ag izni sorarsa "Izin ver" deyin^). Bundan sonra zip indirmeniz ya da bat calistirmaniz gerekmez:
+echo sunucu her acilista siteyle karsilastirip yalnizca degisen dosyalari gunceller; Ayarlar'da "Sunucuyu guncelle" dugmesi de var.
+start "" "%SITE%/?bagla=1"
 echo.
 pause
 exit /b 0

@@ -103,6 +103,7 @@ def main():
             return el.inner_text() if el else ""
         pg.goto(APP); pg.wait_for_selector(".nb-card", timeout=20000)
 
+        pg.evaluate("(m) => fetch(m + '/_reset', { method: 'POST' })", MOCK)  # sahte sunucu önceki çalıştırmadan temiz başlasın
         # --- Ayarlar: sahte model + sahte sunucu; ses bölümü görünüyor mu
         pg.evaluate("""async (m) => { const d = await import('./js/db.js');
           await d.setSetting('llm', { provider: 'custom', baseUrl: m + '/v1', apiKey: '', model: 'mock', numCtx: 32768, temperature: 0.6 });
@@ -116,9 +117,9 @@ def main():
         pg.click(".settings summary:has-text('Görseller (slayt')")
         ok("Ayarlar: görseller bölümü, lokal (ComfyUI) sağlayıcı hazır", wait_until(lambda: "Hazır: Lokal" in txt(".settings"), 8), txt(".settings")[-200:].replace("\n", " ")[:90])
         # Sunucu kendini günceller: bat çalıştırmadan düğmeyle
-        pg.click(".settings >> text=Kontrol et")
+        pg.click(".settings >> text=Bağlan / kontrol et")
         ok("Sunucu güncelleme: yeni sürüm bildirilir", wait_until(lambda: "Yeni sürüm var" in txt(".settings"), 8), txt(".settings")[-300:].replace("\n", " ")[:120])
-        pg.click(".settings >> text=Sunucuyu güncelle")
+        pg.click(".settings button:text-is('Sunucuyu güncelle')")
         ok("Sunucu güncelleme: düğme uygular ve yeniden başlatılacağını söyler", wait_until(lambda: "yeniden başlıyor" in txt(".settings"), 8))
         pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(300)
 
@@ -399,33 +400,43 @@ def main():
         pg.click("button[aria-label='Tüm içerikleri sil']"); pg.click(".modal-foot >> text=Hepsini sil"); pg.wait_for_timeout(1200)
         ok("Tüm içerikleri sil", len(pg.query_selector_all(".studio-pane .art-row")) == 0)
 
-        # --- 0.4.0: ses kütüphanesi, ses tasarımı, 5 kişilik kadro, model yöneticisi (sahte yardımcı sunucu)
+        # --- 0.8.0: Ses stüdyosu (kütüphane, tek tıkla yeni ses, karakterler, modeller) — sahte yardımcı sunucu
         pg.on("dialog", lambda d: d.accept())
         api = lambda path, post=False: pg.evaluate("([m, p, post]) => fetch(m + p, post ? { method: 'POST' } : {}).then((r) => r.json())", [MOCK, path, post])
 
         api("/_reset", True)
 
-        def open_settings_section(*summaries):
+        def open_studio(*summaries):
             pg.goto(APP); pg.wait_for_selector(".nb-card")
-            pg.click("button[aria-label=Ayarlar]"); pg.wait_for_selector(".voice-settings")
+            pg.click("button[aria-label='Ses stüdyosu']"); pg.wait_for_selector(".studio")
             for sm in summaries:
-                pg.click(f"summary:has-text('{sm}')"); pg.wait_for_timeout(250)
+                pg.click(f".studio summary:has-text('{sm}')"); pg.wait_for_timeout(250)
 
-        open_settings_section("Lokal sunucu", "Ses tasarla")
-        wait_until(lambda: "Sunucu çalışıyor" in txt(".voice-settings"), 10)
-        ok("Ses kütüphanesi: lokal sunucuya bağlandı", "Sunucu çalışıyor" in txt(".voice-settings"), txt(".voice-settings")[:0])
-        pg.click("text=Hazır 8 sesin hepsini oluştur")
-        n = wait_until(lambda: len(pg.query_selector_all(".vl-row")) == 8 and 8, 30)
-        ok("Ses tasarımı: 8 hazır ses kütüphanede", n == 8, f"{len(pg.query_selector_all('.vl-row'))} ses")
-        pg.query_selector(".vl-row").scroll_into_view_if_needed(); pg.screenshot(path=f"{SHOTS}/ses-kutuphanesi.png")
+        def close_studio():
+            pg.keyboard.press("Escape"); pg.wait_for_timeout(700)
+
+        open_studio()
+        ok("Ses stüdyosu: üst çubuktaki düğmeyle açılır, lokal sunucuya bağlandı", wait_until(lambda: "Sunucu çalışıyor" in txt(".studio"), 10), txt(".studio")[:60])
+        ok("Ses stüdyosu: ses yokken 'Pocket TR kur' düğmesi görünür", pg.is_visible(".studio button:has-text('Pocket TR kur')"))
+        pg.click(".studio button:has-text('Pocket TR kur')")
+        n = wait_until(lambda: len(pg.query_selector_all(".vl-row")) == 6 and 6, 20)
+        ok("Pocket TR arayüzden kuruldu: 3 kadın + 3 erkek hazır ses", n == 6, f"{len(pg.query_selector_all('.vl-row'))} ses")
+        pg.click(".studio button:has-text('Yeni kadın sesi üret')")
+        ok("Yeni kadın sesi tek tıkla üretildi", wait_until(lambda: len(pg.query_selector_all(".vl-row")) == 7, 10))
+        pg.click(".studio button:has-text('Yeni erkek sesi üret')")
+        ok("Yeni erkek sesi tek tıkla üretildi", wait_until(lambda: len(pg.query_selector_all(".vl-row")) == 8, 10))
+        pg.query_selector(".vl-row").scroll_into_view_if_needed(); pg.screenshot(path=f"{SHOTS}/ses-studyosu.png")
         pg.query_selector_all(".vl-row")[-1].query_selector("button:text-is('Sil')").click()
         ok("Ses kütüphanesi: ses silme", wait_until(lambda: len(pg.query_selector_all(".vl-row")) == 7, 8))
-        pg.query_selector_all(".vl-row")[0].query_selector("button:text-is('Adı değiştir')").is_visible()
-        pg.click("summary:has-text('Ses kadrosu')")
-        pg.click("text=Kütüphaneden doldur")
-        ok("Ses kadrosu: kütüphaneden 5 konuşmacı dolduruldu", len(pg.query_selector_all(".cast-i")) == 5)
-        pg.fill(".cast-i >> nth=0 >> xpath=following-sibling::input", "Deniz Hoca")
-        pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(400)
+        ok("Ses kütüphanesi: üretilen seste 'Adı' düğmesi, hazır seste yok", pg.query_selector_all(".vl-row")[-1].query_selector("button:text-is('Adı')") is not None and pg.query_selector_all(".vl-row")[0].query_selector("button:text-is('Adı')") is None)
+        pg.click("text=Hazır kadro: Ayşe")
+        ok("Karakterler: hazır kadro 4 kişi (Ayşe, Fatma, Hasan, Hüseyin)", len(pg.query_selector_all(".cast-i")) == 4 and pg.input_value(".cast-row >> nth=3 >> input") == "Hüseyin")
+        pg.click("text=+ Karakter ekle")
+        ok("Karakterler: 5. karakter eklendi", len(pg.query_selector_all(".cast-i")) == 5)
+        pg.fill(".cast-row >> nth=0 >> input", "Deniz Hoca")
+        pg.locator(".cast-row >> nth=4 >> select").nth(1).select_option(index=3)  # 5. karaktere farklı bir kadın sesi
+        close_studio()
+        ok("Ses stüdyosu: kadro kendiliğinden kaydedildi", pg.evaluate("async () => { const c = (await (await import('./js/tts.js')).loadTTS()).cast; return c.length === 5 && c[0].name === 'Deniz Hoca' && c.every((x) => x.voice); }"))
 
         api("/_log/clear", True)
         pg.click(".nb-card:not(.new) >> nth=0"); pg.wait_for_selector(".tile")
@@ -433,21 +444,39 @@ def main():
         pg.click('.modal .seg[aria-label="Konuşmacı sayısı"] button[data-v="5"]')
         pg.click('.modal .seg[aria-label="Sesler"] button[data-v="cast"]')
         pg.click("text=Hemen oluştur"); pg.wait_for_timeout(300)
-        ok("Podcast (5 konuşmacı, ses kadrosu): üretildi", open_latest(r"^Test Bölümü", 120))
+        ok("Podcast (5 konuşmacı, karakterlerim): üretildi", open_latest(r"^Test Bölümü", 120))
         wait_until(lambda: "hazır" in txt(".player-row"), 60)
         ok("Podcast: 5 konuşmacı kartı, özel ad kullanıldı", len(pg.query_selector_all(".chip[class*='spk-']")) == 5 and txt(".chip.spk-A b") == "Deniz Hoca", txt(".chip.spk-A"))
         log = api("/_log")["log"]
         used = {x["voice"] for x in log}
         ok("Podcast: sunucuya 5 farklı kütüphane sesi gitti", len(used) == 5 and not (used & {"f", "m"}), str(sorted(used)))
         ok("Podcast: konuşmacı kimlikleri A–E", {x["speaker"] for x in log} == set("ABCDE"), str(sorted({x["speaker"] for x in log})))
-        pg.screenshot(path=f"{SHOTS}/podcast5.png"); close_viewer()
+        pg.screenshot(path=f"{SHOTS}/podcast5.png")
+        # Satır başına konuşmacı: hazır podcast'te bir satırı başka karakterin sesinden dinle
+        sel = pg.query_selector(".tline-sel")
+        ok("Podcast: her satırda konuşmacı seçici var", sel is not None)
+        if sel:
+            api("/_log/clear", True)
+            first = pg.query_selector_all(".tline-sel")[0]
+            first.select_option(index=2)
+            pg.wait_for_timeout(300)
+            ok("Podcast: satırın konuşmacısı değişti (seçici güncellendi)", first.input_value() != "")
+        close_viewer()
 
         TR = "Trendyol/Trendyol-TTS"
         row = lambda mid: next((r for r in pg.query_selector_all(".mm-row") if mid in r.inner_text()), None)
         rl = lambda mid: pg.locator(f'.mm-row[data-id="{mid}"]')  # liste yeniden çizilebilir: tıklamalar her seferinde yeniden çözülür
-        open_settings_section("Lokal sunucu", "Lokal modeller")
+
+        def open_models():
+            open_studio("Modeller (Hugging Face)")
+            for g in ("Ses klonlayan modeller", "Ses klonlamayan modeller", "Yalnız indirilebilir", "Apple MLX"):
+                if pg.query_selector(f".studio summary:has-text('{g}')"):
+                    pg.click(f".studio summary:has-text('{g}')"); pg.wait_for_timeout(150)
+
+        open_models()
         n = wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 31 and 31, 15)
         ok("Model yöneticisi: 25 MIT + 6 ek model listeleniyor", n == 31, f"{len(pg.query_selector_all('.mm-row'))} satır")
+        ok("Model yöneticisi: klonlayan / klonlamayan ayrı açılır gruplar", pg.query_selector(".studio summary:has-text('Ses klonlayan modeller')") is not None and pg.query_selector(".studio summary:has-text('Ses klonlamayan modeller')") is not None)
         ok("Model yöneticisi: Apple MLX ayrı grupta, uyarıyla", "Apple MLX (5)" in txt(".mm") and "işe yaramaz" in txt(".mm"))
         ok("Model yöneticisi: gerçek kişi sesi uyarısı", "izinsiz kullanmayın" in txt(".mm"))
         pg.query_selector(".mm").scroll_into_view_if_needed(); pg.screenshot(path=f"{SHOTS}/modeller.png")
@@ -459,22 +488,40 @@ def main():
         ok("Model dene: ses üretildi, istek model kimliğini taşıdı", wait_until(lambda: pg.query_selector(".mm-try audio:not([hidden])") is not None, 15) and api("/_log")["log"][-1]["model"] == TR)
         rl(TR).locator("button:text-is('Bunu kullan')").click()
         ok("Model seçimi: 'Kullanılıyor'", "Kullanılıyor" in row(TR).inner_text())
-        pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(400)
-        ok("Model seçimi ayarlara kaydedildi", pg.evaluate("async () => (await (await import('./js/tts.js')).loadTTS()).serverModel") == TR)
+        close_studio()
+        ok("Model seçimi kendiliğinden kaydedildi", pg.evaluate("async () => (await (await import('./js/tts.js')).loadTTS()).serverModel") == TR)
 
-        open_settings_section("Lokal sunucu")
+        pg.goto(APP); pg.wait_for_selector(".nb-card")
+        pg.click("button[aria-label=Ayarlar]"); pg.wait_for_selector(".voice-settings")
         pg.click("text=Sesi dene (kadın + erkek)")
         wait_until(lambda: "çalışıyor (dinliyorsunuz)" in txt(".voice-settings"), 20)
         ok("Podcast sesi: lokal sunucu isteği seçili modelle gitti", any(x["model"] == TR for x in api("/_log")["log"]))
-        pg.click("text=Motorları sına (lokal sunucu)")
-        ok("Motor tanısı: ortam, çalışan motor ve gerçek hata + çözüm ipucu gösterilir", wait_until(lambda: "RTX 5090" in txt(".voice-settings") and "✓ edge" in txt(".voice-settings") and "✗ omnivoice" in txt(".voice-settings") and "Ollama modeli GPU" in txt(".voice-settings"), 10), txt(".voice-settings")[-260:])
-        pg.click("summary:has-text('Lokal modeller')"); wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 31, 10)
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        open_studio()
+        pg.click("text=Motorları sına")
+        ok("Motor tanısı: ortam, çalışan motor ve gerçek hata + çözüm ipucu gösterilir", wait_until(lambda: "RTX 5090" in txt(".studio") and "✓ edge" in txt(".studio") and "✗ omnivoice" in txt(".studio") and "Ollama modeli GPU" in txt(".studio"), 10), txt(".studio")[-260:])
+        close_studio()
+        open_models()
+        wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 31, 10)
         rl("alperiox/pocket-tts-turkish").locator("button[aria-label='Beğendim']").click()
         ok("Beğendim: sunucuda kalıcı", wait_until(lambda: next(m for m in api("/models")["models"] if m["id"] == "alperiox/pocket-tts-turkish")["puan"] == "begen", 5))
         rl(TR).locator("button[aria-label='Beğenmedim']").click()
         ok("Beğenmedim: onayla → diskten silindi", wait_until(lambda: "indirildi" not in row(TR).inner_text() and not next(m for m in api("/models")["models"] if m["id"] == TR)["hazir"], 8))
-        pg.click(".modal-foot >> text=Kaydet"); pg.wait_for_timeout(400)
+        close_studio()
         ok("Silinen modelin seçimi temizlendi (otomatik motor)", pg.evaluate("async () => (await (await import('./js/tts.js')).loadTTS()).serverModel") == "")
+
+        # --- 0.8.0: Ayarlar sade; bulut anahtarları açılır bölümde; eski 'tarayıcı sesi' seçimi göç eder; kur.bat indirilebilir
+        pg.goto(APP); pg.wait_for_selector(".nb-card")
+        pg.evaluate("async () => { const d = await import('./js/db.js'); await d.setSetting('tts', { engine: 'browser', schema: 3 }); }")
+        pg.reload(); pg.wait_for_selector(".nb-card")
+        ok("Eski 'Tarayıcı sesi' seçimi otomatiğe göç etti", pg.evaluate("async () => (await (await import('./js/tts.js')).loadTTS()).engine") == "auto")
+        pg.click("button[aria-label=Ayarlar]"); pg.wait_for_selector(".voice-settings")
+        ok("Ayarlar: bulut anahtarları varsayılan kapalı tek açılır bölümde", pg.query_selector(".voice-settings details.cloud:not([open])") is not None and not pg.is_visible(".voice-settings input[type=password]"))
+        pg.click(".voice-settings details.cloud summary")
+        ok("Ayarlar: bulut bölümü açılınca tek satır anahtar alanları görünür", pg.is_visible(".voice-settings input[type=password]") and "OpenAI TTS" in txt(".voice-settings"))
+        ok("Ayarlar: 'Ses stüdyosunu aç' düğmesi var", pg.query_selector(".voice-settings button:has-text('Ses stüdyosunu aç')") is not None)
+        ok("Ayarlar: kur.bat indirme düğmesi ve tek satırlık komut", pg.query_selector(".settings button:has-text('kur.bat dosyasını indir')") is not None and pg.query_selector(".settings button:has-text('komutu kopyala')") is not None, "")
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
 
         # --- Ses kilidi: bir podcast boyunca motor/ses sabit; kota ya da hata olursa başka motora (robot Piper) düşülmez
         api("/_log/clear", True)

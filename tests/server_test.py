@@ -442,6 +442,58 @@ os.environ["DEFTER_LAUNCHER"] = "0"; exits.clear()
 ap = client.post("/update/apply").json()
 ok("/update/apply: başlatıcı yoksa kapanmaz, elle yeniden başlatma ister", ap["restart"] == "manual" and not exits, str(ap))
 main.threading.Timer = _Timer; main.guncelle.manifest = guncelle_man
+
+# ---- 0.8.0: sese göre motor, Piper doğrudan indirme hatası, arayüzden kurulum, güncelleyici uygulama grubu
+try:
+    main._piper_fetch("gecersiz ad")
+    ok("Piper: geçersiz ses adı reddedilir", False)
+except RuntimeError as e:
+    ok("Piper: geçersiz ses adı reddedilir", "geçersiz" in str(e))
+ok("Ses seçimi: 'f'/'m' ve boş seçim kilitli motoru değiştirmez", main._engine_for_voice("f", "edge") == "edge" and main._engine_for_voice("", "omnivoice") == "omnivoice" and main._engine_for_voice(None, "edge") == "edge")
+_OLD_TE = main.tts_engines
+main.tts_engines = lambda: ["pockettr", "edge"]
+ok("Ses seçimi: hazır Pocket TR sesi → pockettr motoru", main._engine_for_voice("pt-kadin-2", "edge") == "pockettr")
+main.tts_engines = lambda: ["edge"]
+ok("Ses seçimi: Pocket TR kurulu değilse kilitli motorda kalır", main._engine_for_voice("pt-kadin-2", "edge") == "edge")
+main.tts_engines = _OLD_TE
+_pc = []
+_OLD_PIP, _OLD_PT = main._pip_install, main.tts_pockettr
+main._pip_install = lambda *a: _pc.append(a)
+main.tts_pockettr = lambda *a, **k: WAV
+main._kur_pockettr()
+d = client.get("/kur/durum").json()
+ok("Pocket TR kurulumu (arayüzden): pip + model denemesi sonrası 'done'", d["state"] == "done" and _pc and "pocket-tts-turkish" in _pc[0], str(d)[:120])
+main._pip_install = lambda *a: (_ for _ in ()).throw(RuntimeError("pip hata verdi: ağ yok"))
+main._kur_pockettr()
+d = client.get("/kur/durum").json()
+ok("Pocket TR kurulumu: hata durumda 'error' ve gerçek mesaj döner", d["state"] == "error" and "ağ yok" in d["msg"], str(d)[:120])
+main._pip_install, main.tts_pockettr = _OLD_PIP, _OLD_PT
+main._KUR.update(state="idle", msg="")
+_mf = json.load(open(os.path.join(os.path.dirname(SERVER), "server", "manifest.json"), encoding="utf-8")) if os.path.exists(os.path.join(SERVER, "manifest.json")) else {}
+ok("Manifest: uygulama dosyaları (index.html, js/, css/) 'app' grubunda", "index.html" in _mf.get("app", {}) and any(k.startswith("js/") for k in _mf.get("app", {})) and not any(k.startswith("js/") for k in _mf.get("files", {})))
+with tempfile.TemporaryDirectory() as _r:
+    _m = {"version": "x", "files": {}, "app": {"js/a.js": "0" * 64}, "kabuk": {}}
+    ok("Güncelleyici: index.html yoksa (kur.bat kurulumu) uygulama dosyaları eşitlenmez", main.guncelle.plan(_m, _r)["degisen"] == [])
+    open(os.path.join(_r, "index.html"), "w").write("x")
+    ok("Güncelleyici: index.html varsa (zip/depo kopyası) uygulama dosyaları eşitlenir", main.guncelle.plan(_m, _r)["degisen"] == ["js/a.js"])
+ok("Güncelleyici: kök dosyalar izinli, üst dizin ve mutlak yol reddedilir", main.guncelle.guvenli("index.html") and not main.guncelle.guvenli("../index.html") and not main.guncelle.guvenli("/etc/passwd"))
+
+# ---- 0.8.0: eğitim veri seti hazırlayıcı (sahte döküm; ffmpeg gerekir)
+import importlib.util  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import wave  # noqa: E402
+_sp = importlib.util.spec_from_file_location("vs", os.path.join(os.path.dirname(SERVER), "tools", "veri-seti-hazirla.py"))
+_vs = importlib.util.module_from_spec(_sp); _sp.loader.exec_module(_vs)
+_r = _vs.kliplere_bol([(0, 3, "Ee, merhaba"), (3.2, 6, "nasılsın"), (20, 21, "kısa"), (30, 60, "çok uzun"), (70, 74, "a|b  c")])
+ok("Veri seti: yakın cümleler birleşir, kısa/çok uzun parça atılır, '|' temizlenir", _r == [(0, 6, "Ee, merhaba nasılsın"), (70, 74, "a b c")], str(_r))
+if shutil.which("ffmpeg"):
+    with tempfile.TemporaryDirectory() as _d:
+        _src = os.path.join(_d, "s.mp3")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:duration=12", "-ac", "2", "-ar", "44100", _src], check=True)
+        _rows = _vs.hazirla([_src], os.path.join(_d, "o"), dokum_fn=lambda w: [(0, 4, "Ee, birinci"), (4.2, 7, "ikinci"), (8, 11, "üçüncü")])
+        _w = wave.open(os.path.join(_d, "o", "wavs", "00001.wav"))
+        ok("Veri seti: 24 kHz mono parçalar + metadata.csv üretilir", len(_rows) == 2 and _w.getframerate() == 24000 and _w.getnchannels() == 1 and os.path.exists(os.path.join(_d, "o", "metadata.csv")))
 srv.shutdown()
 
 n = sum(results)

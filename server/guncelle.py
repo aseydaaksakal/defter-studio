@@ -8,6 +8,7 @@ manifestle karşılaştırır ve YALNIZ değişenleri indirir. Hiçbir şey değ
 Kullanım:
     python guncelle.py --sync [--quiet] [--kabuk] [--nopip] [--root KLASÖR] [--base ADRES]   # farkları indir + gerekirse pip
     python guncelle.py --check                                                      # yalnız farkları yaz
+Uygulama dosyaları (index.html, js/, css/…) yalnız yerelde index.html varsa eşitlenir (zip/depo kopyası); kur.bat kurulumu yalnız sunucu + araçları tutar, uygulama için Pages kullanılır.
 Güvenlik: adres yalnız ortam değişkeni DEFTER_UPDATE_URL ya da --base ile verilir (varsayılan: resmî GitHub Pages);
 dosya yolları server/ ve tools/ altında olmak zorundadır, `..` ve mutlak yol reddedilir, özet tutmayan dosya yazılmaz.
 """
@@ -22,7 +23,8 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 BASE = os.getenv("DEFTER_UPDATE_URL", "https://aseydaaksakal.github.io/defter-studio/").rstrip("/") + "/"
-IZINLI = ("server/", "tools/")
+IZINLI = ("server/", "tools/", "js/", "css/")
+KOK_DOSYA = ("index.html", "sw.js", "icon.svg", "manifest.webmanifest")  # uygulama (Pages ile aynı) kök dosyaları
 STATE = os.path.join(HERE, ".guncel.json")
 
 
@@ -38,6 +40,8 @@ def _get(url: str, timeout=30) -> bytes:
 
 def guvenli(yol: str) -> bool:
     p = yol.replace("\\", "/")
+    if p in KOK_DOSYA:
+        return True
     return p.startswith(IZINLI) and ".." not in p.split("/") and not p.startswith("/") and ":" not in p and "/." not in "/" + p
 
 
@@ -56,6 +60,8 @@ def _yerel_sha(root, yol):
 def plan(m: dict, root=ROOT, kabuk=False) -> dict:
     """Değişen dosyaları bulur. {'degisen': [...], 'kabuk': [...], 'py': bool, 'pip': bool}"""
     files = {k: v for k, v in m.get("files", {}).items() if guvenli(k)}
+    if os.path.exists(os.path.join(root, "index.html")):  # zip/depo kopyası uygulamayı da sunuyor: uygulama dosyaları da eşitlenir (kur.bat kurulumunda yok; orada Pages kullanılır)
+        files.update({k: v for k, v in m.get("app", {}).items() if guvenli(k)})
     shell = {k: v for k, v in m.get("kabuk", {}).items() if guvenli(k)}
     degisen = [k for k, v in files.items() if _yerel_sha(root, k) != v]
     kabuk_fark = [k for k, v in shell.items() if _yerel_sha(root, k) != v]

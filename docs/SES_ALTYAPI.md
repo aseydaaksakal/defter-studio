@@ -51,3 +51,11 @@ Uygulama bu adreslere zaten bağlanabilir: **Ayarlar › Lokal yardımcı sunucu
 
 ## 6. Anahtarlar
 Fish Audio ve ElevenLabs anahtarları sohbette paylaşıldı; **hiçbir dosyaya, teste ya da depoya yazılmadı ve kullanılmadı**. Paylaşılan anahtarları iptal edip yenisini oluşturmanız önerilir; yenilerini yalnız Ayarlar › Seslendirme'ye girin (bu tarayıcıda saklanır). Fish Audio için kadın/erkek ses kimlikleri (reference_id) Ayarlar'daki "Türkçe sesleri listele" ile seçilir.
+
+## 0.8.0 kararları: Pages'e konabilecek modeller
+
+- `hans00/MOSS-TTS-Nano-GGUF`: yalnız codec çevrilmiş (LLM yok) → konuşturamaz, kullanılmadı.
+- `hexgrad/Kokoro-82M`: StyleTTS2 türevi, 82 M parametre; q8 ONNX ≈ 86–92 MB (≤100 MB). Türkçe resmî değil; Türkçe ince ayar için `duxx/kikiri-turkish-base` (CC-BY-SA) tarifi. Tarayıcı motoru henüz yazılmadı (HF'ye sandbox'ta erişilemedi, doğrulanamaz).
+- Piper (VITS) ≈ 63 MB: şu an Pages'te tek ücretsiz çevrimdışı seçenek; Türkçe sesler erkek.
+- Eğitim yolu ve veri hazırlama: `SES_EGITIMI.md`.
+

@@ -587,3 +587,23 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .info-poster.o-portrait .ip-hero { max-height: 200px; }
 .ip-ic.has-img { padding: 0; overflow: hidden; width: 72px; height: 72px; }
 .ip-ic.has-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ===== 0.8.0: Ses stüdyosu, sade bulut anahtarları, podcast karakter paneli ===== */
+.vsec { border: 1px solid var(--line); border-radius: var(--r); margin: 6px 0; background: var(--card2); }
+.vsec > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; list-style: revert; }
+.vsec > .vpad { padding: 0 14px 14px; }
+.vsec > .grid2 { padding: 0 14px 14px; }
+.studio h3 { margin: 18px 0 2px; font-size: 17px; }
+.studio .cast-row { align-items: center; }
+.prov { display: grid; gap: 6px; }
+.prov-row { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; align-items: center; }
+.prov-name { font-weight: 600; font-size: 14px; }
+.prov-more { padding: 8px 0 6px; }
+@media (max-width: 640px) { .prov-row { grid-template-columns: 1fr auto; } .prov-name { grid-column: 1 / -1; } .prov-more { grid-template-columns: 1fr; } }
+.tline-who { display: grid; gap: 4px; align-content: start; }
+.tline-sel { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--card2); color: inherit; max-width: 100%; }
+.tline-play { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0 4px; justify-self: start; }
+.cast-panel { border: 1px solid var(--line); border-radius: var(--r); padding: 4px 12px; background: var(--card2); }
+.cast-panel > summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
+.cast-panel .cast-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; }
+@media (max-width: 640px) { .tline-who { grid-template-columns: 1fr auto; } }

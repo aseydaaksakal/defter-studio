@@ -1,7 +1,7 @@
 // Sesli Özet oynatıcısı: tek parça doğal ses (gerçek ileri/geri sarma), konuşmacılar, döküm vurgusu, hız, WAV indirme.
 // Ses hazırlanırken hazır olan bölümler sırayla çalınır (beklemeden dinleme). Türkçe tarayıcı sesi yoksa tarayıcı sesi kullanılmaz.
 import { h, icon, toast, download, slug, fmtTime } from '../../ui.js';
-import { synthesize, speakBrowser, resolveEngine, ENGINE_SHORT, loadTTS, hasNaturalBrowserVoice, hasBrowserVoice, femaleOK, hasSavedMix } from '../../tts.js';
+import { synthesize, speakBrowser, resolveEngine, ENGINE_SHORT, loadTTS, hasNaturalBrowserVoice, hasBrowserVoice, femaleOK, hasSavedMix, speakLine, testVoice, serverVoices } from '../../tts.js';
 import { castFor } from '../gen.js';
 
 export function speakersOf(c) {
@@ -26,7 +26,7 @@ export function femaleVoiceCard(openSettings) {
 export function render(root, art, api) {
   const c = art.content;
   const lines = c.lines || [];
-  const speakers = speakersOf(c);
+  const speakers = speakersOf(c).map((s) => ({ ...s })); // karakter paneli adı/cinsiyeti/sesi değiştirebilir
   const byId = Object.fromEntries(speakers.map((s) => [s.id, s]));
   let disposed = false, audio = null, timings = null, idx = 0, rate = 1, editing = false, raf = 0;
   // Akış (parça parça) çalma durumu
@@ -40,10 +40,56 @@ export function render(root, art, api) {
   const speedBtn = h('button', { class: 'chip', title: 'Oynatma hızı' }, '1,0×');
   const status = h('span', { class: 'muted small', role: 'status' }, 'Ses hazırlanıyor…');
   const list = h('div', { class: 'transcript' });
-  const cast = h('div', { class: 'row gap wrap' }, speakers.map((s) => h('span', { class: 'chip spk-' + s.id }, h('b', {}, s.name), ` · ${s.role} · ${s.gender === 'm' ? 'erkek' : 'kadın'} sesi${s.serverVoice ? ' · ' + s.serverVoice : ''}`)));
+  const cast = h('div', { class: 'row gap wrap' });
+  const paintCast = () => cast.replaceChildren(...speakers.map((s) => h('span', { class: 'chip spk-' + s.id }, h('b', {}, s.name), ` · ${s.role} · ${s.gender === 'm' ? 'erkek' : 'kadın'} sesi${s.serverVoice ? ' · ' + s.serverVoice : ''}`)));
+  paintCast();
 
-  lines.forEach((l, i) => list.append(h('div', { class: 'tline spk-' + l.speaker, 'data-i': i, onclick: () => { if (!editing) seekLine(i); } },
-    h('div', { class: 'tline-who' }, byId[l.speaker]?.name || l.speaker), h('div', { class: 'tline-text' }, l.text))));
+  // Karakter/ses değişiklikleri: kaydedilir, ses yeniden üretilir (yalnız değişen satırlar; kalan parçalar önbellekten gelir)
+  const applyBtn = h('button', { class: 'btn primary small', hidden: true }, 'Değişiklikleri uygula (sesi yeniden üret)');
+  const markPending = () => { applyBtn.hidden = false; };
+  applyBtn.onclick = async () => { applyBtn.disabled = true; await api.save({ ...c, speakers, lines }, 'Karakter/ses ataması değişti'); api.reopen(); };
+  let prevAudio = null;
+  const hearBlob = async (blob) => { try { prevAudio?.pause(); } catch {} prevAudio = new Audio(URL.createObjectURL(blob)); await prevAudio.play(); };
+  const labels = []; // satır başındaki ad etiketleri (ad değişince tazelenir)
+
+  lines.forEach((l, i) => {
+    const sel = h('select', { class: 'tline-sel', 'aria-label': 'Bu satırı kim okusun', title: 'Bu satırı kim okusun', onclick: (e) => e.stopPropagation() }, speakers.map((s) => h('option', { value: s.id, selected: s.id === l.speaker ? true : null }, s.name)));
+    const play = h('button', { class: 'tline-play', type: 'button', title: 'Bu satırı seçili sesle dinle', 'aria-label': 'Satırı dinle', onclick: async (e) => {
+      e.stopPropagation(); play.textContent = '…';
+      try { await hearBlob(await speakLine(l, byId[l.speaker], speakers, c.lang, c.format)); } catch (er) { toast(er.message, 'error', 7000); } finally { play.textContent = '▶'; }
+    } }, '▶');
+    const row = h('div', { class: 'tline spk-' + l.speaker, 'data-i': i, onclick: () => { if (!editing) seekLine(i); } },
+      h('div', { class: 'tline-who' }, sel, play), h('div', { class: 'tline-text' }, l.text));
+    sel.onchange = () => { l.speaker = sel.value; row.className = row.className.replace(/spk-[A-F]/, 'spk-' + l.speaker); markPending(); };
+    labels.push((sx) => { const k = sel.value; sel.replaceChildren(...sx.map((s) => h('option', { value: s.id, selected: s.id === k ? true : null }, s.name))); });
+    list.append(row);
+  });
+
+  // Karakterler ve sesler paneli (ad · cinsiyet · ses · ▶ dinle)
+  const castPanel = h('details', { class: 'cast-panel' }, h('summary', {}, 'Karakterler ve sesler'));
+  const castRows = h('div', { class: 'stack' });
+  let libVoices = null;
+  async function paintCastRows() {
+    if (!libVoices) libVoices = await serverVoices().catch(() => []);
+    castRows.replaceChildren(...speakers.map((s) => {
+      const name = h('input', { class: 'input small-in', value: s.name, 'aria-label': 'Karakter adı' });
+      name.oninput = () => { s.name = name.value.trim() || s.name; paintCast(); labels.forEach((f) => f(speakers)); };
+      name.onchange = markPending;
+      const gender = h('select', { class: 'input small-in' }, h('option', { value: 'f', selected: s.gender !== 'm' ? true : null }, 'Kadın'), h('option', { value: 'm', selected: s.gender === 'm' ? true : null }, 'Erkek'));
+      const voice = h('select', { class: 'input small-in' });
+      const fillVoice = () => voice.replaceChildren(h('option', { value: '' }, 'Otomatik ses'), ...libVoices.filter((v) => v.gender === (s.gender === 'm' ? 'm' : 'f')).map((v) => h('option', { value: v.name, selected: v.name === s.serverVoice ? true : null }, v.label)));
+      fillVoice();
+      gender.onchange = () => { s.gender = gender.value; if (s.serverVoice && !libVoices.some((v) => v.name === s.serverVoice && v.gender === s.gender)) delete s.serverVoice; fillVoice(); paintCast(); markPending(); };
+      voice.onchange = () => { if (voice.value) s.serverVoice = voice.value; else delete s.serverVoice; paintCast(); markPending(); };
+      const hear = h('button', { class: 'btn ghost small', type: 'button', onclick: async () => {
+        hear.disabled = true;
+        try { await hearBlob(await testVoice(s.serverVoice || (s.gender === 'm' ? 'm' : 'f'), s.gender, `Merhaba, ben ${s.name}. Bugün sizinle önemli bir konuyu konuşacağız.`)); } catch (e) { toast(e.message, 'error', 7000); } finally { hear.disabled = false; }
+      } }, '▶ Dinle');
+      return h('div', { class: 'cast-row' }, h('b', { class: 'chip spk-' + s.id }, s.id), name, gender, voice, hear);
+    }), h('div', { class: 'row gap wrap' }, h('button', { class: 'btn ghost small', type: 'button', onclick: () => api.openVoiceStudio?.({ onClose: () => { libVoices = null; paintCastRows(); } }) }, 'Ses stüdyosunu aç (yeni ses üret, klonla)')));
+  }
+  castPanel.addEventListener('toggle', () => castPanel.open && paintCastRows());
+  castPanel.append(castRows);
 
   const fmtRate = () => rate.toLocaleString('tr', { minimumFractionDigits: 1 }) + '×';
   const setIcon = (playing) => playBtn.replaceChildren(icon(playing ? 'pause' : 'play', 26));
@@ -132,7 +178,7 @@ export function render(root, art, api) {
   async function prepare() {
     const cfg = await loadTTS();
     const fresh = freshNext; freshNext = false;
-    const savedOk = !fresh && await hasSavedMix(art.id, lines); // kayıtlı tam ses varsa motor/anahtar/ağ hiç devreye girmez
+    const savedOk = !fresh && await hasSavedMix(art.id, lines, speakers); // kayıtlı tam ses varsa motor/anahtar/ağ hiç devreye girmez
     const engine = savedOk ? 'saved' : await resolveEngine(cfg);
     const needF = speakers.some((s) => s.gender !== 'm');
     upsell.hidden = savedOk || !(needF && !femaleOK(engine));
@@ -203,7 +249,8 @@ export function render(root, art, api) {
         h('span', { class: 'chip ghosty' }, lines.length + ' replik'))),
     upsell,
     cast,
-    h('div', { class: 'row gap wrap' }, editBtn, redoBtn, dlBtn),
+    castPanel,
+    h('div', { class: 'row gap wrap' }, editBtn, redoBtn, dlBtn, applyBtn),
     list));
   highlight(0);
   prepare();

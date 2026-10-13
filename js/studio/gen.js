@@ -34,7 +34,8 @@ export const MAX_SPEAKERS = 6;
 export function castFor(format, voices = 'fm', count = 'auto', roster = []) {
   const F = ['Deniz', 'Elif', 'Zeynep', 'Ayşe', 'Selin', 'Defne'], M = ['Kaan', 'Emre', 'Murat', 'Can', 'Mert', 'Berk'];
   const base = ROLES[format] || ROLES.deep;
-  const n = format === 'brief' ? 1 : Math.min(MAX_SPEAKERS, Math.max(base.length, count === 'auto' ? base.length : parseInt(count, 10) || base.length));
+  const useRoster = voices === 'cast' && Array.isArray(roster) && roster.length > 1; // karakter kadrosu kuruluysa 'Otomatik' sayı = kadro büyüklüğü
+  const n = format === 'brief' ? 1 : Math.min(MAX_SPEAKERS, Math.max(base.length, count === 'auto' ? (useRoster ? roster.length : base.length) : parseInt(count, 10) || base.length));
   const roles = Array.from({ length: n }, (_, i) => base[i] || (format === 'consult' ? `uzman ${i}` : `${EXTRA_ROLE[format] || 'konuk'} ${i - base.length + 1}`));
   const useCast = voices === 'cast' && Array.isArray(roster) && roster.length > 0;
   return roles.map((role, i) => {
@@ -117,7 +118,7 @@ export const TOOLS = {
       { key: 'lang', label: 'Dil seçin', type: 'lang' },
       { key: 'length', label: 'Uzunluk', type: 'seg', default: 'default', choices: [{ v: 'short', t: 'Kısa' }, { v: 'default', t: 'Varsayılan' }, { v: 'long', t: 'Uzun' }] },
       { key: 'count', label: 'Konuşmacı sayısı', type: 'seg', default: 'auto', choices: [{ v: 'auto', t: 'Otomatik' }, { v: '3', t: '3' }, { v: '4', t: '4' }, { v: '5', t: '5' }] },
-      { key: 'voices', label: 'Sesler', type: 'seg', default: 'fm', choices: [{ v: 'fm', t: 'Kadın + erkek' }, { v: 'ff', t: 'Kadın' }, { v: 'mm', t: 'Erkek' }, { v: 'cast', t: 'Ses kadrom (Ayarlar)' }] },
+      { key: 'voices', label: 'Sesler', type: 'seg', default: 'fm', choices: [{ v: 'fm', t: 'Kadın + erkek' }, { v: 'ff', t: 'Kadın' }, { v: 'mm', t: 'Erkek' }, { v: 'cast', t: 'Karakterlerim (Ses stüdyosu)' }] },
       { key: 'focus', label: 'Yapay zeka sunucuları bu bölümde neye odaklanmalı?', type: 'text', placeholder: 'Örn. Deniz sahaları ve zorunlu cihazlar' }
     ],
     async generate(nb, o, { signal, progress }) {

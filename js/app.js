@@ -11,6 +11,7 @@ import { typingPage } from './typing.js';
 import { looksScanned, runOcr, stopOcr, ocrRunning, onOcrProgress, ocrText } from './ocr.js';
 import { loadTTS, saveTTS, synthesize } from './tts.js';
 import { voiceSettings } from './voice-settings.js';
+import { openVoiceStudio } from './voice-studio.js';
 import { imageSettings } from './image-settings.js';
 import { IMAGE_TOOLS, autoIllustrate } from './studio/illustrate.js';
 import { bankCard } from './bank-ui.js';
@@ -52,6 +53,7 @@ async function boot() {
   if (!(await db.notebooks.count()) && !(await getSetting('demoSeeded'))) { await seedDemo(); await setSetting('demoSeeded', true); }
   window.addEventListener('hashchange', route);
   route();
+  try { const q = new URLSearchParams(location.search); if (q.get('bagla')) { await setServerBase('http://localhost:8765'); history.replaceState(null, '', location.pathname + location.hash); toast('Bilgisayarınızdaki sunucuya bağlanılıyor'); } } catch {}
   serverUrl().then((u) => { updateStatus(); const up = serverInfo()?.update; if (u && up?.available) toast(`Yardımcı sunucuya güncelleme var (${up.latest}). Ayarlar › Lokal yardımcı sunucu › Sunucuyu güncelle`); });
   // Yarıda kalan soru bankası doldurmayı sürdür (yalnız kullanıcı başlatmışsa ve model erişilebilirse)
   db.settings.where('key').startsWith('bank:').filter((r) => r.value?.status === 'running').count()
@@ -89,6 +91,7 @@ function topbar(extra = []) {
     h('span', { id: 'llm-status', class: 'status-pill', title: 'Model durumu' }),
     h('button', { class: 'icon-btn', 'aria-label': 'Ses efektleri', title: 'Ses efektleri', onclick: (e) => { const off = localStorage.getItem('ds-sound') === 'off'; localStorage.setItem('ds-sound', off ? 'on' : 'off'); toast(off ? 'Ses efektleri açık' : 'Ses efektleri kapalı'); } }, icon('audio')),
     h('button', { class: 'icon-btn', 'aria-label': 'Tema', onclick: cycleTheme }, icon('sun')),
+    h('button', { class: 'icon-btn', 'aria-label': 'Ses stüdyosu', title: 'Ses stüdyosu: sesler, klonlama, karakterler', onclick: () => openVoiceStudio() }, icon('audio')),
     h('button', { class: 'icon-btn', 'aria-label': 'Ayarlar', onclick: openSettings }, icon('settings')));
 }
 async function cycleTheme() {
@@ -573,8 +576,10 @@ function openCustomize(type, preset = {}) {
     const lang = await getSetting('lang', 'Türkçe');
     const srcs = await enabledSources(state.nb.id);
     const body = h('div', { class: 'cust' });
+    const roster = type === 'podcast' ? (await loadTTS()).cast || [] : [];
     for (const o of t.options) {
       vals[o.key] = preset[o.key] ?? last[o.key] ?? (o.type === 'lang' ? lang : o.default ?? '');
+      if (type === 'podcast' && o.key === 'voices' && roster.length >= 2 && !preset[o.key] && (last[o.key] == null || last[o.key] === 'fm')) vals[o.key] = 'cast'; // Ses stüdyosunda karakter kurulduysa varsayılan onlar
       if (o.type === 'cards') {
         const wrap = h('div', { class: 'opt-cards', role: 'radiogroup', 'aria-label': o.label });
         const paint = () => wrap.querySelectorAll('.opt-card').forEach((c) => { c.classList.toggle('on', c.dataset.v === vals[o.key]); c.setAttribute('aria-checked', String(c.dataset.v === vals[o.key])); });
@@ -713,6 +718,7 @@ function viewerApi(a) {
     editJSON: () => editJSON(a),
     reopen: () => openViewer(a.id),
     openSettings: () => openSettings(),
+    openVoiceStudio: (o) => openVoiceStudio(o),
     renderEmbedded: async (id, box) => {
       const e = await db.artifacts.get(id);
       if (!e || e.status !== 'done') { box.append(h('p', { class: 'muted' }, 'Gömülü içerik bulunamadı.')); return; }
@@ -814,20 +820,46 @@ async function openSettings() {
   const ttsBlock = vset.el;
   const imgBlock = (await imageSettings()).el;
   const est = await navigator.storage?.estimate?.().catch(() => null);
+  const SITE = 'https://aseydaaksakal.github.io/defter-studio';
+  const kurCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr ${SITE}/tools/kur.bat -OutFile $env:TEMP\\kur.bat; cmd /c $env:TEMP\\kur.bat"`;
+  const kurOut = h('div', { class: 'small' });
+  const kurBox = h('details', { class: 'vsec' }, h('summary', {}, 'İlk kurulum (bir kez) · güncelleme'),
+    h('div', { class: 'stack vpad' },
+      h('p', { class: 'small' }, 'Bilgisayarınıza yardımcı sunucuyu kurar (Python yoksa sorar), isterseniz açılışta arka planda başlatır. Kurulduktan sonra zip indirmek ya da bat çalıştırmak gerekmez: sunucu kendini günceller, burada “Sunucuyu güncelle” çıkar.'),
+      h('div', { class: 'row gap wrap' },
+        h('button', { class: 'btn primary small', onclick: async () => {
+          kurOut.textContent = 'İndiriliyor…';
+          try { const r = await fetch(`${SITE}/tools/kur.bat?t=${Date.now()}`); if (!r.ok) throw new Error('HTTP ' + r.status); download('kur.bat', new Blob([await r.blob()], { type: 'application/octet-stream' })); kurOut.textContent = 'kur.bat indirildi: Chrome “yaygın olmayan dosya” derse Sakla\'yı seçin, çift tıklayıp çalıştırın.'; } catch (e) { kurOut.textContent = '✗ ' + e.message; }
+        } }, 'kur.bat dosyasını indir'),
+        h('button', { class: 'btn ghost small', onclick: async () => { try { await navigator.clipboard.writeText(kurCmd); kurOut.textContent = 'Komut kopyalandı: Windows tuşu › “PowerShell” yazıp açın, yapıştırıp Enter’a basın (indirme uyarısı çıkmaz).'; } catch { kurOut.textContent = kurCmd; } } }, 'Tek satır komutu kopyala')),
+      kurOut));
   modal({ title: 'Ayarlar', wide: true, body: h('div', { class: 'settings' },
+    h('h3', {}, 'Bilgisayarım (RTX GPU)'),
+    h('p', { class: 'muted small' }, 'Sesler, döküm ve görseller bilgisayarınızdaki sunucuda üretilir: ücretsiz ve sınırsız. Site Pages’ten açılsa da aynı sunucuya bağlanır; Chrome yerel ağ izni sorarsa İzin ver deyin.'),
+    h('div', { class: 'row gap' }, srvIn, h('button', { class: 'btn primary small', onclick: async () => {
+      if (!srvIn.value.trim()) srvIn.value = 'http://localhost:8765';
+      await setServerBase(srvIn.value.trim()); const u = await serverUrl(true); const i = serverInfo();
+      if (u) srvOut.textContent = `✓ Bağlandı · Ses: ${i?.tts?.engines?.filter((e) => e !== 'piper').join(', ') || 'motor kurulu değil'} · Döküm: ${i?.stt || '—'}`;
+      else put(srvOut, h('div', { class: 'card stack small' }, h('b', {}, '✗ Sunucu bulunamadı: bilgisayarınızda yardımcı sunucu çalışmıyor.'),
+        h('p', {}, 'Aşağıdaki “İlk kurulum” bölümünden kur.bat’ı bir kez çalıştırın. Zaten kurduysanız bilgisayarı yeniden başlatın ya da başlat menüsünden “Defter Studio” sunucusunu açın; sonra tekrar basın.')));
+      updateStatus();
+      if (u) updateCheck(true).then(showUpd).catch(() => {});
+    } }, 'Bağlan / kontrol et')), srvOut, updOut, kurBox,
     h('h3', {}, 'Dil modeli'),
     h('div', { class: 'grid2' },
       h('div', { class: 'field' }, h('label', {}, 'Sağlayıcı'), prov),
-      h('div', { class: 'field' }, h('label', {}, 'Adres (Base URL)'), base),
-      keyRow,
       h('div', { class: 'field' }, h('label', {}, 'Model'), h('div', { class: 'row gap' }, model, h('button', { class: 'btn ghost small', onclick: async () => {
         out.textContent = 'Modeller alınıyor…';
         try { const ms = await listModels(read()); put(dl, ...ms.map((m) => h('option', { value: m }))); out.textContent = `${ms.length} model bulundu. Model kutusuna tıklayıp seçebilirsiniz.`; } catch (e) { put(out, connectionHelp(e)); }
       } }, 'Listele'))),
-      h('div', { class: 'field' }, h('label', {}, 'Hızlı model (özet, öneri, plan)'), fastM),
-      h('div', { class: 'field' }, h('label', {}, 'Embedding modeli'), embedM),
-      h('div', { class: 'field' }, h('label', {}, 'Bağlam uzunluğu'), ctx),
-      h('div', { class: 'field' }, h('label', {}, 'Sıcaklık (yaratıcılık)'), temp)),
+      keyRow),
+    h('details', { class: 'vsec' }, h('summary', {}, 'Gelişmiş model ayarları'),
+      h('div', { class: 'grid2 vpad' },
+        h('div', { class: 'field' }, h('label', {}, 'Adres (Base URL)'), base),
+        h('div', { class: 'field' }, h('label', {}, 'Hızlı model (özet, öneri, plan)'), fastM),
+        h('div', { class: 'field' }, h('label', {}, 'Embedding modeli'), embedM),
+        h('div', { class: 'field' }, h('label', {}, 'Bağlam uzunluğu'), ctx),
+        h('div', { class: 'field' }, h('label', {}, 'Sıcaklık (yaratıcılık)'), temp))),
     dl, hint,
     h('div', { class: 'row gap' }, h('button', { class: 'btn ghost', onclick: async () => {
       out.textContent = 'Deneniyor…';
@@ -835,17 +867,6 @@ async function openSettings() {
     } }, 'Bağlantıyı test et'), out),
     ttsBlock,
     imgBlock,
-    h('h3', {}, 'Lokal yardımcı sunucu (isteğe bağlı)'),
-    h('p', { class: 'muted small' }, 'Ücretsiz doğal Türkçe kadın + erkek ses (Emel/Ahmet), lokal ses klonlama, ses/YouTube dökümü ve web araması için. Kurulum: docs/KURULUM.md › 5. bölüm'),
-    h('div', { class: 'row gap' }, srvIn, h('button', { class: 'btn ghost small', onclick: async () => {
-      await setServerBase(srvIn.value.trim()); const u = await serverUrl(true); const i = serverInfo();
-      if (u) srvOut.textContent = `✓ Çalışıyor · Ses: ${i?.tts?.engines?.join(', ') || 'motor kurulu değil'}${i?.tts?.female ? ' (kadın sesi var)' : ''} · Döküm: ${i?.stt || '—'}`;
-      else put(srvOut, h('div', { class: 'card stack small' }, h('b', {}, '✗ Sunucu bulunamadı: bilgisayarınızda yardımcı sunucu çalışmıyor.'),
-        h('ol', {}, h('li', {}, 'Tek seferlik kurulum dosyasını indirip çalıştırın: ', h('a', { href: 'https://github.com/aseydaaksakal/defter-studio/raw/main/tools/kur.bat' }, 'kur.bat'), ' (Python yoksa kendisi sorar; sunucu sonradan kendini günceller, zip indirmeniz gerekmez).'),
-          h('li', {}, 'Tekrar "Kontrol et"e basın; Chrome yerel ağ izni sorarsa İzin ver deyin. Ya da doğrudan ', h('a', { href: 'http://localhost:8765/', target: '_blank', rel: 'noopener' }, 'localhost:8765'), ' adresini kullanın.'))));
-      updateStatus();
-      if (u) updateCheck(true).then(showUpd).catch(() => {});
-    } }, 'Kontrol et')), srvOut, updOut,
     h('h3', {}, 'Veriler'),
     h('p', { class: 'muted small' }, 'Tüm defterler bu tarayıcının IndexedDB veritabanında saklanır. ', est ? `Kullanılan alan: ${(est.usage / 1048576).toFixed(1)} MB / ${(est.quota / 1073741824).toFixed(1)} GB.` : ''),
     h('div', { class: 'row gap wrap' },
@@ -853,7 +874,7 @@ async function openSettings() {
       h('button', { class: 'btn ghost small', onclick: () => Notification?.requestPermission?.() }, 'Hazır olunca bildirim gönder'),
       h('button', { class: 'btn ghost small', onclick: async () => { await seedDemo(); toast('Örnek defter eklendi'); location.hash = '#/'; renderHome(); } }, 'Örnek defteri yeniden ekle'),
       h('button', { class: 'btn danger small', onclick: async () => { if (await confirmBox('Tüm veriler silinsin mi?', 'Bütün defterler, kaynaklar ve Studio içerikleri bu tarayıcıdan kalıcı olarak silinir.', 'Hepsini sil')) { await db.delete(); location.hash = '#/'; location.reload(); } } }, 'Tüm verileri sil'))),
-  actions: [{ label: 'Vazgeç', run: (c) => c() }, { label: 'Kaydet', primary: true, run: async (c) => { await saveConfig(read()); await saveTTS(vset.read()); c(); toast('Ayarlar kaydedildi'); updateStatus(); } }] });
+  actions: [{ label: 'Vazgeç', run: (c) => c() }, { label: 'Kaydet', primary: true, run: async (c) => { await saveConfig(read()); await saveTTS({ ...(await loadTTS()), ...vset.read() }); c(); toast('Ayarlar kaydedildi'); updateStatus(); } }] });
 }
 
 boot().catch((e) => { console.error(e); put(app, h('pre', { class: 'fatal' }, 'Başlatılamadı: ' + e.message)); });

@@ -121,11 +121,19 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 - `server/guncelle.py` (CLI + modül): `manifest`, `plan`, `uygula`; `--sync/--check/--kabuk/--nopip/--root/--base`. `server/manifest.json`: `tools/uret-manifest.py` üretir. `server/main.py`: `/update/check`, `/update/apply`, `/health.update`, çıkış kodu 75 = başlatıcı döngüsü yeniden açsın.
 - `tools/kur.bat` (tek seferlik kurulum + otomatik başlatma), `server/gizli-baslat.vbs`, `tools/otomatik-baslat-kaldir.bat`. Arayüz: `js/server.js` `updateCheck/updateApply`, `js/app.js` ayarlar bölümü (`showUpd`).
 
+### 8f. 0.8.0: Ses stüdyosu ve karakter sesleri
+- `js/voice-studio.js` (modal, otomatik kayıt) → `js/voice-library.js` (Seslerim, tek tıkla yeni ses `newVoice`, klonlama, Podcast karakterleri `cfg.cast`, Pocket TR kur, Motorları sına) → `js/model-manager.js` (klonlayan/klonlamayan/MLX grupları). Üst çubuk 'Ses stüdyosu' düğmesi `app.js`; `viewerApi.openVoiceStudio`.
+- `js/voice-settings.js`: yalnız motor + anlatıcı + deneme + bulut anahtarları (tek açılır bölüm, `prov` satırları). Kirli-anahtar kaydı (`read()`).
+- `js/tts.js`: `ENGINE_CHOICES` (tarayıcı sesi yok), `voiceMark`/`textKey(lines, speakers)` (ses atamaları anahtarda), `speakLine`, `testVoice`.
+- `js/studio/views/podcast.js`: satır başına `select.tline-sel`, karakter paneli (`castPanel`), 'Uygula' yalnız değişen satırları yeniden üretir.
+- Sunucu: `_engine_for_voice`, `/kur/pockettr`, `/kur/durum`, `/voices/{ad}/audio` (hazır ses örneği önbelleği `server/.ornek`), `_piper_fetch`. Güncelleyici `app` grubu.
+- Eğitim: `docs/SES_EGITIMI.md`, `tools/veri-seti-hazirla.py`.
+
 ## 9. Testler ve teslim
 
 | İş | Yer |
 |---|---|
 | Sahte model + sahte sunucu | `tests/mock_llm.py`. Yeni istem → yeni anahtar ifade. |
-| Uçtan uca | `tests/e2e.py` (97 kontrol) + `tests/server_test.py` (73) |
+| Uçtan uca | `tests/e2e.py` (111 kontrol) + `tests/server_test.py` (85) |
 | Teslim | `tools/teslim.sh` |
 | Elle test listesi | `docs/TEST_PLANI.md` |

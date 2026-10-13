@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-13 — teslim
+- 0.8.0: Ses stüdyosu (yeni kadın/erkek ses, klonlama, karakterler, modeller), podcast satır başına konuşmacı, sade Ayarlar, kur.bat indirme/tek satır, güncelleyici uygulama dosyalarını da eşitler, ses eğitimi rehberi
+
+## 2026-10-13 — teslim
 - 0.7.0: kendini güncelleyen sunucu (tek seferlik kur.bat, değişen dosyaları indirme, otomatik başlatma, arayüzde Sunucuyu güncelle)
 
 ## 2026-10-13 — teslim

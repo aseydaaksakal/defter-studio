@@ -298,3 +298,13 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 - **Video v2:** `drawFrame` (geçiş 0,6 sn), `wordPlan/wordCaption` (kelime zamanı harf+noktalama ağırlığıyla yaklaşıktır), Hızlı MP4: tarayıcı kareleri 24 fps JPEG olarak 48'lik gruplarla `/video/frames/{id}`'ye yollar, ffmpeg `image2pipe`+ses → H.264/AAC (`DEFTER_FFMPEG_ENC=h264_nvenc` ile GPU kodlama). Gerçek ffmpeg ile sunucu testi geçti.
 - **Süreç:** `pkill -f` ile mock sunucuyu öldürme (kabuk 144); `fuser -k 8098/tcp` kullan.
 
+## 2026-10-13 — 0.8.0 — Ses stüdyosu, karakter sesleri, sade Ayarlar
+
+- **Belirti:** Yerelde 'Tarayıcı sesi' seçilince 'Ses motoru yok'. **Neden:** IndexedDB'de kalıcı `engine:'browser'` ve Türkçe tarayıcı sesi yok. **Çözüm:** seçenek kaldırıldı, `loadTTS` eski değeri `auto`ya göçürür.
+- **Belirti:** motor tanısında `pocket ✗`, `piper ✗`. **Neden:** eski `pocket` (alperiox) adaptörü ve Piper'ın alt süreçle `download_voices` indirmesi. **Çözüm:** `pocket` yalnız `DEFTER_POCKET_LEGACY` ile; Piper sesi doğrudan HF'den `urllib` ile iner (`_piper_fetch`); `/tts/selftest` varsayılanda Piper'ı denemez.
+- **Belirti:** Ayarlar penceresi açılmıyor (`openaiSec is not defined`). **Neden:** bulut bölümü sadeleştirilirken OpenAI satırı tanımlanmamıştı; e2e yakaladı. **Ders:** arayüz değişince e2e'yi hemen çalıştır.
+- **Tasarım:** Ses stüdyosu (`js/voice-studio.js`) değişiklikleri anında kaydeder (300 ms), yalnız kendi alanlarını (`cast`, `narratorVoice`, `serverF/M`, `serverModel`) yazar; Ayarlar'ın kirli-anahtar kaydıyla çakışmaz. `_engine_for_voice`: seçilen ses Pocket TR hazır sesiyse `pockettr`, kütüphane (klon/tasarım) sesiyse klonlayabilen motor.
+- **Pocket TR kurulumu arayüzden:** `/kur/pockettr` (pip + model deneme, ilerleme `/kur/durum`).
+- **Kullanılamayan model:** `hans00/MOSS-TTS-Nano-GGUF` yalnız codec içerir, LLM bölümü çevrilmemiş; Pages'e konmadı. Pages için gerçekçi yollar: ince ayarlı Kokoro q8 ONNX (~90 MB) ya da Piper (63 MB). Ayrıntı `docs/SES_EGITIMI.md`.
+- **Güncelleme:** manifestte `app` grubu; yerelde `index.html` varsa (zip/depo) uygulama dosyaları da eşitlenir. kur.bat kurulumunda uygulama için Pages kullanılır.
+- **Sandbox sınırı:** huggingface.co ve github.io kabuktan erişilemiyor; canlı kontrol Chrome ile. Windows kur.bat ve gerçek GPU motorları burada denenemedi.

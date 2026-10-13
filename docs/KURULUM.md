@@ -135,3 +135,10 @@ python tests\e2e.py           # uçtan uca testler (pip install playwright; play
 
 ## MOSS-TTS (isteğe bağlı, ~10 GB GPU belleği)
 `tools\kur-moss.bat` ayrı bir sanal ortam (`server\.venv-moss`) kurar; ardından Ayarlar › Modeller'den "MOSS-TTS-Local-Transformer-v1.5"i indirin. Ses klonlama ile çalışır (ses kütüphanesinde kadın ve erkek referans gerekir). GPU'da henüz denenmedi.
+
+## 7. Sunucuyu kolayca kurma ve güncelleme (0.8.0)
+- Sitede **Ayarlar › Bilgisayarım › İlk kurulum**: `kur.bat dosyasını indir` düğmesi ya da **Tek satır komutu kopyala** (PowerShell'e yapıştırın). Bir kez yeter; bundan sonra sunucu Windows açılışında kendiliğinden başlar ve kendini siteyle eşitler (yalnız değişen dosyalar iner).
+- kur.bat bitince siteyi `?bagla=1` ile açar: sunucuya kendiliğinden bağlanır.
+- Pages'ten açılan site RTX sunucunuza bağlanır (Chrome "yerel ağ izni" sorarsa İzin ver).
+- Sesler: **Ses stüdyosu** (üst çubuktaki hoparlör düğmesi) › "Pocket TR kur" ile 6 hazır ses; "Yeni kadın/erkek sesi üret"; kendi sesinizi klonlama (RTX'inizde, bulutsuz).
+- Kendi model eğitimi: `docs/SES_EGITIMI.md`.
