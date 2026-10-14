@@ -332,3 +332,7 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 - **Kök neden (indirme):** Windows'ta (symlink izni yok) Hugging Face dosyaları `blobs/` değil `snapshots/` içinde GERÇEK dosya olarak saklar. `local_size` yalnız `blobs/`'u saydığı için tam inmiş modeller "yarım 1–4 MB" göründü; OmniVoice de "indirildi · 1 MB" göstermesinin sebebi buydu (0.8.1 boyut eşiği de bu yüzden yanlış sonuç verdi).
 - **Önlem:** boyut = snapshots (gerçek dosya ya da symlink hedefi, tekrarsız) + `.incomplete`; indirme bitince `is_ready` doğrulanır, değilse net hata. Test: symlinksiz/symlinkli düzenler.
 - **kur.bat:** bekleme `tools\bekle.ps1` (127.0.0.1, 300 sn, 15 sn'de bir son günlük satırı). Sunucu açılışı yavaşlatan şeyler kaldırıldı: kur.bat eşitledikten sonra başlatıcı tekrar eşitlemez (`DEFTER_SKIP_SYNC`), edge-tts günlük yükseltmesi sunucu içinde arka planda (60 sn sonra), Pocket gereksinim güncellemesi `-U`suz (torch'u yükseltip CUDA'yı bozmasın).
+
+## 0.8.1f (2026-10-14) — kullanıcıda eski kur.bat
+- **Belirti:** düzeltmeler yayınlandığı halde ekranda hâlâ "Sunucu 120 sn içinde açılmadı". **Kök neden:** kur.bat kendini güncellemez (manifest dışı) ve eski sürümün sağlık denetimi `localhost` + 2 sn zaman aşımı kullanıyordu; Windows'ta ::1 reddi ~1-2 sn sürüp IPv4'e düşmeyi zaman aşımına uğrattığından sunucu ayakta olsa bile hep "açılmadı" dedi.
+- **Önlem:** kur.bat her çalışmada Pages'teki sürümü alıp farklıysa onu çalıştırır; denetim 127.0.0.1 + 3 sn. Kural: kullanıcıya verilen betik kendini güncellemeli.

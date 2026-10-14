@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- kur.bat kendini günceller (Pages'teki sürümü alır)
+
+## 2026-10-14 — teslim
 - Model boyutu snapshots'tan sayılır (Windows symlinksiz), kur.bat bekle.ps1 300 sn, açılış gecikmeleri kaldırıldı
 
 ## 2026-10-14 — teslim

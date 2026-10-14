@@ -787,6 +787,7 @@ if hasattr(os, "symlink"):
 modeller.cache_dir = _oc
 _kb = open(os.path.join(ROOT, "tools", "kur.bat"), encoding="utf-8", newline="").read()
 ok("kur.bat: bekle.ps1 ile 127.0.0.1 /health'i 300 sn bekler, ilk açılışta çifte eşitleme yok (DEFTER_SKIP_SYNC)", "bekle.ps1" in _kb and "127.0.0.1" in _kb and "-Sn 300" in _kb and "DEFTER_SKIP_SYNC=1" in _kb and os.path.exists(os.path.join(ROOT, "tools", "bekle.ps1")))
+ok("kur.bat kendini günceller: Pages'teki kur.bat farklıysa onu --guncel ile çalıştırır (döngü yok)", all(x in _kb for x in ("--guncel", "fc /b", "tools/kur.bat?t=", "call \"%YENI%\" --guncel")))
 import guncelle as _g
 ok("guncelle: DEFTER_SKIP_SYNC=1 iken --sync hiçbir şey yapmaz; pocket pip -U içermez", (os.environ.__setitem__("DEFTER_SKIP_SYNC", "1"), _g.main(["--sync", "--quiet"]))[1] == 0 and (os.environ.pop("DEFTER_SKIP_SYNC"), '"-U", "-r"' not in open(os.path.join(ROOT, "server", "guncelle.py"), encoding="utf-8").read())[1])
 

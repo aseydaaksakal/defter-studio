@@ -10,6 +10,18 @@ REM Sorular (Pocket TTS, otomatik baslatma, GPU) YALNIZ ilk kurulumda sorulur; s
 REM Sunucu, dosyalarini ezmeden once KAPATILIR: calisan baslat.bat uzerine yazilirsa cmd bozuk satirlar calistirabilir.
 REM Konum: %LOCALAPPDATA%\DefterStudio   (silmek icin klasoru silin ve tools\otomatik-baslat-kaldir.bat calistirin)
 set "SITE=https://aseydaaksakal.github.io/defter-studio"
+REM KENDINI GUNCELLEME: indirdiginiz kur.bat eski kalmis olabilir. Once Pages teki guncel kur.bat alinir; farkliysa o calistirilir.
+if /i "%~1"=="--guncel" goto :basla
+set "YENI=%TEMP%\defter-kur-yeni.bat"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try{Invoke-WebRequest -UseBasicParsing -Uri ('%SITE%/tools/kur.bat?t='+(Get-Date).Ticks) -OutFile '%YENI%' -TimeoutSec 20; exit 0}catch{exit 1}"
+if errorlevel 1 goto :basla
+if not exist "%YENI%" goto :basla
+fc /b "%~f0" "%YENI%" >nul 2>&1
+if not errorlevel 1 goto :basla
+echo kur.bat yeni surum bulundu; guncel surumle devam ediliyor...
+call "%YENI%" --guncel
+exit /b %errorlevel%
+:basla
 set "HEDEF=%LOCALAPPDATA%\DefterStudio"
 set "PORT=8765"
 set "YEREL=http://localhost:%PORT%/"
