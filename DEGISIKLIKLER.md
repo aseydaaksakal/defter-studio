@@ -1,5 +1,8 @@
 # Değişiklikler
 
+## 2026-10-15 — teslim
+- 0.8.4: PC canlı doğrulama, eski kodla çalışan sunucunun yeniden başlaması, bulut Claude 400 düzeltmesi, VoxCPM/Edge, FSRS-6, defter-istem + istem denetimi, yola bağlı kurallar, sessiz testler
+
 ## 2026-10-14 — teslim
 - Önbellek mimarisi: resmi doğrulama, bağlam denetimi, token raporu resmi fiyat, kural ve ajan güncellemesi
 

@@ -4,7 +4,7 @@ Kullanım:  python3 tools/baglam-denetim.py        (FAIL varsa çıkış kodu 1;
 
 Neden: harcamanın büyük kısmı bağlamın her çağrıda yeniden okunmasıdır; CLAUDE.md, ajan ve beceri açıklamaları
 her turda bağlamdadır. "Yokluk başarı sayılmaz": ayar dosyasında kural gerçekten var mı, burada okunur.
-Eşikler resmi belgelerden (code.claude.com/docs/en/costs, /skills, /model-config; 14.10.2026) ya da bu projenin kararlarından.
+Eşikler resmi belgelerden (code.claude.com/docs/en/costs, /skills, /sub-agents, /prompt-caching; 15.10.2026) ya da bu projenin kararlarından.
 """
 import json
 import os
@@ -89,6 +89,10 @@ def denetle():
             ekle("WARN", f"ajan {ad} açıklama", f"{len(d)} karakter; her turda bağlamda, kısalt")
         if kelime(govde) > 160:
             ekle("WARN", f"ajan {ad} gövde", f"{kelime(govde)} kelime; rol kartı kısa kalsın")
+        # "Yokluk başarı sayılmaz": metindeki sınır (25 tur, rol araçları, effort) ayarda da olmalı
+        for alan_adi, neden in (("maxTurns", "tur sınırı yalnız metinde"), ("tools", "tüm araç tanımları her istekte bağlamda"), ("effort", "Sonnet varsayılanı high")):
+            if not alan.get(alan_adi):
+                ekle("WARN", f"ajan {ad} {alan_adi}", f"yok: {neden}")
     ekle("OK", "ajan açıklamaları (her turda)", f"~{ajan_tok} token")
     sabit += ajan_tok
     # 4. Beceriler: açıklama her turda; gövde çağrılınca
@@ -106,12 +110,22 @@ def denetle():
             ekle("FAIL", f"beceri {ad} açıklama", f"{len(d)} karakter; 1.536'dan sonrası kesilir")
         elif len(d) > 450:
             ekle("WARN", f"beceri {ad} açıklama", f"{len(d)} karakter; her turda bağlamda, kısalt")
-        if not re.search(r"[\"“”']\S", alan.get("description", "")):
-            ekle("WARN", f"beceri {ad} tetik", "açıklamada kullanıcının yazacağı tırnaklı cümle yok")
+        if not re.search(r"[\"“”']\S", alan.get("description", "")[:250]):
+            ekle("WARN", f"beceri {ad} tetik", "ilk 250 karakterde kullanıcının yazacağı tırnaklı cümle yok (listeleme kısaltabilir)")
         satir = t.count("\n") + 1
         esik(f"beceri {ad} satır", satir, 200, 500, "satır")
     ekle("OK", "beceri açıklamaları (her turda)", f"~{beceri_tok} token")
     sabit += beceri_tok
+    # 4b. Yola bağlı kurallar (.claude/rules): paths yoksa her oturumda yüklenir (sabit yük); varsa yalnız eşleşen dosyada
+    rdizin = os.path.join(KOK, ".claude", "rules")
+    for ad in sorted(os.listdir(rdizin)) if os.path.isdir(rdizin) else []:
+        t = oku(f".claude/rules/{ad}") or ""
+        govde = on_madde(t)[1]
+        if not re.search(r"^paths:\s*$", t.split("\n---", 1)[0], re.M):
+            sabit += tok(govde)
+            ekle("WARN", f"kural {ad}", "paths yok: her oturumda yüklenir; yalnız ilgili dosyalara bağla")
+        else:
+            esik(f"kural {ad} kelime", kelime(govde), 250, 400, "kelime", " (eşleşen dosya okununca yüklenir)")
     # 5. Proje ayarı: kural gerçekten yazılı mı
     s = oku(".claude/settings.json")
     if s is None:
@@ -127,18 +141,63 @@ def denetle():
             ekle("FAIL", "otomatik sıkıştırma penceresi", "tanımsız: varsayılan ~967k, bağlam her çağrıda yeniden okunur")
         else:
             ekle("OK" if pencere <= 250000 else "WARN", "otomatik sıkıştırma penceresi", f"{pencere} token")
+        ttl = j.get("promptCacheTtl")
+        ekle("OK" if ttl == "1h" else "WARN", "önbellek ömrü (promptCacheTtl)", ttl or "tanımsız: kullanım kredisinde 5 dk'ya düşer, uzun test beklemesinde önbellek baştan yazılır")
         yasak = " ".join((j.get("permissions") or {}).get("deny", []))
         for ornek in ("js/vendor", "kur.zip", "docs/token/veri.json"):
             ekle("OK" if ornek in yasak else "WARN", f"okuma yasağı {ornek}", "var" if ornek in yasak else "yok")
-    # 6. En büyük izlenen metin dosyaları (bilgi)
+    # 6. İstem denetimi (defter-istem becerisi): eskimiş kalıplar talimat dosyalarında ve uygulama istemlerinde yasak
+    istem_denetimi()
+    # 7. En büyük izlenen metin dosyaları (bilgi)
     try:
         liste = subprocess.run(["git", "ls-files"], cwd=KOK, capture_output=True, text=True, timeout=20).stdout.split()
-        boy = sorted(((os.path.getsize(os.path.join(KOK, f)), f) for f in liste
-                      if os.path.isfile(os.path.join(KOK, f)) and not f.endswith((".png", ".zip", ".woff2", ".onnx", ".wasm", ".svg"))), reverse=True)[:4]
+        boy = sorted(((os.path.getsize(os.path.join(KOK, f)), f) for f in liste  # vendor ve ikili dosyalar okunmaz (izin yasağı)
+                      if os.path.isfile(os.path.join(KOK, f)) and not f.startswith("js/vendor/")
+                      and not f.endswith((".png", ".zip", ".woff2", ".onnx", ".wasm", ".svg", ".gz", ".data", ".json"))), reverse=True)[:4]
         ekle("OK", "en büyük dosyalar", "; ".join(f"{f} {b // 1024}KB" for b, f in boy))
     except Exception:
         pass
-    ekle("OK", "sabit yük tahmini (her turda)", f"~{sabit} token (CLAUDE.md + AGENTS + ajan + beceri açıklamaları; sistem istemi ve araçlar hariç)")
+    ekle("OK", "sabit yük tahmini (her turda)", f"~{sabit} token (CLAUDE.md + AGENTS + ajan/beceri açıklamaları + yolsuz kurallar; sistem istemi ve araçlar hariç)")
+
+
+# Opus 5.5 rehberi: model zaten düşünür ("adım adım düşün" gereksiz), akıl yürütmeyi yazdırmak reasoning_extraction ile
+# reddedilebilir, bağıran araç dili aşırı tetikler. Konu anlatan metin ("çok adımlı akıl yürütme" gibi soru tarzı) yakalanmaz.
+ESKI_KALIP = re.compile(r"(adım adım düşün|dikkatlice düşün|derinlemesine düşün|akıl yürütme(?:ni|n)i? (?:önce )?(?:yaz|göster)"
+                        r"|düşünce zinciri|sakın hata yapma|think step by step|think carefully|take your time|make no mistakes"
+                        r"|show your (?:reasoning|chain of thought|work)|write out your reasoning|chain[- ]of[- ]thought"
+                        r"|in <thinking> tags|<thinking>|\bMUTLAKA kullan|\bCRITICAL: You MUST)", re.I)
+ISTEM_DISI = (".claude/skills/defter-istem/",)  # kuralı anlatan beceri kalıpları örnek olarak içerir
+
+
+def istem_dosyalari():
+    yield "CLAUDE.md"
+    yield "AGENTS.md"
+    for kok in (".claude/agents", ".claude/skills", ".claude/rules"):
+        d = os.path.join(KOK, kok)
+        for dp, _, fs in os.walk(d) if os.path.isdir(d) else []:
+            for f in fs:
+                if f.endswith(".md"):
+                    yield os.path.relpath(os.path.join(dp, f), KOK).replace(os.sep, "/")
+    for dp, dn, fs in os.walk(os.path.join(KOK, "js")):
+        dn[:] = [x for x in dn if x != "vendor"]
+        for f in fs:
+            if f.endswith(".js"):
+                yield os.path.relpath(os.path.join(dp, f), KOK).replace(os.sep, "/")
+
+
+def istem_denetimi():
+    bulgu = []
+    for yol in istem_dosyalari():
+        if yol.startswith(ISTEM_DISI):
+            continue
+        for i, satir in enumerate((oku(yol) or "").splitlines(), 1):
+            m = ESKI_KALIP.search(satir)
+            if m:
+                bulgu.append(f"{yol}:{i} '{m.group(0)}'")
+    if bulgu:
+        ekle("FAIL", "istem denetimi (eskimiş kalıp)", "; ".join(bulgu[:6]) + (" …" if len(bulgu) > 6 else "") + " — .claude/skills/defter-istem")
+    else:
+        ekle("OK", "istem denetimi", "CLAUDE.md, AGENTS, ajan, beceri ve uygulama istemlerinde eskimiş kalıp yok")
 
 
 def main():

@@ -48,7 +48,7 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 | `video.js` | Canvas sahneleri (`drawScene`), tek anlatım dosyası, sahne zamanlaması, MP4/WebM kayıt |
 | `slides.js` | Düzenler: `title/bullets/two-col/stat/quote/timeline/process/chart/table`, anlatımlı oynat, PDF/HTML |
 | `quiz.js` | Alıştırma/deneme, alıntı gösterimi, bankaya cevap kaydı (`recordAnswer`) |
-| `flashcards.js` | Leitner, alıntı, Anki CSV |
+| `flashcards.js` | FSRS-6 tekrar (`js/srs.js`), alıntı, Anki CSV |
 | `listen.js` | Dikte (`diffWords`), gölgeleme (kayıt), dinleme banyosu |
 | `memory.js`, `teach.js`, `speedread.js`, `mindmap.js`, `report.js`, `infographic.js`, `table.js` | Diğer araçlar |
 
@@ -86,6 +86,7 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 |---|---|
 | Şema (v1 + v2 `questions`), silme, yedek | `js/db.js` |
 | Soru bankası: istatistik, seçim, aralıklı tekrar, arka planda doldurma | `js/bank.js`, arayüz `js/bank-ui.js` |
+| Aralıklı tekrar zamanlayıcısı (FSRS-6; kart, hata defteri, banka ortak) | `js/srs.js`, test `tests/srs_test.mjs` |
 | Puan, rozet, seviye, hata defteri, bilim sayfası, yöntemler kütüphanesi | `js/learn.js` (`METHODS`, `methodsLibrary`) |
 | Pomodoro | `js/pomodoro.js` |
 | Çoklu sekme güvenliği (iş sahibi sekme) | `js/tabs.js` (`TAB`, `ownedElsewhere`) |
@@ -134,6 +135,7 @@ Her dosya `render(root, art, api)` ve `toText(art)` dışa aktarır.
 | İş | Yer |
 |---|---|
 | Sahte model + sahte sunucu | `tests/mock_llm.py`. Yeni istem → yeni anahtar ifade. |
-| Uçtan uca | `tests/e2e.py` (111 kontrol) + `tests/server_test.py` (85) |
+| Uçtan uca | `tests/e2e.py` (142 kontrol) + `tests/server_test.py` (178) + `tests/srs_test.mjs` (12) + `tests/llm_test.mjs` (7, sağlayıcı istek biçimi); çıktı yalnız ✗ + özet, `-v` ayrıntı |
+| Claude Code yapısı | `CLAUDE.md` (giriş kartı), `.claude/rules/` (dosyaya göre yüklenen kurallar), `.claude/skills/` (`defter-teslim`, `defter-baglam-bakim`, `defter-istem`), `.claude/agents/` (rol kartları), `.claude/settings.json` |
 | Teslim | `tools/teslim.sh` |
 | Elle test listesi | `docs/TEST_PLANI.md` |

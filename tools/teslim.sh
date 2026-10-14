@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Defter Studio teslim betiği:
-#   test → gizli bilgi taraması → DEGISIKLIKLER.md'ye tarihli satır → LINKLER.md tarihi → commit → push → bağlantılar
+#   test (sunucu, FSRS, sağlayıcı, e2e; çıktı yalnız ✗ + özet) → bağlam/istem denetimi → manifest → kur.zip → token raporu
+#   → gizli bilgi taraması → DEGISIKLIKLER.md'ye tarihli satır → LINKLER.md tarihi → commit → push → Pages eşitliği
 # Kullanım:  bash tools/teslim.sh "kısa açıklama"      (testleri atlamak için: TESTSIZ=1 bash tools/teslim.sh "...")
 # İsteğe bağlı: TESLIM_EK="Co-Authored-By: ..." commit mesajının sonuna eklenir.
 set -euo pipefail
@@ -18,6 +19,7 @@ if [ "${TESTSIZ:-0}" != "1" ]; then
   sleep 1.5
   KLASOR="$(mktemp -d)"
   if [ -x server/.venv/bin/python ]; then server/.venv/bin/python tests/server_test.py || { echo "✗ Sunucu testleri geçmedi"; exit 1; }; elif python3 -c "import fastapi" 2>/dev/null; then python3 tests/server_test.py || { echo "✗ Sunucu testleri geçmedi"; exit 1; }; fi
+  if command -v node >/dev/null 2>&1; then node tests/srs_test.mjs && node tests/llm_test.mjs || { echo "✗ FSRS/sağlayıcı testleri geçmedi"; exit 1; }; fi
   if ! python3 tests/e2e.py "$KLASOR"; then
     echo "✗ Testler geçmedi; teslim durduruldu. Ekran görüntüleri: $KLASOR"
     [ "$STATIC" != 0 ] && kill "$STATIC"; [ "$MOCK" != 0 ] && kill "$MOCK"; exit 1

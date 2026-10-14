@@ -21,7 +21,7 @@
 3. **Slayt v2:** Daha fazla tema, görselli düzenler, sunum modunda lazer imleç ve PDF'e notlarla basma.
 
 ### Faz C — öğrenme motoru
-4. **FSRS-5 zamanlayıcı:** Kartlar, hata defteri ve soru bankasında ortak bellek modeli kullanılır; zorluk ve kararlılık tahmini yapılır.
+4. **FSRS-6 zamanlayıcı:** ✅ 0.8.4 — kartlar, hata defteri ve soru bankası ortak `js/srs.js` (py-fsrs ile altın değer testi). Kalan: sınav planlayıcı v2 (sınav tarihine göre günlük yük: vadesi gelen + yeni dengesi), isteğe bağlı 4 düğmeli not (Zor/Kolay).
 5. **Sınav planlayıcı v2:**
    - Konu ağırlıkları (ÖSYM/UAB dağılımları).
    - Günlük takvim ve bildirim.

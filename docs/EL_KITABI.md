@@ -1,6 +1,6 @@
 # El kitabı — çalışma biçimi
 
-CLAUDE.md'nin ayrıntısı. Baştan sona okunmaz: yalnız gereken bölüm. Son gözden geçirme: 2026-10-14. Bilgi ezberden değil resmi belgeden alındı; kaynak ve tarih yanında.
+CLAUDE.md'nin ayrıntısı. Baştan sona okunmaz: yalnız gereken bölüm. Son gözden geçirme: 2026-10-15. Bilgi ezberden değil resmi belgeden alındı; kaynak ve tarih yanında.
 
 ## 1. Önbellek ve token mimarisi
 
@@ -13,7 +13,8 @@ Kaynak, Claude Code oturum kaydındaki her çağrının gerçek token sayısıd�
 ### 1.2 Önbellek nasıl çalışır (code.claude.com/docs/en/prompt-caching)
 - Her istekte tüm konuşma yeniden gönderilir. API, baştan eşleşen kısmı (önek) önbellekten okur; eşleşme tamdır, bir yerde değişirse sonrası yeniden hesaplanır.
 - Sıra: sistem istemi + araç tanımları → proje bağlamı (CLAUDE.md, bellek) → konuşma. Sabit olan en üstte, her turda değişen en altta.
-- Fiyat (platform.claude.com/docs/en/about-claude/pricing): Opus 5.5 $4/$20, Sonnet 5.5 $2/$10 → **Opus, Sonnet'in 2 katı**. Önbellek okuma girdinin %5'i; yazma 5 dk 1,25x, 1 saat 2x. Haiku 5.5'te 100k tokenı aşan istem daha pahalı. En kısa önbelleklenen önek 512 token.
+- Fiyat (platform.claude.com, optimizing-for-cost-and-intelligence, 15.10.2026 yeniden doğrulandı): Opus 5.5 $4 / önbellek okuma $0,20 / çıktı $20; Sonnet 5.5 $2 / $0,10 / $10 → **Opus, Sonnet'in 2 katı**. Okuma girdinin %5'i (5.5 Opus/Sonnet; diğerleri %10); yazma 5 dk 1,25x, 1 saat 2x. Haiku 5.5'te 100k tokenı aşan istem 5x. En kısa önbelleklenen önek 512 token (5.5 modelleri). Batch API her tokenda %50.
+- API'de en çok 4 kesme noktası; üst düzey `cache_control` = otomatik önbellek (nokta konuşma uzadıkça sona kayar). Araç tanımı değişimi hepsini, effort/düşünme ayarı mesajları geçersiz kılar. Hedef: iyi kurulmuş ajan döngüsü girdinin ~%84'ünü önbellekten okur; %80 altı kırık önek demektir.
 
 ### 1.3 Ne bozar, ne bozmaz
 | Önbelleği baştan yazdırır | Önbelleği korur |
@@ -25,13 +26,15 @@ Kaynak, Claude Code oturum kaydındaki her çağrının gerçek token sayısıd�
 | Çok görsel birikince (eski görseller toplu silinir), `/compact` (konuşma yeniden yazılır; sıcakken ucuz) | Kapsamlı `Read(...)` yasağı (araç listesini değiştirmez) |
 
 ### 1.4 Ömür (TTL)
-Abonelikte plan kullanımı içinde ana konuşma **1 saat**; kullanım kredisine geçince ya da API anahtarında **5 dk**. `promptCacheTtl: "1h"` (ayar) ya da `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` ile seçilir (v2.1.242+). Alt ajanlar 5 dk alır. 1 saatlik yazma 2x pahalıdır: kısa seanslarda 5 dk ucuz, aralı işlerde 1 saat ucuz. Kredi kullanıyorsan 1h seç. Büyük oturumu uzun aradan sonra açarken Claude Code "özetten devam et" önerir: kabul et.
+Abonelikte plan kullanımı içinde ana konuşma **1 saat**; kullanım kredisine geçince ya da API anahtarında **5 dk**. `promptCacheTtl: "1h"` (ayar) ya da `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` ile seçilir (v2.1.242+); **bu depoda ayarlı** (uzun test beklemelerinde önbellek düşmesin). Alt ajanlar 5 dk alır (`subagentPromptCacheTtl` ya da ajan `experimental.cacheTtl`). 1 saatlik yazma 2x pahalıdır: kısa seanslarda 5 dk ucuz, aralı işlerde 1 saat ucuz. Kredi kullanıyorsan 1h seç. Büyük oturumu uzun aradan sonra açarken Claude Code "özetten devam et" önerir: kabul et.
 Önbellek bir makine ve klasöre bağlıdır; farklı klasördeki oturumlar birbirinin önbelleğini okumaz.
 
 ### 1.5 Bu depoda uygulananlar
-- `.claude/settings.json`: `autoCompactWindow: 200000` (varsayılan ~967k) ve `permissions.deny` ile üretilmiş/büyük dosyalar okunmaz (`js/vendor`, `kur.zip`, `docs/token/veri.json`, `server/manifest.json`).
-- CLAUDE.md ≤600 kelime (resmi öneri <200 satır) + `# Compact instructions` bölümü. İş akışları beceriye, ayrıntı buraya.
-- Ajan rol kartları `model:` ile sabit (Sonnet; mimar Opus): ana model Opus olsa da ajan pahalıya binmez.
+- `.claude/settings.json`: `autoCompactWindow: 200000` (varsayılan ~967k), `promptCacheTtl: "1h"`, `permissions.deny` ile üretilmiş/büyük dosyalar okunmaz (`js/vendor`, `kur.zip`, `docs/token/*`, `server/manifest.json`).
+- CLAUDE.md ≤600 kelime (resmi öneri <200 satır) + `# Compact instructions`. Dosyaya özgü kurallar `.claude/rules/*.md` (`paths:` ile; yalnız eşleşen dosya okununca yüklenir), iş akışları beceriye, ayrıntı buraya.
+- Ajan rol kartları ayarda: `model` (Sonnet; mimar Opus), `effort`, `maxTurns: 25`, rolün araçları (`tools`): araç tanımı az = her istek küçük, sınır metinde değil ayarda.
+- Testler varsayılan olarak yalnız ✗ satırlarını ve özeti yazar (`-v` ya da `DEFTER_TEST_AYRINTI=1` ayrıntı): her test çalıştırması ~8-10k token yerine birkaç yüz.
+- İstem denetimi (`baglam-denetim.py`): CLAUDE.md, ajan, beceri, kural ve uygulama istemlerinde eskimiş kalıp (bkz. `defter-istem`) teslimi durdurur.
 - Bir iş turu bitince yeni oturum; kullanıcı yalnız "devam" yazar. Aynı oturumda model değiştirme.
 - Bakım: `python3 tools/baglam-denetim.py` (teslimde otomatik) + aylık rutin §7.
 
@@ -42,9 +45,15 @@ Abonelikte plan kullanımı içinde ana konuşma **1 saat**; kullanım kredisine
 - "Effort değişimi önbelleği sıfırlar": eski modellerde doğru; 5.5 modellerinde Claude Code önbelleği korur. Eski kuralımız ve "Opus 2,8 katı" hesabımız hatalıydı (resmi: 2 kat); düzeltildi.
 - DataCamp "prompt caching" yazısı uygulama düzeyinde yanıt önbelleğidir; Claude'un önek önbelleği başka şeydir. Isındırma/canlı tutma ping'i Claude Code'da gerekmez (zamanlanmış görev bile tüm bağlamı yeniden gönderir).
 - Yazarın 5 haftalık dersi (kaynak: kullanıcı ekinden) doğrulandı: harcamanın çoğu yeniden okuma; çözüm model değil konuşma boyu ve ömrü.
+- **15.10.2026 ikinci tur** (kullanıcının ek becerisi `opus-5-5-prompt` + verdiği resmi bağlantılar): rehber maddelerinin çoğu doğrulandı (effort önce, zaman cümlesi, kesinleşmiş cevap + uyarısı, önce keşfet, `pasted_content`, tasarım yasak listesi, `display: "summarized"`, mesaj başına effort). Farklar: rehber "adım adım" değil "cevaplamadan önce dikkatlice düşün" satırlarını anar; TASKS.md yerine "yapılacaklar aracı ya da dosya"; 2–3 otomatik devamdan sonra bırak. API'de üst düzey effort değişimi önbelleği yeniler (beta başlığı `mid-conversation-output-config-2026-07-01` korur); Claude Code'da 5.5 modellerinde korunur — iki iddia da doğru, katman farklı.
+- Claude 5 API'si `temperature/top_p/top_k`'yı varsayılan dışında 400 ile reddeder, ön doldurmayı (prefill) reddeder (Sonnet/Opus 5.5 geçiş rehberleri). Uygulamamız Claude'a 0,6 gönderiyordu: bulut Claude hiç çalışmazdı (NOT_DEFTERI).
+- Makaledeki "Opus $5/M", "Tool Search %85", "LSP %97" eski kuşak ya da üçüncü taraf ölçümüdür; kural değil. Kod zekâsı eklentisi resmi önerilir (yazımlı dillerde); bu depo derlemesiz JS + Python, grep → aralık yeterli.
 
-### 1.7 Uygulamanın kendi model çağrıları
-İstemlerde sabit kısım (sistem, kaynak parçası) başta, değişken talimat sonda (`gen.js`); Ollama `keep_alive: 30m` ve ön ek önbelleği bu sırayla çalışır. Anthropic anahtarı için `cache_control` eklenmedi: partiler farklı kaynak dilimi kullanır, yazma (1,25x) okuma kazancından büyük olur. Aynı kaynağı yineleyen döngülerde (podcast bölümleri, sunu parçaları) ilerde gerekirse yalnız o döngüye eklenir.
+### 1.7 Uygulamanın kendi model çağrıları (`js/llm.js`, 15.10.2026)
+- Sıra her sağlayıcıda: sabit kısım (sistem kuralları, kaynak) başta, değişken (soru, araç talimatı, JSON şeması) sonda. Sohbette (`answer`) kaynaklar sistem isteminde; geçmiş ve yeni soru sonra: turlar arası önek aynı kalır.
+- Claude: önbellek yalnız önek tekrar edecekse (`cache: ctx.full`, bütün kaynak sığdığında): sistem bloğuna `cache_control` + üst düzey otomatik önbellek. Tek seferlik Studio üretiminde yazılmaz (1,25x yazma okunmazsa zarar). Claude 5'te `temperature` gönderilmez, `output_config.effort` hızlı/JSON low, gerisi medium (akış boyunca sabit), `max_tokens` 64k. 400 hatasında yalnız sorunlu alan atılıp bir kez yeniden denenir.
+- OpenAI (GPT-5.6+): ≥1024 tokenlık önekte otomatik, okuma %5-10; akıl yürüten modeller temperature reddederse aynı yeniden deneme. DeepSeek: otomatik disk önbelleği (`prompt_cache_hit_tokens`). xAI: otomatik. Gemini: 2.5+ modellerde örtük önbellek (≥2048/4096 token, ortak içerik başa); varsayılan `gemini-3.8-flash`, gömme `gemini-embedding-001` (2.5 Flash yalnız eski kullanıcılara açık).
+- Ollama: `keep_alive: 30m`, sabit `num_ctx` (değişirse model yeniden yüklenir), aynı önek KV önbelleğinden okunur — yerel Qwen'de sohbet turları kaynağı yeniden işlemez.
 
 ### 1.8 Davranış kuralları
 - Dosyayı aralıkla oku, komut çıktısını `head`/`grep` ile kırp, bağımsız çağrıları tek turda yap. Her ek çağrı o anki bağlamın tamamını okutur.
@@ -74,10 +83,11 @@ Abonelikte plan kullanımı içinde ana konuşma **1 saat**; kullanım kredisine
 - **Güvenlik filtresi takılırsa:** akıl yürütme isteğini kaldır, meşru amacı açıkça yaz, yeni sohbet aç.
 - **Önbellek dostu istem:** sabit olanlar (rol, kurallar, API belgesi, proje açıklaması, dosyalar) başa; o isteğe özgü değişken kısım sona. Tek isteği tek dosya ve nokta hata ile sınırla ("checkout.js'teki indirim hesabını düzelt; %20 kupon + kampanya toplamı eksiye düşürüyor; fonksiyon imzasını değiştirme").
 - Harness mesajı "Uzun süredir ses çıkmadı" gelirse: tek cümle ne yaptığını yaz, devam et.
+- Resmi en iyi uygulamalardan: "Varsayılan olarak önermek yerine değişikliği uygula"; "Açmadığın kod hakkında tahmin yürütme"; kapsamı, yorumu, savunmacı kodu ve soyutlamayı sınırla (aşırı mühendislik); iş sonunda geçici dosyaları sil; uzun belgede veri başa, soru sona, cevabı alıntıyla temellendir. Ayrıntı ve kalıplar: `.claude/skills/defter-istem/SKILL.md`.
 
 ## 3. Kaynaklar (takılınca bu sırayla; tarih ve sürüm not edilir)
 1. Anthropic: code.claude.com/docs (costs, prompt-caching, model-config, skills, sub-agents, memory), platform.claude.com/docs (pricing, prompt caching, prompting-claude-opus-5-5, release notes), support.claude.com, academy.claude.com.
-2. Rakipler: developers.openai.com, ai.google.dev/gemini-api/docs, docs.x.ai, api-docs.deepseek.com, qwen.readthedocs.io, research.google.
+2. Rakipler: developers.openai.com (prompt-caching), learn.chatgpt.com, ai.google.dev/gemini-api/docs (models, caching), docs.x.ai, api-docs.deepseek.com (kv_cache), qwen.readthedocs.io, research.google. Ustalar: martinfowler.com, samnewman.io, itrevolution.com, schneier.com, catb.org/~esr/faqs, Knuth, Torvalds.
 3. Topluluk: stackoverflow.com (claude-code etiketi), GitHub issues.
 4. Bulunan çözüm NOT_DEFTERI'ne kaynak ve tarihle yazılır; yeniden araştırılmaz. İkincil yazıdaki iddia resmi belgeyle doğrulanmadan kurala girmez (§1.6).
 
@@ -89,6 +99,8 @@ Abonelikte plan kullanımı içinde ana konuşma **1 saat**; kullanım kredisine
 - **Önce çalışan basit sistem, sonra evrim** (Gall; Fowler). Refactoring davranışı koruyarak küçük adımlarla.
 - **Akış, geri bildirim, sürekli öğrenme** (Gene Kim): küçük partiler, her teslimde test ve ölçüm, retro = NOT_DEFTERI (zorunlu).
 - **Erken optimizasyon kötülüğün kaynağıdır; önce ölç** (Knuth): token raporu.
+- **Koşum (harness) ucuz modeli güvenilir kılar** (Fowler, "Are Harnesses Worth the Cost?", 13.10.2026: davranış koşumuyla ucuz model öncü modelin güvenilirliğini %33 daha ucuza yakaladı): ajanlar Sonnet'te, kalite sıkı test + denetim betiklerinden gelir; pahalı modele değil koşuma yatırım.
+- **Dayanıklılık** (Sam Newman, *Building Resilient Distributed Systems*): geçici hata kısa beklemeyle yeniden denenir, kalıcı hata hemen ve açık mesajla yukarı çıkar (Edge boş ses, VoxCPM sürüm farkı).
 - **Lafı bırak, kodu göster** (Torvalds): iddia değil test, ekran, eşitlik çıktısı. Yetkinlik tavırdan önemlidir (Raymond).
 - **Yokluk başarı sayılmaz** (5 haftalık otonom şirket denemesi): yedi kalite kapısının yedisi ayar satırı eksik olduğu için hiç çalışmamış, 508 test yeşildi. Kural/kapı gerçekten açık mı canlı ayardan oku; ajanın "çalışıyor" demesi kanıt değildir (`esitlik.py`, `baglam-denetim.py` bu yüzden var).
 - **Süreç ürünün önüne geçmesin:** altyapı işi ürünü geçiyorsa dur. Yeni kural eklemeden önce mevcut kural yetiyor mu bak; anayasa 1.119 kelimeden 1.993'e çıktı: şişme olur, düzenli buda.
@@ -100,7 +112,7 @@ Abonelikte plan kullanımı içinde ana konuşma **1 saat**; kullanım kredisine
 - Kullanıcıya yalnız gerçekten ona ait kararlar gelir: gizli anahtar girişi, geri dönüşsüz işlem, kamuya açık yayın. Gerisini kendin karar ver, kayda yaz.
 
 ## 5. Ajan düzeni (`.claude/agents/`)
-Rol kartları: `mimar`, `analist`, `tasarimci`, `gelistirici`, `devops`, `otomasyon-testci`, `manuel-testci`, `hata-avcisi`. Uçtan uca sahiplik ana oturumdadır (lider).
+Rol kartları: `mimar`, `analist`, `tasarimci`, `gelistirici`, `devops`, `otomasyon-testci`, `manuel-testci`, `hata-avcisi`. Uçtan uca sahiplik ana oturumdadır (lider). Kartın ön maddesinde `tools` (rolün araçları), `effort` (geliştirici ve hata avcısı high, mimar Opus medium, diğerleri medium) ve `maxTurns: 25` vardır; `baglam-denetim.py` eksikse uyarır.
 **İş rotası** (gereksiz rolü çağırma):
 | İş | Roller |
 |---|---|

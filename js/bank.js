@@ -1,15 +1,15 @@
 // Soru bankası: sorular bir kez (tercihen lokal modelle, ücretsiz) üretilip saklanır; sonra istenen sayıda test
 // token harcamadan anında oluşturulur. Doldurma arka planda, kaynağın baştan sonuna dilim dilim ilerler ve
-// sayfa kapansa da kaldığı yerden devam eder. Cevaplar aralıklı tekrar (gün aralıkları) ile planlanır.
+// sayfa kapansa da kaldığı yerden devam eder. Cevaplar FSRS-6 aralıklı tekrarla planlanır (js/srs.js).
 import { db, getSetting, setSetting, now } from './db.js';
 import { sliceContexts } from './sources.js';
 import { oneBatch } from './studio/batch.js';
 import { questionSpec, shuffleOpts } from './studio/gen.js';
 import { norm, summarize } from './verify.js';
 import { TAB, ownedElsewhere } from './tabs.js';
+import { tekrar, eskidenDurum, sakla } from './srs.js';
 
-const DAY = 864e5;
-const INTERVALS = [1, 3, 7, 16, 35, 80]; // doğru üst üste cevaplandıkça büyüyen aralıklar (gün)
+const INTERVALS = [1, 3, 7, 16, 35, 80]; // 0.8.2'ye dek üst üste doğru aralıkları (gün): eski ilerleme FSRS'e taşınır
 
 export async function bankStats(nb) {
   const qs = await db.questions.where('notebookId').equals(nb).toArray();
@@ -44,8 +44,9 @@ export async function addQuestions(nb, items, ctxRefs, meta = {}) {
 export async function recordAnswer(id, ok) {
   const q = await db.questions.get(id); if (!q) return;
   const streak = ok ? (q.streak || 0) + 1 : 0;
-  const days = ok ? INTERVALS[Math.min(INTERVALS.length - 1, streak - 1)] : 0.5;
-  await db.questions.update(id, { seen: (q.seen || 0) + 1, correct: (q.correct || 0) + (ok ? 1 : 0), wrong: (q.wrong || 0) + (ok ? 0 : 1), streak, lastOk: ok, lastAt: now(), due: now() + days * DAY });
+  const eski = q.seen && q.due ? eskidenDurum({ gun: q.streak ? INTERVALS[Math.min(INTERVALS.length - 1, q.streak - 1)] : 0.5, due: q.due }) : null;
+  const st = tekrar(q.fsrs || eski, ok);
+  await db.questions.update(id, { seen: (q.seen || 0) + 1, correct: (q.correct || 0) + (ok ? 1 : 0), wrong: (q.wrong || 0) + (ok ? 0 : 1), streak, lastOk: ok, lastAt: now(), due: st.due, fsrs: sakla(st) });
   emit(q.notebookId, null); // Studio'daki banka kartı kalan/çözülen sayısını güncellesin
 }
 

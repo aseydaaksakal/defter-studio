@@ -1,5 +1,6 @@
 // Defter Studio — öğrenme motoru: puan/seri/rozet, kutlama, hata defteri, günlük plan, öğrenme bilimi
 import { db, getSetting, setSetting } from './db.js';
+import { tekrar, eskidenDurum, sakla } from './srs.js';
 import { h, icon, toast } from './ui.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -101,12 +102,16 @@ export function celebrate() {
 }
 
 // ---------- Hata defteri: yanlış yapılan sorular aralıklı olarak geri gelir ----------
+// FSRS-6 (js/srs.js): her yanlış kararlılığı düşürür, her doğru büyütür; seviye 5 (21+ gün kararlı) olunca defterden çıkar.
+const ESKI_GUN = [0, 1, 3, 7, 21, 60]; // 0.8.2'ye dek kutu aralıkları (gün): eski kayıtların ilerlemesi korunur
+const durumu = (m) => m.fsrs || (m.box ? eskidenDurum({ gun: ESKI_GUN[Math.min(5, m.box)] || 1, due: m.due }) : null);
+function isle(m, dogru) { const st = tekrar(durumu(m), dogru); Object.assign(m, { box: st.box, due: st.due, fsrs: sakla(st) }); }
 export async function addMistakes(items) {
   const list = await getSetting('mistakes', []);
   for (const it of items) {
     const ex = list.find((m) => m.q.q === it.q.q);
-    if (ex) { ex.box = 1; ex.due = Date.now() + 864e5; ex.misses = (ex.misses || 1) + 1; }
-    else list.push({ ...it, box: 1, due: Date.now() + 36e5, misses: 1, addedAt: Date.now() });
+    if (ex) { isle(ex, false); ex.misses = (ex.misses || 1) + 1; }
+    else { const m = { ...it, misses: 1, addedAt: Date.now() }; isle(m, false); list.push(m); }
   }
   await setSetting('mistakes', list.slice(-500));
 }
@@ -114,8 +119,8 @@ export async function resolveMistake(qText, correct) {
   const list = await getSetting('mistakes', []);
   const m = list.find((x) => x.q.q === qText);
   if (!m) return;
-  if (correct) { m.box = (m.box || 1) + 1; m.due = Date.now() + [0, 1, 3, 7, 21, 60][Math.min(5, m.box)] * 864e5; }
-  else { m.box = 1; m.due = Date.now() + 864e5; m.misses++; }
+  isle(m, correct);
+  if (!correct) m.misses = (m.misses || 1) + 1;
   await setSetting('mistakes', m.box >= 5 ? list.filter((x) => x !== m) : list);
 }
 export async function dueMistakes() { return (await getSetting('mistakes', [])).filter((m) => (m.due || 0) <= Date.now()); }
@@ -145,7 +150,7 @@ export function sciencePage() {
     h('h1', {}, 'Kalıcı öğrenmenin bilimi'),
     h('p', { class: 'lead' }, 'Defter Studio, bilişsel bilimin en güçlü kanıtlara sahip tekniklerini bir arada kullanır. Amaç bilgiyi bir kez görmek değil, yıllar sonra da geri çağırabilmektir.'),
     h('div', { class: 'sci-grid' },
-      item('🔁', 'Aralıklı tekrar', 'Bilgi unutulmaya başladığı anda tekrar edilince hafıza her seferinde güçlenir. Tek oturumda yoğun çalışmak yerine günlere yaymak çok daha kalıcıdır.', 'Bilgi kartları ve hata defteri 1-3-7-21-60 gün aralıklarla geri gelir; "Bugün" sekmesi ne zaman neyi tekrar edeceğini söyler.'),
+      item('🔁', 'Aralıklı tekrar', 'Bilgi unutulmaya başladığı anda tekrar edilince hafıza her seferinde güçlenir. Tek oturumda yoğun çalışmak yerine günlere yaymak çok daha kalıcıdır.', 'Bilgi kartları, hata defteri ve soru bankası FSRS-6 ile planlanır: her bilginin unutulma hızı ayrı hesaplanır, hatırlama olasılığı %90’a düşmeden geri gelir; "Bugün" sekmesi ne zaman neyi tekrar edeceğini söyler.'),
       item('🎯', 'Geri çağırma pratiği', 'Okumak yerine hatırlamaya çalışmak (kendini test etmek) öğrenmenin en güçlü yollarından biridir. Zorlanarak hatırlamak izi derinleştirir.', 'Testler, kartlar, hafıza sarayı testi ve sözlü sınav provası.'),
       item('🧑‍🏫', 'Öğreterek öğrenme', 'Bir konuyu başkasına anlatmaya hazırlanmak ve anlatmak, boşlukları ortaya çıkarır ve anlamayı derinleştirir.', '"Öğreterek Öğren" aracında konuyu sesli ya da yazılı anlatırsın; yapay zeka öğrenci gibi dinleyip puanlar ve eksikleri söyler.'),
       item('🖼️', 'İkili kodlama', 'Söz ile görüntü birlikte kodlandığında hatırlama kolaylaşır.', 'İnfografik, zihin haritası, video özet ve hafıza tekniklerindeki emoji/imge sahneleri.'),
@@ -168,7 +173,7 @@ const EV = { y: ['Yüksek kanıt', 'ev-y'], o: ['Orta kanıt', 'ev-o'], d: ['Dü
 const METHODS = [
   ['Kanıtı en güçlü teknikler (Dunlosky ve ark., 2013)', [
     ['y', 'Kendini test etme (geri çağırma)', 'Okumak yerine hatırlamaya çalışmak, uzun süreli hatırlamayı en çok artıran tekniktir (test etkisi).', 'Test, bilgi kartları, soru bankası, sözlü sınav provası.'],
-    ['y', 'Aralıklı tekrar', 'Aynı süreyi günlere yaymak tek oturumdan çok daha kalıcıdır. Unutmaya başladığınız anda tekrar etmek en verimlisidir.', 'Soru bankası 1-3-7-16-35-80 gün aralıklarla soruları geri getirir; kartlar ve hata defteri de böyle çalışır.'],
+    ['y', 'Aralıklı tekrar', 'Aynı süreyi günlere yaymak tek oturumdan çok daha kalıcıdır. Unutmaya başladığınız anda tekrar etmek en verimlisidir.', 'Soru bankası, kartlar ve hata defteri FSRS-6 ile soruları tam unutmak üzereyken geri getirir; doğru cevaplandıkça aralık büyür.'],
     ['o', 'Karışık çalışma (interleaving)', 'Konuları karıştırmak hangi bilginin ne zaman kullanılacağını ayırt etmeyi öğretir; özellikle problem türlerinde güçlü.', 'Deneme sınavı ve bankadan “Tümünden karışık” test.'],
     ['o', 'Neden-nasıl sorgulama', '“Bu neden doğru?” sorusunu sormak bilgiyi bildiklerinize bağlar.', 'Sohbette “neden?” diye sorun; münazara ve istişare podcastleri.'],
     ['o', 'Kendine açıklama', 'Bir adımı ya da örneği kendi cümlelerinizle açıklamak anlamayı derinleştirir.', 'Öğreterek Öğren aracı (Feynman tekniği) ve puanlı geri bildirim.'],

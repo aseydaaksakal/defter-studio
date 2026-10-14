@@ -1,12 +1,15 @@
-// Bilgi kartları: çevirme (Boşluk), gezinme (← →), bildim/bilemedim sayacı, Leitner aralıklı tekrar, Anki CSV
+// Bilgi kartları: çevirme (Boşluk), gezinme (← →), bildim/bilemedim sayacı, FSRS-6 aralıklı tekrar (js/srs.js), Anki CSV
 import { h, icon, download, slug, toast } from '../../ui.js';
 import { award, correctFx, wrongFx } from '../../learn.js';
+import { tekrar, eskidenDurum, sakla } from '../../srs.js';
+
+const ESKI_GUN = [0, 1 / 1440, 10 / 1440, 1, 3, 7]; // 0.8.2'ye dek Leitner kutularının aralığı (gün): ilerleme FSRS'e taşınır
 
 export function render(root, art, api) {
   const srcOf = (cd) => { const r = (art.content.refs || []).find((x) => x.n === +cd.ref); return r ? ` — ${r.title}${r.page ? ', s. ' + r.page : ''}` : ''; };
   const c = art.content;
   const all = c.cards || [];
-  const prog = c.progress || {}; // { index: { box: 1..5, due: zaman } }
+  const prog = c.progress || {}; // { index: { box: 1..5 (seviye), due: zaman, fsrs: {s, d, son, sayi, unutma} } }
   let order = all.map((_, i) => i), pos = 0, flipped = false, right = 0, wrong = 0, onlyDue = false;
 
   const card = h('div', { class: 'fc-card', tabindex: 0, role: 'button', 'aria-label': 'Kartı çevir' });
@@ -39,10 +42,9 @@ export function render(root, art, api) {
   const go = (d) => { pos = (pos + d + order.length) % order.length; flipped = false; paint(); };
   async function grade(ok) {
     const i = order[pos];
-    const p = prog[i] || { box: 1 };
-    p.box = ok ? Math.min(5, p.box + 1) : 1;
-    p.due = Date.now() + [0, 1, 10, 60 * 24, 60 * 24 * 3, 60 * 24 * 7][p.box] * 60000; // dakika
-    prog[i] = p;
+    const p = prog[i];
+    const st = tekrar(p?.fsrs || (p?.box ? eskidenDurum({ gun: ESKI_GUN[p.box] || 1, due: p.due }) : null), ok);
+    prog[i] = { box: st.box, due: st.due, fsrs: sakla(st) };
     ok ? right++ : wrong++;
     ok ? correctFx(rBtn) : wrongFx(wBtn);
     award(ok ? 2 : 1, 'kart', null, { silent: true });

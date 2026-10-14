@@ -14,6 +14,8 @@ import textwrap
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVER = os.path.join(os.path.dirname(HERE), "server")
 sys.path.insert(0, SERVER)
+# Testler geliştiricinin gerçek durum dosyalarını (server/veri/probe.json, cast.json) okumasın: sonuç ortama bağlı olmasın
+os.environ["DEFTER_DATA"] = tempfile.mkdtemp(prefix="defter-veri-")
 
 import numpy as np  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -25,8 +27,13 @@ import modeller  # noqa: E402
 results = []
 
 
+AYRINTI = "-v" in sys.argv or os.getenv("DEFTER_TEST_AYRINTI") == "1"
+
+
 def ok(name, cond, info=""):
     results.append(bool(cond))
+    if cond and not AYRINTI:  # token ekonomisi: varsayılan çıktı yalnız ✗ + özet (her satır ajan bağlamına girer)
+        return
     print(("✓ " if cond else "✗ ") + name + (f" — {info}" if info else ""), flush=True)
 
 
@@ -222,7 +229,10 @@ import types  # noqa: E402
 
 main.has = lambda mod: mod in ("pocket_tts_turkish", "edge_tts")
 main.tts_engines = ORIG_ENGINES
+_ops = main._probe_status
+main._probe_status = lambda mods: {m: None for m in mods}  # denetim geçti varsay (gerçek denetim arka planda, burada sınanmaz)
 eng_list = ORIG_ENGINES()
+main._probe_status = _ops
 ok("Pocket TTS Türkçe: kuruluysa ilk sırada", eng_list[:1] == ["pockettr"] and "edge" in eng_list, str(eng_list))
 bv = main.builtin_voices()
 ok("Pocket TTS Türkçe: 3 kadın + 3 erkek hazır ses listelenir", sorted(v["gender"] for v in bv) == ["f", "f", "f", "m", "m", "m"] and all(v["builtin"] for v in bv))
@@ -833,6 +843,98 @@ os.makedirs(os.path.join(main.APP_DIR, ".git"))
 ok("Oto-güncelleme: git kopyasında devre dışı", main.oto_guncelle_tur() == "yok")
 main.guncelle.manifest, main.guncelle.plan, main.guncelle.uygula, main.APP_DIR = _om, _op, _ou, _ag
 ok("Oto-güncelleme açılışta başlar (10 dk)", "_oto_guncelle_dongu, daemon" in open(os.path.join(SERVER, "main.py"), encoding="utf-8").read() and main.OTO_GUNCELLE_SN == 600)
+
+# ---- 0.8.4: eski kodla çalışan süreç (PC'de görüldü: diskte 0.8.2, çalışan 0.8.1, "güncelleme yok") kendini yeniden başlatır
+_om, _op, _ou, _ag = main.guncelle.manifest, main.guncelle.plan, main.guncelle.uygula, main.APP_DIR
+_oy, _oz, _ob = main._yeniden_baslat, dict(main._ACILIS_ZAMAN), dict(main._ACILIS_PY)
+basla = []
+main._yeniden_baslat = lambda neden: basla.append(neden)
+main.APP_DIR = tempfile.mkdtemp()
+os.environ["DEFTER_LAUNCHER"] = "1"
+main.guncelle.manifest = lambda *a, **k: {"version": "9.9.9", "files": {}}
+main.guncelle.plan = lambda m, root, *a, **k: {"degisen": [], "pip": False, "py": False, "kabuk": []}
+ok("Eski kod: dosyalar ve süreç aynıysa hiçbir şey yapmaz", not main.kod_eski() and main.oto_guncelle_tur() == "yok" and not basla)
+main._ACILIS_ZAMAN = {"main.py": 1}; main._ACILIS_PY = {"main.py": "0" * 64}  # açılıştaki kod farklıydı
+ok("Eski kod: diskteki .py açılıştakinden farklıysa algılanır", main.kod_eski())
+main._gpu_lock.acquire()
+ok("Eski kod: GPU üretimi sürerken yeniden başlatmaz (bekler)", main.oto_guncelle_tur() == "bekliyor" and not basla)
+main._gpu_lock.release()
+ok("Eski kod: değişen dosya olmasa da boştayken yeniden başlar", main.oto_guncelle_tur() == "yeniden" and len(basla) == 1, str(basla))
+h = client.get("/health").json()["update"]
+ok("/health: eski kodda update.available ve restart doğru", h["available"] is True and h["restart"] is True, str(h))
+main.guncelle.uygula = lambda m, root, log=None, **k: {"yazilan": [], "hatalar": [], "py": False, "pip": False, "kabuk": [], "surum": "9.9.9"}
+basla.clear()
+ap = client.post("/update/apply").json()
+ok("/update/apply: yazılacak dosya yoksa da eski kodda yeniden başlar", ap["restart"] == "auto" and len(basla) == 1, str(ap))
+os.environ["DEFTER_LAUNCHER"] = "0"; basla.clear()
+ok("Eski kod: başlatıcı yoksa kapanmaz (yeniden açacak döngü yok)", main.oto_guncelle_tur() == "yok" and not basla)
+main.guncelle.manifest, main.guncelle.plan, main.guncelle.uygula, main.APP_DIR = _om, _op, _ou, _ag
+main._yeniden_baslat, main._ACILIS_ZAMAN, main._ACILIS_PY = _oy, _oz, _ob
+ok("Eski kod: arayüz 'yeniden başlat' durumunu ayırır", "yalnizBaslat" in open(os.path.join(os.path.dirname(SERVER), "js", "app.js"), encoding="utf-8").read())
+
+# ---- 0.8.4: Edge ara sıra boş ses döndürür (PC'de erkek seste NoAudioReceived): kısa bekleyip yeniden dener
+class NoAudioReceived(Exception):
+    pass
+
+
+class _Bos:
+    n = 0
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def stream(self):
+        _Bos.n += 1
+        if _Bos.n < 3:
+            raise NoAudioReceived("No audio was received. Please verify that your parameters are correct.")
+        yield {"type": "audio", "data": b"ID3ok"}
+
+
+_bos_mod = types.ModuleType("edge_tts"); _bos_mod.Communicate = _Bos
+_sys.modules["edge_tts"] = _bos_mod
+_osl = main.asyncio.sleep
+async def _hizli(*a, **k):
+    return None
+main.asyncio.sleep = _hizli
+try:
+    veri = asyncio.run(ORIG_EDGE("Merhaba", "m", "tr"))
+    ok("Edge: NoAudioReceived'da iki kez daha dener ve sesi alır", veri == b"ID3ok" and _Bos.n == 3, str(_Bos.n))
+    _Bos.n = -10
+    try:
+        asyncio.run(ORIG_EDGE("Merhaba", "m", "tr")); _kalici = False
+    except NoAudioReceived:
+        _kalici = True
+    ok("Edge: sürekli boş seste sonsuz denemez (3 denemede hata verir)", _kalici and _Bos.n == -7, str(_Bos.n))
+finally:
+    main.asyncio.sleep = _osl
+
+# ---- 0.8.4: VoxCPM sürüm farkı ('seed' almıyor; PC'de TypeError) → desteklenmeyen argüman atılıp yeniden denenir
+_cagri_kw = []
+def _vox_gen(**kw):
+    _cagri_kw.append(sorted(kw))
+    for k in ("seed", "max_len"):
+        if k in kw:
+            raise TypeError(f"VoxCPM._generate() got an unexpected keyword argument '{k}'")
+    return [0.0, 0.1]
+r = adaptorler.esnek_cagir(_vox_gen, text="a", seed=1, max_len=4096, cfg_value=2.0)
+ok("VoxCPM: desteklenmeyen 'seed'/'max_len' atılır, üretim sürer", r == [0.0, 0.1] and _cagri_kw[-1] == ["cfg_value", "text"], str(_cagri_kw))
+try:
+    adaptorler.esnek_cagir(lambda **kw: (_ for _ in ()).throw(TypeError("başka hata")), text="a"); _yuk = False
+except TypeError:
+    _yuk = True
+ok("VoxCPM: başka TypeError gizlenmez", _yuk)
+_kat = {m["id"]: m for m in modeller.catalog()}
+ok("Katalog: kullanılan Pocket TR modeli (wite-tech) kartta, hazır sesli adaptörle",
+   _kat.get("wite-tech/pocket-tts-turkish", {}).get("adaptor") == "pockettr" and len(adaptorler.SESLER["pockettr"]) == 6
+   and _kat["alperiox/pocket-tts-turkish"]["adaptor"] == "pocket")
+
+# ---- 0.8.4: istem denetimi (defter-istem becerisi) eskimiş kalıbı yakalar, konu anlatımını yakalamaz
+import importlib.util as _ilu  # noqa: E402
+_bds = _ilu.spec_from_file_location("baglam_denetim", os.path.join(os.path.dirname(SERVER), "tools", "baglam-denetim.py"))
+_bd = _ilu.module_from_spec(_bds); _bds.loader.exec_module(_bd)
+ok("İstem denetimi: eskimiş kalıbı yakalar, konu anlatımını yakalamaz",
+   all(_bd.ESKI_KALIP.search(x) for x in ("Lütfen adım adım düşün.", "Think step by step.", "Önce akıl yürütmeni yaz.", "show your reasoning first"))
+   and not any(_bd.ESKI_KALIP.search(x) for x in ("çok adımlı akıl yürütme", "konuyu adım adım anlatır", "Kısaca gerekçelendir.")))
 
 srv.shutdown()
 

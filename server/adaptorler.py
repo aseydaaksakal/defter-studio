@@ -12,6 +12,7 @@ Kodlar sandbox'ta GPU olmadığı için burada çalıştırılamadı: ilk gerçe
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -24,12 +25,14 @@ GEREK = {  # adaptör -> (python modülü, kurulum ipucu)
     "bark": ("transformers", "pip install transformers scipy"),
     "kugelaudio": ("kugelaudio_open", "pip install kugelaudio-open"),
     "pocket": ("pocket_tts", "tools\\kur-gpu.bat"),
+    "pockettr": ("pocket_tts_turkish", "tools\\kur-pocket-tr.bat"),
     "omnivoice": ("omnivoice", "tools\\kur-gpu.bat"),
 }
 BARK_TR = [f"v2/tr_speaker_{i}" for i in range(10)]
 SESLER = {  # modeli denemek için seçilebilen hazır sesler
     "bark": [{"id": p, "ad": f"Türkçe konuşmacı {i}"} for i, p in enumerate(BARK_TR)],
     "kugelaudio": [{"id": v, "ad": v} for v in ("default", "warm", "clear")],
+    "pockettr": [{"id": f"pt-{c}-{i}", "ad": f"{'Kadın' if c == 'kadin' else 'Erkek'} {i}"} for c in ("kadin", "erkek") for i in (1, 2, 3)],
 }
 
 
@@ -73,22 +76,49 @@ def _voxcpm(repo):
         return VoxCPM.from_pretrained(hf_model_id=repo, load_denoiser=False)
 
 
+def tohumla(seed):
+    """Aynı tohum = aynı ses. Kütüphane 'seed' parametresi almasa da (voxcpm sürüm farkı) üretim tekrarlanabilir kalsın."""
+    import random
+    import numpy as np
+    random.seed(seed)
+    np.random.seed(seed % (2 ** 32))
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+
+
+def esnek_cagir(fn, **kw):
+    """Sürüme dayanıklı çağrı: "unexpected keyword argument 'x'" hatasında yalnız o argümanı atıp yeniden dener.
+    Neden: voxcpm generate(**kw) argümanları iç fonksiyona aktarıyor; imza incelemesi desteklenmeyeni göremiyor (0.8.1: 'seed')."""
+    for _ in range(len(kw) + 1):
+        try:
+            return fn(**kw)
+        except TypeError as e:
+            m = re.search(r"unexpected keyword argument '(\w+)'", str(e))
+            if not m or m.group(1) not in kw or m.group(1) == "text":
+                raise
+            kw.pop(m.group(1))
+    return fn(**kw)
+
+
 def voxcpm_uret(repo, text, ref=None, ref_text=None, desc=None, seed=42):
     """ref: klon (reference_wav_path; transkript varsa prompt ile 'ultimate' klon). ref yoksa desc ile metinle ses tasarımı
     (README: açıklama metnin başına parantez içinde). seed aynı kaldıkça aynı ses çıkar."""
     import numpy as np
     m = _voxcpm(repo)
-    kw = dict(cfg_value=2.0, inference_timesteps=16, seed=seed)
+    kw = dict(cfg_value=2.0, inference_timesteps=16, seed=seed, max_len=4096, normalize=True, denoise=False)  # Trendyol kartındaki parametreler
     if ref:
         kw["reference_wav_path"] = ref
         if ref_text:
             kw.update(prompt_wav_path=ref, prompt_text=ref_text)
     elif desc:
         text = f"({desc}){text}"
-    try:
-        wav = m.generate(text=text, max_len=4096, normalize=True, denoise=False, **kw)  # Trendyol kartındaki parametreler
-    except TypeError:
-        wav = m.generate(text=text, **kw)
+    tohumla(seed)
+    wav = esnek_cagir(m.generate, text=text, **kw)
     return np.asarray(wav, dtype="float32").squeeze(), int(m.tts_model.sample_rate)
 
 

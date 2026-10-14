@@ -229,7 +229,8 @@ export async function buildContext(notebookId, focus = '', { budgetChars } = {})
   }
   const refs = picked.map((c, i) => ({ n: i + 1, chunkId: c.id, sourceId: c.sourceId, title: titles[c.sourceId], page: c.page, text: c.text }));
   const text = refs.map((r) => `[${r.n}] (${r.title}${r.page ? ', s.' + r.page : ''})\n${r.text}`).join('\n\n');
-  return { text, refs, sources };
+  // full: bütün kaynak sığdı → bağlam soruya göre değişmez, önek önbelleği (Claude/Ollama/Gemini) turlar arasında tutar
+  return { text, refs, sources, full: total <= budgetChars };
 }
 
 // Kaynağın tamamını kapsayan ardışık bağlam dilimleri (toplu üretim ve soru bankası için).

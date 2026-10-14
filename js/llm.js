@@ -16,7 +16,7 @@ export const PROVIDERS = {
   },
   gemini: {
     label: 'Google Gemini (ücretsiz katman var)', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', needsKey: true,
-    model: 'gemini-2.5-flash', embedModel: 'text-embedding-004', hint: 'Anahtarı aistudio.google.com adresinden alın.'
+    model: 'gemini-3.8-flash', embedModel: 'gemini-embedding-001', hint: 'Anahtarı aistudio.google.com adresinden alın.'
   },
   groq: {
     label: 'Groq (ücretsiz katman var)', baseUrl: 'https://api.groq.com/openai/v1', needsKey: true, kind: 'openai',
@@ -107,7 +107,24 @@ async function check(res) {
   throw new Error(msg);
 }
 
-export async function chat({ system = '', messages, json = false, onToken, signal, cfg, role, temperature, think }) {
+// Claude 5 kuşağı (Opus/Sonnet/Haiku 5.x, Fable, Mythos): temperature/top_p/top_k varsayılan dışıysa 400 verir; effort desteklenir
+// (platform.claude.com, Sonnet 5.5 / Opus 5.5 geçiş rehberleri, 15.10.2026).
+const CLAUDE5 = /^claude-(?:(?:opus|sonnet|haiku)-(?:[5-9]|\d{2,})|fable|mythos)/;
+// Sağlayıcı "bu model temperature desteklemiyor" derse (Claude 5, OpenAI akıl yürüten modeller) parametresiz bir kez yeniden dene.
+const SAMPLING_ERR = /temperature|top_p|top_k|sampling/i;
+async function postRetry(url, init, body, drop) {
+  let res = await fetch(url, { ...init, body: JSON.stringify(body) });
+  for (let i = 0; i < 2 && !res.ok && res.status === 400; i++) {
+    const text = await res.clone().text().catch(() => '');
+    const k = drop(text, body);
+    if (!k) break;
+    delete body[k];
+    res = await fetch(url, { ...init, body: JSON.stringify(body) });
+  }
+  return res;
+}
+
+export async function chat({ system = '', messages, json = false, onToken, signal, cfg, role, temperature, think, cache = false }) {
   cfg = cfg || await loadConfig();
   const temp = temperature ?? cfg.temperature ?? 0.6;
   // Model rolleri: 'fast' görevleri (özet, öneri, plan) ayarlıysa küçük/hızlı modele gider
@@ -138,11 +155,9 @@ export async function chat({ system = '', messages, json = false, onToken, signa
     const headers = { 'Content-Type': 'application/json' };
     if (cfg.apiKey) headers.Authorization = 'Bearer ' + cfg.apiKey;
     if (cfg.provider === 'openrouter') { headers['HTTP-Referer'] = location.origin; headers['X-Title'] = 'Defter Studio'; }
-    let res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body), signal });
-    if (!res.ok && json && res.status === 400) { // bazı sunucular response_format desteklemez
-      delete body.response_format;
-      res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body), signal });
-    }
+    // bazı sunucular response_format, akıl yürüten modeller temperature desteklemez: hata metnine göre yalnız o alan atılır
+    const res = await postRetry(base + '/chat/completions', { method: 'POST', headers, signal }, body,
+      (err, b) => ('temperature' in b && SAMPLING_ERR.test(err) ? 'temperature' : 'response_format' in b ? 'response_format' : null));
     await check(res);
     await readSSE(res, (line) => {
       if (!line.startsWith('data:')) return;
@@ -162,15 +177,24 @@ export async function chat({ system = '', messages, json = false, onToken, signa
       try { const j = JSON.parse(line.slice(5)); push((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')); } catch {}
     });
   } else if (kind === 'anthropic') {
-    const body = { model: cfg.model, max_tokens: 16000, stream: true, temperature: Math.min(1, temp), messages };
-    if (system) body.system = system;
-    const res = await check(await fetch(base + '/messages', {
-      method: 'POST', signal, body: JSON.stringify(body),
+    // max_tokens düşünme + metnin toplam sınırıdır (düşünme 5 kuşağında hep açık): uzun podcast/sunu kesilmesin diye 64k (resmi öneri)
+    const body = { model: cfg.model, max_tokens: 64000, stream: true, messages };
+    const yeni = CLAUDE5.test(cfg.model || '');
+    if (!yeni) body.temperature = Math.min(1, temp);
+    // Hızlı/JSON görevleri düşük, gerisi orta çaba (Sonnet 5.5 varsayılanı high: gereksiz düşünme tokenı). Akış boyunca sabit kalır:
+    // istekler arası effort değişimi önbelleği yeniler.
+    if (yeni) body.output_config = { effort: role === 'fast' || think === false ? 'low' : 'medium' };
+    // Önbellek: aynı önek tekrar gelecekse (sohbet turları) uzun sistem istemi (kurallar + kaynaklar) önbelleğe yazılır,
+    // sonraki turlar %5 fiyatla okur. Tek seferlik üretimde yazılmaz (yazma 1,25x, okunmazsa zarar).
+    if (system) body.system = cache && system.length >= 2000 ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : system;
+    if (cache) body.cache_control = { type: 'ephemeral' }; // otomatik: konuşmanın sonu da önbelleğe (resmi "automatic caching")
+    const res = await check(await postRetry(base + '/messages', {
+      method: 'POST', signal,
       headers: {
         'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       }
-    }));
+    }, body, (err, b) => ('temperature' in b && SAMPLING_ERR.test(err) ? 'temperature' : 'output_config' in b && /effort|output_config/i.test(err) ? 'output_config' : 'cache_control' in b && /cache_control/i.test(err) ? 'cache_control' : null)));
     await readSSE(res, (line) => {
       if (!line.startsWith('data:')) return;
       try { const j = JSON.parse(line.slice(5)); if (j.type === 'content_block_delta') push(j.delta?.text); } catch {}

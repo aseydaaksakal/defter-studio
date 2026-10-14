@@ -1,11 +1,13 @@
 {
   "autoCompactWindow": 200000,
+  "promptCacheTtl": "1h",
   "permissions": {
     "deny": [
       "Read(./js/vendor/**)",
       "Read(./kur.zip)",
       "Read(./docs/token/veri.json)",
-      "Read(./server/manifest.json)"
+      "Read(./server/manifest.json)",
+      "Read(./docs/token/index.html)"
     ]
   }
 }

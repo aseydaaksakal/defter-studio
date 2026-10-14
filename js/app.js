@@ -808,17 +808,18 @@ async function openSettings() {
     if (!u) { updOut.textContent = 'Sunucuya ulaşılamadı.'; return; }
     if (u.error && !u.latest) { updOut.textContent = `Güncelleme denetlenemedi (internet?): ${u.error}`; return; }
     if (!u.available) { updOut.textContent = `✓ Sunucu güncel (${u.current}).`; return; }
-    put(updOut, h('span', {}, `Yeni sürüm var: ${u.current} → ${u.latest} (${u.n} dosya${u.pip ? ', paketler' : ''}). `),
+    const yalnizBaslat = u.restart && !u.n && !u.pip; // dosyalar yeni, süreç eski kodu çalıştırıyor
+    put(updOut, h('span', {}, yalnizBaslat ? `Dosyalar ${u.latest} sürümünde, sunucu hâlâ ${u.current} çalıştırıyor. ` : `Yeni sürüm var: ${u.current} → ${u.latest} (${u.n} dosya${u.pip ? ', paketler' : ''}). `),
       h('button', { class: 'btn small', onclick: async () => {
         updOut.textContent = 'Güncelleniyor…';
         try {
           const r = await updateApply();
           if (r.hatalar?.length) { updOut.textContent = '⚠ ' + r.hatalar.join(' · '); return; }
-          if (r.restart === 'auto') { updOut.textContent = `✓ ${r.yazilan.length} dosya yazıldı; sunucu yeniden başlıyor…`; setTimeout(async () => { await serverUrl(true); updateStatus(); updOut.textContent = '✓ Güncellendi ve yeniden başladı.'; }, 6000); }
+          if (r.restart === 'auto') { updOut.textContent = r.yazilan.length ? `✓ ${r.yazilan.length} dosya yazıldı; sunucu yeniden başlıyor…` : '✓ Sunucu yeniden başlıyor…'; setTimeout(async () => { await serverUrl(true); updateStatus(); updOut.textContent = '✓ Güncellendi ve yeniden başladı.'; }, 6000); }
           else if (r.restart === 'manual') updOut.textContent = `✓ ${r.yazilan.length} dosya yazıldı. Sunucu penceresini kapatıp yeniden açın (tools\\kur.bat ile kurduysanız kendiliğinden açılır).`;
           else updOut.textContent = '✓ Güncellendi (yeniden başlatma gerekmedi).';
         } catch (e) { updOut.textContent = 'Güncellenemedi: ' + e.message; }
-      } }, 'Sunucuyu güncelle'));
+      } }, yalnizBaslat ? 'Sunucuyu yeniden başlat' : 'Sunucuyu güncelle'));
   };
   const keyRow = h('div', { class: 'field' }, h('label', {}, 'API anahtarı'), key);
   const sync = () => { const p = PROVIDERS[prov.value]; hint.textContent = p.hint; keyRow.hidden = !p.needsKey && prov.value !== 'custom'; };

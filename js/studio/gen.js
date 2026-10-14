@@ -501,19 +501,24 @@ export function grounding(text, nRefs) {
   return { total: facts.length, cited, invalid, pct: facts.length ? Math.round((cited / facts.length) * 100) : 100 };
 }
 
+// Önbellek dostu sıra: [sabit kurallar + kaynaklar] → geçmiş → yeni soru. Kaynaklar sistem isteminde, sohbet turları arasında
+// aynı önek kalır: Claude %5 fiyatla okur, Ollama aynı KV önbelleğini kullanır (eskiden kaynak her turda sondaydı, hep yeniden işlenirdi).
 export async function answer(nb, history, question, { signal, onToken }) {
   const ctx = await buildContext(nb, question, {});
   const msgs = history.slice(-8).map((m) => ({ role: m.role, content: m.content }));
-  msgs.push({ role: 'user', content: `${ctxBlock(ctx)}\n\nSORU: ${question}` });
+  msgs.push({ role: 'user', content: `SORU: ${question}` });
   let text = await chat({
-    signal, onToken, messages: msgs, temperature: 0.2, think: false,
+    signal, onToken, messages: msgs, temperature: 0.2, think: false, cache: ctx.full,
     system: `Kullanıcının yüklediği kaynaklar üzerine çalışan, uydurmayan bir öğrenme asistanısın.
 - Yalnızca KAYNAKLAR'daki bilgiye dayan. Genel bilgini, tahminini veya kaynakta olmayan ayrıntıyı ekleme.
 - Cevap kaynaklarda yoksa bunu ilk cümlede açıkça söyle ("Kaynaklarınızda bu bilgi yok.") ve varsa en yakın ilgili bilgiyi alıntısıyla göster.
 - Her bilgi cümlesinin sonuna dayandığı parça numarasını [2] veya [2][5] biçiminde ekle; numarasız bilgi cümlesi yazma.
 - Sayı, tarih, frekans ve adları kaynaktaki gibi aynen aktar.
 - Markdown kullan; uygun yerde başlık ve madde işaretleri kullan.
-- Kullanıcının dilinde yanıt ver. Yanıtın sonunda konuyu derinleştirecek bir sonraki adımı tek cümleyle öner.`
+- Kullanıcının dilinde yanıt ver. Yanıtın sonunda konuyu derinleştirecek bir sonraki adımı tek cümleyle öner.
+
+${ctxBlock(ctx)}
+`
   });
   // var olmayan parça numaralarını temizle (uydurma kaynak gösterimi)
   text = text.replace(/\[(\d+)\]/g, (m, n) => (+n >= 1 && +n <= ctx.refs.length ? m : ''));

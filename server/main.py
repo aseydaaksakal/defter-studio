@@ -62,9 +62,10 @@ import guncelle
 import gorsel
 import modeller
 
-VERSION = "0.8.2"
+VERSION = "0.8.4"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
+DATA_DIR = os.getenv("DEFTER_DATA") or os.getenv("DEFTER_VERI") or os.path.join(HERE, "veri")  # tek veri klasörü (DEFTER_VERI eski ad)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
 TTS_PREF = os.getenv("DEFTER_TTS", "auto").lower()             # auto | chatterbox | xtts | edge | piper | off
 WHISPER_MODEL = os.getenv("DEFTER_WHISPER", "large-v3-turbo")  # tiny | small | medium | large-v3 | large-v3-turbo
@@ -169,7 +170,7 @@ def _probe_run(mod):
     return (r.stdout or r.stderr or f"süreç çöktü (kod {r.returncode})").strip().splitlines()[-1][:300]
 
 
-PROBE_FILE = os.path.join(os.getenv("DEFTER_VERI", os.path.join(HERE, "veri")), "probe.json")  # son denetim sonucu: yeniden başlatmada anında doğru durum
+PROBE_FILE = os.path.join(DATA_DIR, "probe.json")  # son denetim sonucu: yeniden başlatmada anında doğru durum
 PENDING = "__bekleniyor__"
 
 
@@ -781,8 +782,20 @@ async def tts_edge(text, gender, lang):
             raise RuntimeError("edge-tts boş ses döndürdü")
         return bytes(out)
 
+    async def dayanikli(mod):
+        # Microsoft ara sıra sesi boş döndürür (NoAudioReceived; PC'de 14.10.2026 erkek seste görüldü, kadın aynı anda çalıştı):
+        # kısa bekleyip iki kez daha dene. Kalıcı hata (403, geçersiz ses) beklemeden yukarı çıkar.
+        for bekle in (1.0, 2.5, None):
+            try:
+                return await once(mod)
+            except Exception as e:
+                gecici = type(e).__name__ == "NoAudioReceived" or "boş ses" in str(e) or "No audio was received" in str(e)
+                if not gecici or bekle is None:
+                    raise
+                await asyncio.sleep(bekle)
+
     try:
-        return await once(edge_tts)
+        return await dayanikli(edge_tts)
     except Exception as e:
         if "403" not in str(e) and "Invalid response status" not in str(e):
             raise
@@ -790,7 +803,7 @@ async def tts_edge(text, gender, lang):
         if await asyncio.to_thread(_edge_try_upgrade):
             import edge_tts as fresh
             try:
-                return await once(fresh)
+                return await dayanikli(fresh)
             except Exception as e2:
                 e = e2
         raise RuntimeError(f"Microsoft ses hizmeti isteği reddetti (403). Kurulu edge-tts: {_edge_version() or '?'}. "
@@ -1300,9 +1313,47 @@ def update_check(force=False):
         return _UPD
 
 
+# Çalışan kod = açılıştaki server/*.py. Dosyalar güncellenip süreç yeniden başlamazsa (yarım güncelleme turu, portu tutan
+# eski süreç) sürüm eskir ve "güncelleme yok" görünür. 0.8.1'de gerçekten oldu (diskte 0.8.2, çalışan 0.8.1): bu özetle yakalanır.
+def _py_durum():
+    d = {}
+    for ad in sorted(os.listdir(HERE)):
+        if ad.endswith(".py"):
+            try:
+                d[ad] = os.stat(os.path.join(HERE, ad)).st_mtime_ns
+            except OSError:
+                pass
+    return d
+
+
+def _py_ozet():
+    d = {}
+    for ad in _py_durum():
+        try:
+            with open(os.path.join(HERE, ad), "rb") as f:
+                d[ad] = guncelle.sha(f.read())
+        except OSError:
+            pass
+    return d
+
+
+_ACILIS_ZAMAN, _ACILIS_PY = _py_durum(), _py_ozet()
+
+
+def kod_eski():
+    """Diskteki sunucu kodu bu süreç başladıktan sonra değişti mi? (Hızlı yol: değişiklik zamanı aynıysa özet hesaplanmaz.)"""
+    return _py_durum() != _ACILIS_ZAMAN and _py_ozet() != _ACILIS_PY
+
+
+def _yeniden_baslat(neden):
+    print(f"[oto-güncelleme] sunucu yeniden başlıyor: {neden}")
+    threading.Timer(1.0, lambda: os._exit(75)).start()  # baslat.bat/.sh döngüsü yeniden açar
+
+
 def _update_public():
     u = _UPD
-    return {"current": VERSION, "latest": u.get("latest"), "available": bool(u.get("n")) or bool(u.get("pip")) , "n": u.get("n", 0),
+    eski = kod_eski()
+    return {"current": VERSION, "latest": u.get("latest"), "available": bool(u.get("n")) or bool(u.get("pip")) or eski, "n": u.get("n", 0), "restart": eski,
             "files": (u.get("files") or [])[:30], "pip": bool(u.get("pip")), "kabuk": u.get("kabuk") or [], "error": u.get("error"),
             "launcher": os.getenv("DEFTER_LAUNCHER") == "1", "checkedAt": u.get("at")}
 
@@ -1312,7 +1363,7 @@ def oto_baslat_kur():
     Kullanıcı tools\\otomatik-baslat-kaldir.bat ile kapattıysa (veri/otobaslat-kapali) dokunmaz. Dönüş: var|kuruldu|kapali|atla|hata."""
     if os.name != "nt" or os.path.isdir(os.path.join(APP_DIR, ".git")) or os.getenv("DEFTER_LAUNCHER") != "1":
         return "atla"
-    if os.path.exists(os.path.join(os.getenv("DEFTER_DATA", os.path.join(HERE, "veri")), "otobaslat-kapali")):
+    if os.path.exists(os.path.join(os.getenv("DEFTER_DATA") or DATA_DIR, "otobaslat-kapali")):
         return "kapali"
     lnk = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Defter Studio.lnk")
     if os.path.exists(lnk):
@@ -1349,17 +1400,22 @@ def oto_guncelle_tur():
     try:
         m = guncelle.manifest()
         p = guncelle.plan(m, APP_DIR)
+        baslatici = os.getenv("DEFTER_LAUNCHER") == "1"
         if not p["degisen"] and not p["pip"]:
-            return "yok"
-        if (p["py"] or p["pip"]) and not _bosta():
+            if not (baslatici and kod_eski()):
+                return "yok"
+            if not _bosta():
+                return "bekliyor"
+            _yeniden_baslat(f"dosyalar {m.get('version')}, çalışan kod eski ({VERSION})")  # yarım kalan önceki turu tamamlar
+            return "yeniden"
+        if (p["py"] or p["pip"] or kod_eski()) and not _bosta():
             return "bekliyor"  # iş bitince bir sonraki turda
         r = guncelle.uygula(m, APP_DIR, log=lambda *a, **k: None)
         update_check(True)
         if r["hatalar"]:
             return "hata"
-        if (r["py"] or r["pip"]) and os.getenv("DEFTER_LAUNCHER") == "1":
-            print(f"[oto-güncelleme] {len(r['yazilan'])} dosya; sunucu yeniden başlıyor ({m.get('version')})")
-            threading.Timer(1.0, lambda: os._exit(75)).start()
+        if baslatici and (r["py"] or r["pip"] or kod_eski()):
+            _yeniden_baslat(f"{len(r['yazilan'])} dosya ({m.get('version')})")
             return "yeniden"
         return "yazildi"
     except Exception as e:
@@ -1390,15 +1446,14 @@ async def update_apply_ep():
     except Exception as e:
         raise HTTPException(502, f"Güncelleme alınamadı: {e}")
     await asyncio.to_thread(update_check, True)
-    restart = bool(r["py"] or r["pip"])
+    restart = bool(r["py"] or r["pip"]) or kod_eski()  # eski kod: dosyalar zaten yeni, yalnız yeniden başlatma eksik
     auto = restart and os.getenv("DEFTER_LAUNCHER") == "1" and not r["hatalar"]
     if auto:
-        threading.Timer(1.2, lambda: os._exit(75)).start()  # baslat.bat/.sh döngüsü yeniden açar
+        _yeniden_baslat("arayüzden güncelleme")
     return {**r, "restart": "auto" if auto else ("manual" if restart else "none")}
 
 
 # ---------------------------------------------------------------- Karakter kadrosu (sunucuda kalıcı): Pages ile localhost farklı köken olduğundan ortak kaynak burası
-DATA_DIR = os.getenv("DEFTER_DATA", os.path.join(HERE, "veri"))
 CAST_FILE = os.path.join(DATA_DIR, "cast.json")
 CAST_MAX_BYTES, CAST_MAX_ITEMS, CAST_FIELD_MAX = 64 * 1024, 12, 80
 CAST_FIELDS = ("id", "name", "gender", "voice")
@@ -1468,7 +1523,7 @@ def health():
             "tts": {"pref": TTS_PREF, "engines": eng, "installed": tts_installed(), "engineErrors": engine_errors(), "probing": probing(), "auto": tts_auto(), "plan": plan, "female": female, "clone": clone, "voices": len(vs) + len(builtin_voices()), "models": ready, "design": design_motors(),
                     "edgeVersion": _edge_version(), "pocketTr": has("pocket_tts_turkish")},
             "ffmpeg": bool(ffmpeg_exe()),
-            "update": {"available": bool(_UPD.get("n")) or bool(_UPD.get("pip")), "latest": _UPD.get("latest"), "n": _UPD.get("n", 0)},
+            "update": {"available": bool(_UPD.get("n")) or bool(_UPD.get("pip")) or kod_eski(), "latest": _UPD.get("latest"), "n": _UPD.get("n", 0), "restart": kod_eski()},
             "stt": f"faster-whisper {WHISPER_MODEL}" if has("faster_whisper") else None, "ollama": OLLAMA, "image": gorsel.durum()}
 
 

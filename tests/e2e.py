@@ -23,7 +23,8 @@ from playwright.sync_api import sync_playwright
 
 APP = os.getenv("APP", "http://localhost:8099/")
 MOCK = os.getenv("MOCK", "http://localhost:8098")
-SHOTS = sys.argv[1] if len(sys.argv) > 1 else tempfile.mkdtemp()
+_ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]  # -v: her kontrolü yaz
+SHOTS = _ARGS[0] if _ARGS else tempfile.mkdtemp()
 os.makedirs(SHOTS, exist_ok=True)
 results, errors = [], []
 
@@ -72,8 +73,13 @@ FACTS = [
 TEXT = " ".join(FACTS)
 
 
+AYRINTI = "-v" in sys.argv or os.getenv("DEFTER_TEST_AYRINTI") == "1"
+
+
 def ok(name, cond, info=""):
     results.append((name, bool(cond), info))
+    if cond and not AYRINTI:  # token ekonomisi: varsayılan çıktı yalnız ✗ + özet (her satır ajan bağlamına girer)
+        return
     print(("✓ " if cond else "✗ ") + name + (f" — {info}" if info else ""), flush=True)
 
 
@@ -535,8 +541,10 @@ def main():
                     pg.click(f".studio summary:has-text('{g}')"); pg.wait_for_timeout(150)
 
         open_models()
-        n = wait_until(lambda: len(pg.query_selector_all(".mm-row")) == 31 and 31, 15)
-        ok("Model yöneticisi: 25 MIT + 6 ek model listeleniyor", n == 31, f"{len(pg.query_selector_all('.mm-row'))} satır")
+        _kat = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server", "model_katalog.json"), encoding="utf-8"))["modeller"]
+        _ek = sum(1 for m in _kat if m.get("ek"))  # beklenen sayı katalogdan (tek doğruluk kaynağı), elle yazılmaz
+        n = wait_until(lambda: len(pg.query_selector_all(".mm-row")) == len(_kat) and len(_kat), 15)
+        ok(f"Model yöneticisi: {len(_kat) - _ek} MIT + {_ek} ek model listeleniyor", n == len(_kat), f"{len(pg.query_selector_all('.mm-row'))} satır")
         ok("Model yöneticisi: klonlayan / klonlamayan ayrı açılır gruplar", pg.query_selector(".studio summary:has-text('Ses klonlayan modeller')") is not None and pg.query_selector(".studio summary:has-text('Ses klonlamayan modeller')") is not None)
         ok("Model yöneticisi: Apple MLX ayrı grupta, uyarıyla", "Apple MLX (5)" in txt(".mm") and "işe yaramaz" in txt(".mm"))
         ok("Model yöneticisi: gerçek kişi sesi uyarısı", "izinsiz kullanmayın" in txt(".mm"))
@@ -654,7 +662,7 @@ def main():
           b.setUint32(24, 24000, true); b.setUint32(28, 48000, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, 'data'); b.setUint32(40, n * 2, true);
           for (let i = 0; i < n; i++) b.setInt16(44 + i * 2, Math.sin(i / 10) * 8000, true);
           window.fetch = async (u, o) => {
-            if (/api\.fish\.audio\/v1\/tts/.test(String(u))) { calls.push({ u: String(u), h: o.headers, body: JSON.parse(o.body) }); return new Response(new Blob([b.buffer], { type: 'audio/wav' }), { status: 200 }); }
+            if (/api\\.fish\\.audio\\/v1\\/tts/.test(String(u))) { calls.push({ u: String(u), h: o.headers, body: JSON.parse(o.body) }); return new Response(new Blob([b.buffer], { type: 'audio/wav' }), { status: 200 }); }
             return orig(u, o);
           };
           try {

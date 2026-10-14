@@ -7,6 +7,8 @@
      "not": "VoxCPM2 tabanlı, yalnız Türkçe için ince ayarlı. Kartı net kullanım kodu veriyor. Kadın/erkek ses sayısını kart belirtmiyor; ses kütüphanesindeki kayıtlarla klonlanabilir (VoxCPM2 özelliği, bu ince ayarla denenmedi)."},
     {"id": "alperiox/pocket-tts-turkish", "ad": "Pocket TTS Türkçe", "aile": "Kyutai Pocket TTS", "param": "0.1B", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "mit", "adaptor": "pocket", "oneri": true,
      "not": "Çok küçük, CPU'da da hızlı. Her ses için referans kayıt gerekir (ses kütüphanesinden gelir)."},
+    {"id": "wite-tech/pocket-tts-turkish", "ad": "Pocket TTS Türkçe (hazır sesli)", "aile": "Kyutai Pocket TTS", "param": "0.1B", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "cc-by-4.0", "adaptor": "pockettr", "oneri": true, "ek": true,
+     "not": "Otomatik sıradaki ilk motor (pockettr). 3 kadın + 3 erkek hazır ses, referans kayıt gerekmez, klon yapmaz; CPU'da da hızlı. RTX 5090'da kadın+erkek sınaması geçti (14.10.2026). Kurulum: tools\\kur-pocket-tr.bat."},
     {"id": "kugelaudio/kugelaudio-0-open", "ad": "KugelAudio 0 Open", "aile": "KugelAudio", "param": "9B (kart 7B diyor)", "platform": "cuda", "platformKesin": true, "tur": "özgün", "lisans": "mit", "adaptor": "kugelaudio",
      "not": "23 Avrupa dili, Türkçe listede ama kart en iyi eğitilen dillerin İngilizce, Almanca, Fransızca, İspanyolca olduğunu söylüyor. Klonlama yok, hazır sesler var. Yaklaşık 19 GB VRAM: Ollama modeli açıkken sığmaz."},
     {"id": "mmmsss1234/kugelaudio", "ad": "kugelaudio (mmmsss1234)", "aile": "KugelAudio", "param": "9B", "platform": "cuda", "platformKesin": false, "tur": "kopya?", "lisans": "mit", "adaptor": null,
