@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token raporu · Defter Studio</title>
+<style>
+:root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--ink:#e8eaf0;--ink2:#a9afbd;--ink3:#7c8392;--bar:#7aa7f5;--bar2:#3f5f9c;--warn:#f0b35a;--bad:#ef7d7d}
+@media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--panel:#fff;--line:#e3e6ec;--ink:#14171d;--ink2:#4a5263;--ink3:#727a8a;--bar:#2f6fd6;--bar2:#a9c3ef;--warn:#a86400;--bad:#b42323}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:32px 0 10px}
+p.sub{color:var(--ink2);margin:0 0 16px}
+.bar-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:16px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.tile b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+.tile span{color:var(--ink2);font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.rows{display:grid;gap:10px}
+.row{display:grid;grid-template-columns:minmax(150px,260px) 1fr 92px;gap:12px;align-items:center}
+.row .lbl{color:var(--ink);font-size:14px}
+.row .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink2);font-size:13px}
+.track{height:10px;background:var(--line);border-radius:4px;overflow:hidden}
+.fill{height:100%;background:var(--bar);border-radius:0 4px 4px 0}
+.fill.ajan{background:var(--bar2)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--ink3);font-weight:600}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.scroll{overflow-x:auto}
+.mini{display:flex;height:8px;min-width:90px;background:var(--line);border-radius:4px;overflow:hidden}
+.mini i{display:block;height:100%}
+ul.tips{margin:0;padding-left:18px}ul.tips li{margin:6px 0}
+.note{color:var(--ink3);font-size:13px}
+.warn{color:var(--warn)}
+svg text{fill:var(--ink3);font-size:11px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--ink2);font-size:12px;margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+@media (max-width:620px){.row{grid-template-columns:1fr 70px}.row .track{grid-column:1/-1;order:3}}
+</style>
+</head>
+<body>
+<main>
+  <div class="bar-top"><h1>Token raporu</h1><select id="sec" aria-label="Oturum"></select></div>
+  <p class="sub" id="ust"></p>
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Harcama nereye gitti?</h2>
+  <div class="card"><div class="rows" id="kat"></div><p class="note" id="katnot"></p></div>
+
+  <h2>Ne yapılmalı?</h2>
+  <div class="card"><ul class="tips" id="tips"></ul></div>
+
+  <h2>İstek başına (ana oturum + alt ajanlar)</h2>
+  <div class="card scroll"><table id="ist"></table>
+    <div class="legend"><span><i style="background:var(--bar)"></i>ana oturum</span><span><i style="background:var(--bar2)"></i>alt ajanlar</span></div>
+  </div>
+
+  <h2>Bağlam büyümesi (her model çağrısında yeniden okunan boyut)</h2>
+  <div class="card"><div id="bag"></div></div>
+
+  <h2>Önbellek kaçırmaları (bağlamın baştan yazıldığı anlar)</h2>
+  <div class="card scroll"><table id="kac"></table></div>
+
+  <h2>En pahalı okumalar (tahmini)</h2>
+  <div class="card scroll"><table id="oku"></table>
+    <p class="note">Bir araç çıktısı bir kez bağlama yazılır, sonra sonraki her çağrıda yeniden okunur. Maliyet = token × (yazma + 0,1 × taşındığı çağrı sayısı).</p></div>
+
+  <h2>Alt ajanlar</h2>
+  <div class="card scroll"><table id="aj"></table></div>
+
+  <h2>Yöntem</h2>
+  <p class="note">Kaynak: Claude Code oturum kaydındaki her model çağrısının gerçek token sayıları (girdi, önbellek okuma/yazma, çıktı, düşünme).
+  Dolar, Claude Code'un kendi hesapladığı model fiyatıyla liste fiyatı karşılığıdır; abonelikte ödenmez, harcamanın göreli ağırlığını gösterir.
+  Ağırlıklar: önbellek okuma 0,1 · önbellek yazma 2 (1 saatlik) · çıktı ve düşünme 5 (girdi = 1). Araç çıktısı tokenları karakter/3,5 ile tahmindir.
+  İstem metinleri gizlilik için yazılmaz; istekleri saatinden tanıyın (İstanbul saati). Üretici: <code>tools/token-rapor.py</code>, her teslimde güncellenir.</p>
+</main>
+<script>
+const VERI = /*VERI*/null;
+const $ = (id) => document.getElementById(id);
+const usd = (x) => '$' + (x || 0).toFixed(2);
+const k = (x) => (x >= 1e6 ? (x / 1e6).toFixed(2) + 'M' : x >= 1e3 ? Math.round(x / 1e3) + 'k' : String(Math.round(x || 0)));
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const kisa = (m) => (m || '?').replace('claude-', '');
+
+function ciz(o) {
+  const top = o.ana_usd + o.ajan_usd;
+  $('ust').textContent = `Oturum ${o.oturum.slice(0, 8)} · ${o.baslangic} → ${o.bitis} · ölçüldü ${o.olculdu} · ` +
+    Object.entries(o.modeller).map(([m, n]) => `${kisa(m)} ×${n}`).join(', ');
+  const kat = o.kategoriler; const kt = Object.values(kat).reduce((a, b) => a + b, 0) || 1;
+  const enb = Object.entries(kat).sort((a, b) => b[1] - a[1])[0];
+  $('tiles').innerHTML = [
+    [usd(top), 'toplam (liste fiyatı karşılığı)'],
+    [`%${Math.round(100 * (kat['Bağlamı yeniden okuma (önbellek okuma)'] + kat['Bağlama yeni ekleme (önbellek yazma)']) / kt)}`, 'bağlam okuma + yazma payı'],
+    [`%${Math.round(100 * kat['Düşünme'] / kt)}`, 'düşünme payı'],
+    [k(o.son_baglam), `son bağlam tokenı (ilk: ${k(o.sabit_yuk)})`],
+    [`${o.istek} / ${o.cagri}`, 'istek / model çağrısı'],
+    [usd(o.ajan_usd), `alt ajanlar (${o.ajanlar.length})`],
+  ].map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join('');
+  $('kat').innerHTML = Object.entries(kat).sort((a, b) => b[1] - a[1]).map(([ad, v]) =>
+    `<div class="row" title="${esc(ad)}: ${usd(v)}"><span class="lbl">${esc(ad)}</span><div class="track"><div class="fill" style="width:${(100 * v / kt).toFixed(1)}%"></div></div><span class="val">%${(100 * v / kt).toFixed(1)} · ${usd(v)}</span></div>`).join('');
+  $('katnot').textContent = `En büyük kalem: ${enb[0]}. Model fiyatı dahil (Opus 1 token ≈ Sonnet ${o.kur && Object.keys(o.kur).length > 1 ? (Math.max(...Object.values(o.kur)) / Math.min(...Object.values(o.kur))).toFixed(1) : '?'} token). Alt ajanlar hariç.`;
+  $('tips').innerHTML = (o.oneriler.length ? o.oneriler : ['Belirgin bir israf bulunmadı.']).map((t) => `<li>${esc(t)}</li>`).join('');
+  const mx = Math.max(...o.istekler.map((i) => i.usd + i.ajan_usd), 0.01);
+  $('ist').innerHTML = '<tr><th>#</th><th>Saat</th><th>Model · effort</th><th class="n">Çağrı</th><th>Pay</th><th class="n">Tutar</th><th class="n">Düşünme</th><th class="n">Yazma</th><th>En çok araç</th></tr>' +
+    o.istekler.filter((i) => i.cagri).map((i) => `<tr title="ana ${usd(i.usd)} · ajanlar ${usd(i.ajan_usd)}${i.ajanlar.length ? ' (' + esc(i.ajanlar.join(', ')) + ')' : ''}">
+      <td>${i.no}</td><td>${i.saat}${i.sure_dk ? ` <span class="note">${i.sure_dk} dk</span>` : ''}</td><td>${kisa(i.model)} · ${i.effort || '?'}</td><td class="n">${i.cagri}</td>
+      <td><div class="mini"><i style="width:${100 * i.usd / mx}%;background:var(--bar)"></i><i style="width:${100 * i.ajan_usd / mx}%;background:var(--bar2)"></i></div></td>
+      <td class="n">${usd(i.usd + i.ajan_usd)}</td><td class="n">${k(i.dusunme)}</td><td class="n">${k(i.yazi)}</td>
+      <td>${Object.entries(i.araclar).map(([a, n]) => `${esc(a)} ×${n}`).join(', ')}</td></tr>`).join('');
+  bagCiz(o.baglam);
+  $('kac').innerHTML = o.kacirma.length ? '<tr><th>Saat</th><th>İstek</th><th class="n">Yeniden yazılan</th><th>Model</th><th>Neden</th></tr>' +
+    o.kacirma.map((x) => `<tr><td>${x.saat}</td><td>#${x.istek}</td><td class="n">${k(x.token)}</td><td>${kisa(x.model)}</td><td>${esc(x.neden)}</td></tr>`).join('') : '<tr><td>Kaçırma yok.</td></tr>';
+  $('oku').innerHTML = '<tr><th>Araç</th><th>Hedef</th><th>İstek</th><th class="n">Token</th><th class="n">Taşındı</th><th class="n">Birim</th></tr>' +
+    o.okumalar.slice(0, 15).map((r) => `<tr><td>${esc(r.arac)}</td><td>${esc(r.hedef)}</td><td>#${r.istek}</td><td class="n">${k(r.tok)}</td><td class="n">${r.tasima} çağrı</td><td class="n">${k(r.w)}</td></tr>`).join('');
+  $('aj').innerHTML = o.ajanlar.length ? '<tr><th>Ajan</th><th>İstek</th><th>Model</th><th class="n">Çağrı</th><th class="n">Başlangıç bağlamı</th><th class="n">Tutar</th></tr>' +
+    o.ajanlar.map((a) => `<tr><td>${esc(a.ad)}</td><td>#${a.istek ?? '?'}</td><td>${kisa(a.model)}</td><td class="n">${a.cagri}</td><td class="n">${k(a.ilk_baglam)}</td><td class="n">${usd(a.usd)}</td></tr>`).join('') : '<tr><td>Bu oturumda alt ajan yok.</td></tr>';
+}
+
+function bagCiz(b) {
+  if (!b.length) { $('bag').textContent = 'Veri yok.'; return; }
+  const W = 960, H = 220, P = { l: 52, r: 12, t: 12, b: 26 };
+  const mx = Math.max(...b.map((x) => x.boy)) * 1.08;
+  const x = (i) => P.l + (i / Math.max(1, b.length - 1)) * (W - P.l - P.r);
+  const y = (v) => H - P.b - (v / mx) * (H - P.t - P.b);
+  const grid = [0.25, 0.5, 0.75, 1].map((f) => `<line x1="${P.l}" x2="${W - P.r}" y1="${y(mx * f / 1.08)}" y2="${y(mx * f / 1.08)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(mx * f / 1.08) + 4}" text-anchor="end">${k(mx * f / 1.08)}</text>`).join('');
+  const pts = b.map((p, i) => `${x(i).toFixed(1)},${y(p.boy).toFixed(1)}`).join(' ');
+  const hit = b.map((p, i) => `<rect x="${(x(i) - (W - P.l - P.r) / b.length / 2).toFixed(1)}" y="${P.t}" width="${((W - P.l - P.r) / b.length).toFixed(1)}" height="${H - P.t - P.b}" fill="transparent"><title>${p.t} · çağrı ${i + 1} · ${p.boy.toLocaleString('tr-TR')} token</title></rect>`).join('');
+  $('bag').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Bağlam boyutu, çağrı başına">${grid}
+    <line x1="${P.l}" x2="${W - P.r}" y1="${H - P.b}" y2="${H - P.b}" stroke="var(--ink3)"/>
+    <polyline points="${pts}" fill="none" stroke="var(--bar)" stroke-width="2" stroke-linejoin="round"/>${hit}
+    <text x="${P.l}" y="${H - 6}">${esc(b[0].t)}</text><text x="${W - P.r}" y="${H - 6}" text-anchor="end">${esc(b[b.length - 1].t)}</text></svg>
+    <p class="note">Her araç çağrısı bu boyutun tamamını yeniden okutur. Çizgi yükseldikçe aynı iş daha pahalıya gelir.</p>`;
+}
+
+const ot = (VERI && VERI.oturumlar) || [];
+$('sec').innerHTML = ot.map((o, i) => `<option value="${i}">${o.baslangic} · ${o.oturum.slice(0, 8)}</option>`).join('');
+$('sec').onchange = (e) => ciz(ot[+e.target.value]);
+if (ot.length) ciz(ot[0]); else $('ust').textContent = 'Henüz ölçüm yok.';
+</script>
+</body>
+</html>

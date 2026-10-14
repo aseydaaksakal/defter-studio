@@ -62,7 +62,7 @@ import guncelle
 import gorsel
 import modeller
 
-VERSION = "0.8.1"
+VERSION = "0.8.2"
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 PORT = int(os.getenv("DEFTER_PORT", "8765"))
@@ -1307,6 +1307,30 @@ def _update_public():
             "launcher": os.getenv("DEFTER_LAUNCHER") == "1", "checkedAt": u.get("at")}
 
 
+def oto_baslat_kur():
+    """Windows: Başlangıç klasöründe sunucu kısayolu yoksa kurar (bilgisayar açılınca sunucu kendiliğinden başlasın).
+    Kullanıcı tools\\otomatik-baslat-kaldir.bat ile kapattıysa (veri/otobaslat-kapali) dokunmaz. Dönüş: var|kuruldu|kapali|atla|hata."""
+    if os.name != "nt" or os.path.isdir(os.path.join(APP_DIR, ".git")) or os.getenv("DEFTER_LAUNCHER") != "1":
+        return "atla"
+    if os.path.exists(os.path.join(os.getenv("DEFTER_DATA", os.path.join(HERE, "veri")), "otobaslat-kapali")):
+        return "kapali"
+    lnk = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Defter Studio.lnk")
+    if os.path.exists(lnk):
+        return "var"
+    q = lambda p: p.replace("'", "''")  # noqa: E731  PowerShell tek tırnak kaçışı
+    vbs = os.path.join(HERE, "gizli-baslat.vbs")
+    ps = (f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{q(lnk)}'); $s.TargetPath='wscript.exe'; "
+          f"$s.Arguments=[char]34+'{q(vbs)}'+[char]34; $s.WorkingDirectory='{q(HERE)}'; $s.Save()")
+    try:
+        import subprocess
+        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], timeout=30, capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except Exception as e:
+        print(f"[oto-başlat] kısayol kurulamadı: {e}")
+        return "hata"
+    return "kuruldu" if os.path.exists(lnk) else "hata"
+
+
 OTO_GUNCELLE_SN = int(os.getenv("DEFTER_AUTO_UPDATE_SN", "600"))  # 0 = kapalı
 
 
@@ -1583,6 +1607,7 @@ if __name__ == "__main__":
     print(f"Defter Studio {VERSION}: {url}  ·  TTS(kurulu)={','.join(tts_installed()) or 'yok'}  ·  Whisper={WHISPER_MODEL}/{DEVICE}  ·  Ollama={OLLAMA}")
     _probe_status([PROBE_MODS[e] for e in tts_installed() if e in PROBE_MODS])  # motor denetimini arka planda başlat (açılışı geciktirmez)
     threading.Timer(60, lambda: guncelle.edge_gunle(lambda *a, **k: None)).start()  # edge-tts günlük yükseltme: açılışı geciktirmesin
+    threading.Thread(target=oto_baslat_kur, daemon=True).start()  # Windows açılışında kendiliğinden başlama (yoksa kurar)
     threading.Thread(target=_oto_guncelle_dongu, daemon=True).start()  # 10 dk'da bir siteyle eşitle; boştaysa yeniden başla
     threading.Thread(target=update_check, args=(True,), daemon=True).start()  # güncelleme var mı (arka planda; /health bildirir)
     if os.getenv("DEFTER_OPEN", "1") != "0":

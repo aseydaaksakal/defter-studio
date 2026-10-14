@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- 0.8.2: Windows açılışında otomatik başlatma, token ölçüm raporu (docs/token), CLAUDE.md giriş kartı + el kitabı + ajan rolleri + teslim becerisi
+
+## 2026-10-14 — teslim
 - Sunucu çalışırken 10 dk'da bir kendini günceller (boştaysa yeniden başlar): elle güncelleme yok
 
 ## 2026-10-14 — teslim

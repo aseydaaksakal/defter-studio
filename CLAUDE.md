@@ -1,84 +1,35 @@
-# CLAUDE.md — Defter Studio çalışma kuralları
+# CLAUDE.md — Defter Studio giriş kartı
 
-> **Kullanıcı yeni oturumda yalnız "devam" yazar; istem yapıştırmaz.** Sen: DEVIR_TESLIM.md → bu dosya → yalnız gereken PROJE_REHBERI bölümü. Soru sormadan "Sıradaki iş"e başla. (claude.ai'de: Projeye bu depoyu bağla; talimat alanına tek satır: "aseydaaksakal/defter-studio deposundaki CLAUDE.md ve DEVIR_TESLIM.md'yi oku, kaldığı yerden devam et.")
+Kullanıcı yeni oturumda yalnız **"devam"** yazar. Sırayla: [DEVIR_TESLIM.md](DEVIR_TESLIM.md) → bu dosya → "Sıradaki iş"e başla.
+Ayrıntı gerekince yalnız ilgili bölümü oku: [docs/EL_KITABI.md](docs/EL_KITABI.md) (kurallar, kaynaklar, ajanlar, token), [PROJE_REHBERI.md](PROJE_REHBERI.md) (dosya → görev), [docs/NOT_DEFTERI.md](docs/NOT_DEFTERI.md) (geçmiş hatalar, grep ile).
+Bu dosya her çağrıda okunur: **600 kelimeyi geçmesin**; yeni ayrıntı el kitabına yazılır.
 
-## Değişmez kullanıcı kuralları (hepsi bağlayıcı)
-1. **Yerel = Pages.** Pages'te canlı olan her şey `tools\kur.bat` sonrası `http://localhost:8765`'te de birebir olmalı (kod, arayüz, sunucu, paketler). Teslimde `tools/esitlik.py` EŞİT demeden "bitti" deme. Bir yerde olup ötekinde olmayan durum hatadır.
-2. **Tek bat:** kullanıcıya yalnız `kur.bat` verilir (ilk kurulum + her güncelleme + sunucuyu yeniden başlatma + yerel adresi açma). Başka bat/zip/komut isteme. Teslimde yalnız gerekli bağlantı verilir (kur.bat; istenirse zip). Depo, API anahtarı, Ollama vb. bağlantı listeleme.
-3. **Token ekonomisi:** kısa, sonuç odaklı yaz. Gereksiz detay, tekrar, süreç anlatımı, uzun düşünme yok. Büyük dosyayı baştan okuma (grep). Cevap: ne yapıldı + kanıt + kullanıcıdan tek net istek.
-4. **Takılırsan hızlı sor:** araştırıp çözemediğin şeyi saatlerce kurcalama; kullanıcıya tek soru sor (geçici kapat / tamamen kaldır seçenekleriyle) ve sormadan önce seçenekleri sun. Çözümsüz özellik kaldırılır.
-5. **Bitti = doğrulandı.** Aynı hatayı tekrar etme: "hallet" denen şey kanıtla (test + canlı kontrol + Pages/yerel eşitlik) bitmeden "tamam" denmez. Gerçek donanımda denenemeyen şeyi açıkça "denenmedi" yaz. Hata düzeltince NOT_DEFTERI'ne kök neden + önleyici kontrol ekle.
-6. **Ajanlara dağıt:** bağımsız işleri (sunucu/Windows betikleri, ön yüz, test, belge, araştırma) paralel alt ajanlara ver; sen mimari, entegrasyon, test ve teslimi yap. Ajan git çalıştırmaz, `manifest.json`'a dokunmaz; rapor ≤120 kelime.
-7. **Sade mimari:** tek doğruluk kaynağı (sunucu adresi `js/server.js`, kadro sunucuda `/cast`, güncelleme `manifest.json`), simetrik ve yalın arayüz, çift/gereksiz düğme yok, hiçbir yerde doğrulanmamış "kurulu" yazma.
-8. **Kesintisiz devir:** her teslimde DEVIR_TESLIM.md (durum, sıradaki iş, bilinen eksikler) ve NOT_DEFTERI.md güncel; yarım iş yoksa "yok" yaz. Sonraki oturum yalnız bu dosyalarla kaldığın yerden devam edebilmeli.
+## Değişmez kurallar
+1. **Yerel = Pages.** Pages'teki her şey `kur.bat` kurulumunda birebir olmalı. `tools/esitlik.py` EŞİT demeden "bitti" deme.
+2. **Kullanıcıya iş yükleme.** Tek giriş `kur.zip` (kur.bat); güncelleme ve açılışta başlatma otomatik. Teslimde yalnız gerekli bağlantılar: kur.zip + token raporu.
+3. **Bitti = doğrulandı.** Test + canlı kontrol + eşitlik. Gerçek donanımda denenmediyse "denenmedi" yaz. Düzeltilen her hata: NOT_DEFTERI'ne kök neden + önlem.
+4. **Token ekonomisi** (ölçüm: `docs/token/`). Kısa ve sonuç odaklı yaz; büyük dosyayı baştan okuma (grep → aralık); çıktıları kırp; bağımsız araç çağrılarını tek turda yap; iş bitince yeni oturum öner. Model/effort değişimi ya da 1 saatten uzun ara = önbellek baştan yazılır → yeni oturum.
+5. **Effort ve model.** Varsayılan medium. Aynı sorun 2 denemede çözülmediyse kullanıcıya bir üst effort'u öner; "tamam" ya da yeni iş gelince medium'a dönmeyi öner (effort'u yalnız kullanıcı değiştirebilir). Sıfırdan mimari: başta high öner. Rutin iş Sonnet, mimari/zor hata Opus, basit ajan işi Haiku.
+6. **Takılınca:** resmi doküman → rakip dokümanları → forumlar (kaynak listesi: el kitabı §3). Hâlâ yoksa tek soru: A planından Z'ye seçenek + öneri (geçici kapat / kaldır dahil).
+7. **Kalite:** best practice, tek seferde kalıcı çözüm, sade ve simetrik mimari, tek doğruluk kaynağı. Hızlı ama kalitesiz çözüm yok. Doğrulanmamış "kurulu/çalışıyor" yazma.
+8. **Güncel bilgi:** tarihi saat aracından al; ürün/model/fiyat bilgisini ezberden değil resmi kaynaktan ver.
+9. **Ajanlar:** bağımsız işleri `.claude/agents/` rol kartlarına paralel ver; sen mimari, entegrasyon, test, teslim. Ajan git çalıştırmaz, `server/manifest.json`'a dokunmaz, rapor ≤120 kelime. Küçük iş için ajan açma (her ajan ~65k tokenla başlar).
+10. **Kesintisiz devir:** her teslimde DEVIR_TESLIM (kısa) ve NOT_DEFTERI güncel.
 
-Bu dosya projede çalışan bir sonraki Claude oturumu içindir. Diğer yapay zeka ajanları için aynı kurallar [AGENTS.md](AGENTS.md)'de.
+## Proje kuralları
+- Türkçe arayüz ve yorumlar. Derleme adımı ve CDN yok; kütüphaneler `js/vendor/`.
+- Büyük dosyalar (`js/app.js`, `css/app.css`, `js/studio/gen.js`, `js/tts.js`, `server/main.py`): önce `grep -n`.
+- Yeni Studio aracı: `gen.js` `TOOLS.<ad>` + `views/<ad>.js` + `app.js` `VIEWS` + `.t-<ad>` rengi. Sayı seçeneği `type:'count'` + `generateExact`.
+- Halüsinasyon: soru/kart üretiminde `EVIDENCE_RULE` + `verifyItem`; doğrulanamayan öğe gösterilmez.
+- DB şeması değişirse `db.version(n+1)`; eskisini silme.
+- Ses motoru: `js/tts.js` `ENGINES`, `ENGINE_SHORT`, `voicePool`, `LINE_FN`, `availableEngines`; kadın+erkek ses ya da `femaleOK:false`. Podcast sesi `kind:'mix'` + `textKey`; yalnız `fresh:true` yeniden üretir.
+- Görsel: `illustrate.js` `plan`, sağlayıcı kodu yalnız `imagegen.js`; görselde yazı yok.
+- Sunucu adresi yalnız `js/server.js`; kadro sunucuda `/cast`; `/health` asla yavaş işe bağlanmaz.
+- `.bat`/`.ps1` CRLF. `server/` ya da `tools/` değişince manifest teslimde yeniden üretilir; yeni paket `server/requirements.txt`'e.
+- Tarayıcı, kullanıcı istemedikçe localhost'a istek atmaz.
+- Word üretme. Gizli bilgi (anahtar, belirteç, ses kaydı) hiçbir dosyaya, commit'e, rapora yazılmaz.
 
-## Ne bu?
-NotebookLM benzeri statik web uygulaması, sınav hazırlık araçlarıyla.
-- GitHub Pages'te `main` dalının kökünden yayınlanır: https://aseydaaksakal.github.io/defter-studio/
-- Derleme adımı yoktur; her push 1-2 dakikada canlıya çıkar.
-- Lokal sunucu (`server/`) isteğe bağlıdır ve uygulamayı `http://localhost:8765` adresinde de sunar.
-
-## Oturuma başlarken (sırayla, yalnız gerekeni oku)
-1. [DEVIR_TESLIM.md](DEVIR_TESLIM.md): şu anki durum, son yapılanlar, **sıradaki iş**.
-2. [PROJE_REHBERI.md](PROJE_REHBERI.md): yalnız görevle ilgili bölüm. Bölüm başlıkları dosya → görev eşlemesidir.
-3. Hata ya da tuhaf davranış varsa [docs/NOT_DEFTERI.md](docs/NOT_DEFTERI.md): aynı sorun daha önce çözülmüş olabilir.
-4. Büyük dosyaları baştan sona okuma:
-   - `js/app.js` ~75 KB, `css/app.css` ~48 KB, `js/studio/gen.js` ~45 KB.
-   - Önce `grep -n` ile bölümü bul, sonra yalnız o aralığı oku.
-
-## Oturum değiştirme kuralı (5 saatlik ve haftalık limitleri korumak için)
-- Bir özellik ya da bir tam tur (kodlama → test → yayın) bitince dur:
-  - `DEVIR_TESLIM.md`'nin "Sıradaki iş" bölümünü güncelle.
-  - `docs/NOT_DEFTERI.md`'ye bir kayıt ekle.
-  - Kullanıcıya **yeni oturuma geçmeyi öner** ve kopyalanabilir başlangıç istemini ver. İstem `DEVIR_TESLIM.md`'nin sonundadır.
-- Bağlam dolmaya yaklaşınca da aynısını yap. Yarım işi commit etmeden bırakma; yarımsa dalda ya da `TODO` notuyla bırak.
-
-## Kurallar
-- **Dil:** Arayüz dili Türkçe, kod yorumları Türkçe.
-- **Bağımlılık:** Kütüphaneler `js/vendor/` içinde tutulur; CDN'e bağımlılık ekleme (0.6.0'dan beri istisna yok: Piper'ın onnxruntime ve fonemleştirici dosyaları da depoda). Yalnız Piper ses modeli Hugging Face'ten iner ve tarayıcıda kalıcı saklanır.
-- **Yeni Studio aracı** şu dört yere eklenir:
-  - `js/studio/gen.js` içinde `TOOLS.<ad>` (`options` + `generate`). Model gerekmiyorsa `noLLM: true`.
-  - `js/studio/views/<ad>.js` (`render`, `toText`).
-  - `js/app.js` içindeki `VIEWS` haritası.
-  - `css/app.css` içinde `.t-<ad>` rengi.
-- **Tam sayı:** Sayı seçeneği `type: 'count'` olur, üretim `generateExact` (`js/studio/batch.js`) ile yapılır.
-  - İstenen sayı kesin hedeftir.
-  - Eksik kalırsa `content.note` açıklar.
-- **Halüsinasyon:** Soru ve kart üretiminde `EVIDENCE_RULE` ve `verifyItem` kullanılır. Doğrulanamayan öğe kullanıcıya gösterilmez.
-- **Görüntüleyici:** `api.save(content, not)` ile kaydeder; not verilirse önceki hâl `versions` tablosuna girer.
-- **Veritabanı:** Şema değişirse `db.version(n+1)` ekle; eski sürümü silme. Şu an v2 (`questions` tablosu).
-- **Podcast sesi:** Bitmiş ses `kind:'mix'` olarak IndexedDB'ye `textKey` ile saklanır; `synthesize` önce `savedMix`'e bakar. Motor/ses/model anahtarına BAĞLAMA; yalnız `fresh:true` yeniden üretir.
-- **Ses:** Yeni motor `js/tts.js` içinde şuralara eklenir: `ENGINES`, `ENGINE_SHORT`, `voicePool`, `LINE_FN` (ya da parça fonksiyonu), `availableEngines`.
-  - Her motor kadın ve erkek ses vermeli. Veremiyorsa `femaleOK` false dönmeli.
-- **Görsel:** Yeni görselli çıktı `js/studio/illustrate.js` `plan` içine eklenir; içerikte `visual` (İngilizce, yazısız) + `imgKey`. Görselde asla yazı üretilmez. Sağlayıcı kodu yalnız `js/imagegen.js` içinde.
-- **Windows betikleri:** `.bat` dosyaları CRLF olmalı (`.gitattributes` `-text` ile CRLF olarak saklar); LF'li `.bat` etiketleri ve `( )` bloklarını bozabilir.
-- **localhost:** Kullanıcı açıkça istemedikçe tarayıcı localhost'a istek atmaz (Chrome yerel ağ izni sorar).
-  - Sunucu adresi boşsa `serverUrl()` yalnız uygulama zaten localhost'tan açılmışsa aynı kökene sorar.
-- **Belge çıktısı:** Word (.docx) üretme; belge çıktıları PDF/Markdown/HTML olur. Kullanıcının kalıcı tercihi budur.
-- **Sunucu dosyaları:** `server/` ya da `tools/*.bat` değişince `tools/teslim.sh` `server/manifest.json`'u yeniden üretir (elle üretmek: `python3 tools/uret-manifest.py`). Kullanıcı sunucusu kendini bu manifestle günceller; yeni gerekli paketi `server/requirements.txt`'e ekle (değişince kullanıcıda pip otomatik çalışır). Kabuk dosyalarını (`baslat.bat/.sh`, `gizli-baslat.vbs`) sabit tut. Kullanıcıdan zip indirmesini ya da bat çalıştırmasını isteme; tek istisna ilk kurulum (`tools/kur.bat`).
-- **Gizli bilgiler:** API anahtarlarını, GitHub belirteçlerini ve kullanıcı ses kayıtlarını asla dosyaya, commit'e, dokümana ya da teste yazma.
-
-## Test
-```bash
-python3 -m http.server 8099 &        # depo kökünde
-python3 tests/mock_llm.py &          # sahte model (OpenAI uyumlu SSE) + sahte lokal sunucu (/health, /tts) — 8098
-python3 tests/e2e.py [klasör]        # 142 uçtan uca kontrol (+ python3 tests/server_test.py: 85), ekran görüntüleri klasöre
-```
-Sahte model istemdeki KAYNAKLAR bloğundan istenen sayıda, kaynaktan alıntılı öğe üretir.
-- Yeni bir istem eklersen `tests/mock_llm.py`'ye o isteme özgü bir anahtar ifade ekle.
-- Anahtar, kaynak metninde geçmeyecek bir ifade olmalı.
-
-Kabuk notu: `pkill -f` ile süreç öldürürken desen komut satırının kendisinde geçmesin (en kolayı: `fuser -k 8098/tcp`).
-- Örnek: `pgrep -f "[m]ock_llm"`. Aksi hâlde kabuk kendini öldürür (çıkış kodu 144).
-
-## Teslim
-`bash tools/teslim.sh "kısa açıklama"` şunları yapar:
-1. Testleri çalıştırır.
-2. `DEGISIKLIKLER.md`'ye tarihli satır ekler.
-3. `LINKLER.md`'yi tazeler.
-4. Commit ve push eder.
-5. Bütün bağlantıları yazdırır.
-
-Push sonrası canlı siteyi Chrome'da açıp konsolu kontrol et. Kullanıcıya en sonda bütün bağlantıları ver.
+## Test ve teslim
+Ayrıntı `defter-teslim` becerisinde (`.claude/skills/defter-teslim/SKILL.md`). Kısaca:
+`python3 -m http.server 8099 & python3 tests/mock_llm.py & python3 tests/e2e.py` · `python3 tests/server_test.py` · `bash tools/teslim.sh "açıklama"` (test → manifest → kur.zip → token raporu → commit → push → eşitlik).
+Kabuk notu: süreç öldürmek için `fuser -k 8098/tcp 8099/tcp` (`pkill -f` kabuğu öldürür).

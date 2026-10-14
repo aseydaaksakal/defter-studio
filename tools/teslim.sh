@@ -28,6 +28,7 @@ fi
 # 1b) Kendini güncelleyen sunucu için dosya özetleri (server/manifest.json)
 python3 tools/uret-manifest.py
 python3 tools/uret-zip.py
+python3 tools/token-rapor.py --yaz || echo "! Token raporu üretilemedi (oturum kaydı yok); atlandı."
 
 # 2) Gizli bilgi taraması (API anahtarı, GitHub belirteci) — bulunursa dur
 git add -A
@@ -63,4 +64,4 @@ echo "  GitHub Pages 1-2 dakika içinde güncellenir."
 python3 tools/esitlik.py || echo "! Eşitlik doğrulanamadı (ağ ya da Pages gecikmesi); kanıtlanana dek 'bitti' deme."
 
 # 6) Bağlantı (yalnız kur.bat)
-echo; echo "Bağlantı:"; echo "  https://aseydaaksakal.github.io/defter-studio/kur.zip"
+echo; echo "Bağlantılar:"; echo "  https://aseydaaksakal.github.io/defter-studio/kur.zip"; echo "  https://aseydaaksakal.github.io/defter-studio/docs/token/"

@@ -521,11 +521,15 @@ ok("kur.bat: hata adımı yazılır (ADIM + :hata)", kurt.count('set "ADIM=') >=
 ilk = kurt.index(":ilksorular\r\necho")
 chs = [m.start() for m in re.finditer(r"choice /c", kurt)] if (re := __import__("re")) else []
 gpu_ch = [i for i in chs if "GPU sesleri" in kurt[i:i + 140]]
-ok("kur.bat: choice yalnız ilk kurulumda (Pocket + otomatik başlatma :ilksorular altında, GPU sorusu ILK=1 bloğunda)",
-   len(chs) == 4 and sum(1 for i in chs if ilk < i < kurt.index('\r\n:portkapat')) == 2 and len(gpu_ch) == 1 and 'if "%ILK%"=="1" (' in kurt[gpu_ch[0] - 40:gpu_ch[0]] and 'if "%ILK%"=="1" goto :ilksorular' in kurt,
+ok("kur.bat: choice yalnız ilk kurulumda (Pocket :ilksorular altında, GPU sorusu ILK=1 bloğunda; otomatik başlatma sorusuz)",
+   len(chs) == 3 and sum(1 for i in chs if ilk < i < kurt.index('\r\n:portkapat')) == 1 and len(gpu_ch) == 1 and 'if "%ILK%"=="1" (' in kurt[gpu_ch[0] - 40:gpu_ch[0]] and 'if "%ILK%"=="1" goto :ilksorular' in kurt,
    f"{len(chs)} choice")
 ok("kur.bat: NVIDIA varsa torch bozuksa kur-gpu otomatik (soru yok), yoksa atlanır", "nvidia-smi" in kurt and "torch-denetim.py" in kurt and 'call "%HEDEF%\\tools\\kur-gpu.bat" /otomatik' in kurt and "otomatik onarim" in kurt)
-ok("kur.bat: eski Downloads kopyası için uyarı (silmez)", "Downloads\\defter-studio*" in kurt and "artik kullanmayin" in kurt and "rmdir" not in kurt.lower() and "del " not in kurt.lower())
+ok("kur.bat: eski Downloads kopyası için uyarı (silmez)", "Downloads\\defter-studio*" in kurt and "artik kullanmayin" in kurt and "rmdir" not in kurt.lower() and not any("del " in l.lower() and "downloads" in l.lower() for l in kurt.splitlines()))
+_k9 = kurt.index("echo [9/9]")
+ok("kur.bat: otomatik başlatma HER çalışmada kurulur (soru yok), kapatma işareti silinir", "Startup\\Defter Studio.lnk" in kurt[kurt.index("[8/9]"):_k9] and "otobaslat-kapali" in kurt[kurt.index("[8/9]"):_k9])
+_kal = open(os.path.join(ROOT, "tools", "otomatik-baslat-kaldir.bat"), encoding="utf-8", newline="").read()
+ok("otomatik-baslat-kaldir.bat: kapatma işareti yazar (sunucu kısayolu geri kurmaz), CRLF", "otobaslat-kapali" in _kal and "\r\n" in _kal)
 gpu = open(os.path.join(TOOLS, "kur-gpu.bat"), "rb").read().decode("ascii")
 iu, ie, ip = gpu.index("pip uninstall -y torch torchaudio torchvision"), gpu.index("install --upgrade omnivoice pocket-tts"), gpu.rindex('install "torch>=2.7" "torchaudio>=2.7"')
 ok("kur-gpu.bat: torch ailesi önce tamamen kaldırılır, omnivoice/pocket-tts önce, torch+torchaudio EN SON tek komutla cu128'den",
@@ -790,6 +794,27 @@ ok("kur.bat: bekle.ps1 ile 127.0.0.1 /health'i 300 sn bekler, ilk açılışta �
 ok("kur.bat kendini günceller: Pages'teki kur.bat farklıysa onu --guncel ile çalıştırır (döngü yok)", all(x in _kb for x in ("--guncel", "fc /b", "tools/kur.bat?t=", "call \"%YENI%\" --guncel")))
 import guncelle as _g
 ok("guncelle: DEFTER_SKIP_SYNC=1 iken --sync hiçbir şey yapmaz; pocket pip -U içermez", (os.environ.__setitem__("DEFTER_SKIP_SYNC", "1"), _g.main(["--sync", "--quiet"]))[1] == 0 and (os.environ.pop("DEFTER_SKIP_SYNC"), '"-U", "-r"' not in open(os.path.join(ROOT, "server", "guncelle.py"), encoding="utf-8").read())[1])
+
+# ---- Windows açılışında otomatik başlatma: sunucu kısayolu kendisi kurar, kullanıcı kapattıysa dokunmaz
+import subprocess as _sp
+_on, _oe, _orun = os.name, dict(os.environ), _sp.run
+_ad = tempfile.mkdtemp(); _vd = tempfile.mkdtemp()
+_lnk = os.path.join(_ad, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Defter Studio.lnk")
+os.environ.update(APPDATA=_ad, DEFTER_LAUNCHER="1", DEFTER_DATA=_vd)
+_cagri = []
+def _sahte_run(cmd, **kw):
+    _cagri.append(cmd); os.makedirs(os.path.dirname(_lnk), exist_ok=True); open(_lnk, "w").close()
+_sp.run = _sahte_run
+_oapp = main.APP_DIR; main.APP_DIR = tempfile.mkdtemp()  # git kopyası değil (kur.bat kurulumu gibi)
+try:
+    os.name = "nt"
+    ok("Oto-başlat: kısayol yoksa kurar (PowerShell, gizli-baslat.vbs)", main.oto_baslat_kur() == "kuruldu" and "gizli-baslat.vbs" in _cagri[0][-1])
+    ok("Oto-başlat: kısayol varsa dokunmaz", main.oto_baslat_kur() == "var" and len(_cagri) == 1)
+    os.remove(_lnk); open(os.path.join(_vd, "otobaslat-kapali"), "w").close()
+    ok("Oto-başlat: kullanıcı kapattıysa (işaret) kurmaz", main.oto_baslat_kur() == "kapali" and len(_cagri) == 1)
+finally:
+    os.name = _on; _sp.run = _orun; os.environ.clear(); os.environ.update(_oe); main.APP_DIR = _oapp
+ok("Oto-başlat: Windows dışında atlanır; açılışta çağrılır", main.oto_baslat_kur() == "atla" and "target=oto_baslat_kur" in open(os.path.join(SERVER, "main.py"), encoding="utf-8").read())
 
 # ---- Çalışırken otomatik güncelleme (elle bat/zip yok)
 _om, _op, _ou, _ag = main.guncelle.manifest, main.guncelle.plan, main.guncelle.uygula, main.APP_DIR

@@ -342,3 +342,8 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 - **Çözüm:** sunucu 10 dk'da bir `manifest.json`'u yoklar (GitOps "pull agent" / Watchtower mantığı); fark varsa indirir, Python/paket değiştiyse ve GPU üretimi/model indirmesi yoksa kendini yeniden başlatır (baslat döngüsü, kod 75). Windows açılışında gizli başlatma zaten var. Sonuç: push → ≤10 dk içinde kullanıcıda, hiçbir eylem gerekmez.
 - **Neden git/GitHub Desktop/Docker değil:** Desktop otomatik pull yapmaz; git kullanıcıya çakışma/yerel değişiklik riski getirir; Docker Windows'ta GPU için WSL2+CUDA katmanı ekler. Manifest+SHA-256 güncelleyici aynı işi kurulumsuz yapar.
 - **Kural:** kullanıcıya bir daha zip/bat indirtme; masaüstündeki zip kopyası kullanılmaz (tek kurulum: %LOCALAPPDATA%\DefterStudio).
+
+## 0.8.2 (2026-10-14) — otomatik başlatma + token ölçümü + kural mimarisi
+- **Otomatik başlatma:** soru kaldırıldı; kur.bat her çalışmada Başlangıç kısayolunu kurar, sunucu her açılışta denetler (`oto_baslat_kur`). Kapatma: `tools\otomatik-baslat-kaldir.bat` → `veri/otobaslat-kapali` işareti (sunucu geri kurmaz; kur.bat yeniden açar).
+- **Token ölçümü:** `tools/token-rapor.py` (oturum JSONL → docs/token). İlk bulgu: harcamanın ~%88'i bağlam okuma/yazma; düşünme %5, yazma %7. Model değişimi ve 1 saati aşan ara önbelleği baştan yazdırıyor (bu oturumda 640k token). Kural: iş bitince/model değişince yeni oturum.
+- **Kural mimarisi:** CLAUDE.md 991 → 497 kelime (her çağrıda okunur); ayrıntı docs/EL_KITABI.md, teslim adımları `.claude/skills/defter-teslim`, roller `.claude/agents/`. DEVIR_TESLIM 1868 → 282 kelime (geçmiş docs/TAMAMLANANLAR.md).

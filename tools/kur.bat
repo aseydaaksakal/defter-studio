@@ -156,6 +156,12 @@ for /d %%D in ("%USERPROFILE%\Downloads\defter-studio*") do (
 )
 
 echo.
+REM Windows acilisinda otomatik baslatma: HER calismada kurulur (soru yok). Kapatmak icin tools\otomatik-baslat-kaldir.bat;
+REM kur.bat yeniden calistirilirsa tekrar acilir. Sunucu da her acilista kisayolu denetler (main.py oto_baslat_kur).
+del "%HEDEF%\server\veri\otobaslat-kapali" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:APPDATA+'\Microsoft\Windows\Start Menu\Programs\Startup\Defter Studio.lnk'); $s.TargetPath='wscript.exe'; $s.Arguments=[char]34+$env:HEDEF+'\server\gizli-baslat.vbs'+[char]34; $s.WorkingDirectory=$env:HEDEF+'\server'; $s.Save()"
+if errorlevel 1 ( echo UYARI: otomatik baslatma kisayolu olusturulamadi. ) else ( echo Otomatik baslatma: acik ^(bilgisayar acilinca sunucu kendiliginden baslar^). )
+
 echo [9/9] Tarayicida %YEREL% aciliyor ^(Chrome yerel ag izni sorarsa "Izin ver" deyin^)...
 start "" "%YEREL%"
 echo.
@@ -174,12 +180,6 @@ if errorlevel 1 goto :hata
 "%VPY%" -c "from pocket_tts_turkish import TurkishTTS; TurkishTTS.from_pretrained(device='cpu'); print('Pocket TTS modeli hazir.')"
 if errorlevel 1 goto :hata
 :pocketyok
-echo.
-choice /c EH /m "Bilgisayar acilinca sunucu arka planda kendiliginden baslasin mi"
-if errorlevel 2 goto :ilkdevam
-set "ADIM=otomatik baslatma"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:APPDATA+'\Microsoft\Windows\Start Menu\Programs\Startup\Defter Studio.lnk'); $s.TargetPath='wscript.exe'; $s.Arguments=[char]34+$env:HEDEF+'\server\gizli-baslat.vbs'+[char]34; $s.WorkingDirectory=$env:HEDEF+'\server'; $s.Save()"
-if errorlevel 1 goto :hata
 goto :ilkdevam
 
 :portkapat
