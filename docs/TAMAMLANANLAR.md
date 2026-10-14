@@ -43,3 +43,4 @@ DEVIR_TESLIM.md'den taşındı (her oturumda okunmasın diye). Yeni satırlar en
 | Testler | ✅ | `tests/e2e.py` 111/111, `tests/server_test.py` 85/85 |
 | Dokümanlar | ✅ | README, CLAUDE.md, AGENTS.md, bu belge, PROJE_REHBERI, LINKLER, docs/* |
 | **0.8.2:** Windows açılışında otomatik başlatma (kur.bat her çalışmada kurar, sunucu her açılışta denetler, kapatma işareti), token ölçüm sistemi (`tools/token-rapor.py` → docs/token), kurallar el kitabına bölündü, ajan rol kartları | ✅ / ⚠️ Windows'ta denenmedi | server_test 164/164 |
+| **0.8.3:** önbellek mimarisi (autoCompactWindow, okuma yasakları, `tools/baglam-denetim.py`), token raporu resmi fiyat + model/effort kırılımı, ajan modelleri sabit, beceri `defter-baglam-bakim`, EL_KITABI yenilendi | ✅ | resmi belgeyle doğrulandı (NOT_DEFTERI 0.8.3) |

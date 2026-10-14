@@ -12,6 +12,6 @@ description: Defter Studio'da işi bitirip teslim etme — testleri çalıştır
    ```
    Yeni istem eklendiyse `tests/mock_llm.py`'ye o isteme özgü, kaynakta geçmeyen bir anahtar ifade ekle.
 2. **Belgeler:** DEVIR_TESLIM.md'de "Durum" ve "Sıradaki iş"i güncelle (≤300 kelime). Düzeltilen hata varsa NOT_DEFTERI.md'ye belirti, kök neden ve önlem yaz. Biten iş için docs/TAMAMLANANLAR.md'ye bir satır ekle. Sürüm değiştiyse `server/main.py` `VERSION`.
-3. **Yayın:** `TESLIM_EK=$'Co-Authored-By: ...' bash tools/teslim.sh "kısa açıklama"`. Betik sırayla: test → gizli bilgi taraması → manifest → kur.zip → token raporu (`docs/token/`) → commit → push → Pages eşitliği (`tools/esitlik.py`).
+3. **Yayın:** `TESLIM_EK=$'Co-Authored-By: ...' bash tools/teslim.sh "kısa açıklama"`. Betik sırayla: test → gizli bilgi taraması → bağlam denetimi (`tools/baglam-denetim.py`, FAIL durdurur) → manifest → kur.zip → token raporu (`docs/token/`) → commit → push → Pages eşitliği (`tools/esitlik.py`).
 4. **Doğrulama:** eşitlik ağ engeliyle doğrulanamadıysa Pages'teki `server/manifest.json`'u tarayıcıyla açıp yerel özetle karşılaştır. Konsolda hata yok mu bak.
 5. **Kullanıcıya:** sonuç + kanıt (test sayıları) + denenemeyenler + tek net istek. Bağlantılar yalnız: kur.zip ve token raporu. Bir iş turu bittiyse yeni oturum öner (kullanıcı "devam" yazar).

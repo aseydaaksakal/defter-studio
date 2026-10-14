@@ -26,6 +26,7 @@ if [ "${TESTSIZ:-0}" != "1" ]; then
 fi
 
 # 1b) Kendini güncelleyen sunucu için dosya özetleri (server/manifest.json)
+python3 tools/baglam-denetim.py || { echo "✗ Bağlam denetimi başarısız (CLAUDE.md/ayar); düzelt, sonra yeniden dene."; exit 1; }
 python3 tools/uret-manifest.py
 python3 tools/uret-zip.py
 python3 tools/token-rapor.py --yaz || echo "! Token raporu üretilemedi (oturum kaydı yok); atlandı."

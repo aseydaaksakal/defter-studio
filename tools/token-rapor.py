@@ -8,7 +8,7 @@ Kullanım:
 Ölçülen (kayıttaki gerçek sayılar): her model çağrısının girdi, önbellek okuma/yazma, çıktı ve düşünme tokenları; alt ajanlar;
 Claude Code'un kendi hesapladığı liste fiyatı karşılığı (cost-state). Tahmini olanlar: araç sonuçlarının token karşılığı
 (karakter / 3,5) ve bir okumanın sonraki çağrılarda yeniden okunma yükü. İstem metinleri gizlilik için rapora YAZILMAZ.
-Ağırlıklar Anthropic fiyat oranlarıdır (girdi 1, önbellek okuma 0,1, önbellek yazma 5 dk 1,25 / 1 sa 2, çıktı 5);
+Dolar karşılığı resmi liste fiyatıdır (FIYAT tablosu, kaynak ve tarih yanında); ağırlıklar (girdi 1, okuma 0,1, yazma 1,25 / 2, çıktı 5) yalnız "yaklaşık pay" içindir;
 abonelik limitinin tam formülü yayımlanmamıştır, bu yüzden oranlar "yaklaşık pay" olarak okunmalıdır.
 """
 import glob
@@ -24,6 +24,15 @@ PROJ = os.path.expanduser("~/.claude/projects")
 TR = timezone(timedelta(hours=3))  # İstanbul
 W = {"girdi": 1.0, "okuma": 0.1, "yazma5": 1.25, "yazma1": 2.0, "cikti": 5.0}
 KAR_TOKEN = 3.5
+# Resmi fiyatlar (USD / 1M token). Kaynak: platform.claude.com/docs/en/about-claude/pricing, 14.10.2026.
+# Opus 5.5 ve Sonnet 5.5'te önbellek okuma 0,05x'tir (genel 0,1x değil); Haiku 5.5'te 100k tokenı aşan istem daha pahalıdır.
+FIYAT = {
+    "fable-5-1": {"girdi": 10, "cikti": 50, "okuma": 0.25, "yazma5": 12.5, "yazma1": 20},
+    "opus-5-5": {"girdi": 4, "cikti": 20, "okuma": 0.20, "yazma5": 5, "yazma1": 8},
+    "sonnet-5-5": {"girdi": 2, "cikti": 10, "okuma": 0.10, "yazma5": 2.5, "yazma1": 4},
+    "haiku-5-5": {"girdi": 0.10, "cikti": 0.50, "okuma": 0.01, "yazma5": 0.125, "yazma1": 0.20},
+}
+HAIKU_UZUN = {"girdi": 0.50, "cikti": 2.50, "okuma": 0.05, "yazma5": 0.625, "yazma1": 1.0}
 
 
 def _ts(s):
@@ -114,6 +123,24 @@ def _birim(u):
         "dusunme": dus,
         "yazi": max(0, out - dus),
     }
+
+
+def _fiyat(model, b=None):
+    """Modelin resmi fiyatı; tanınmayan model Sonnet 5.5 sayılır."""
+    m = (model or "").replace("claude-", "")
+    for ad, f in FIYAT.items():
+        if m.startswith(ad):
+            if ad == "haiku-5-5" and b and b["girdi"] + b["okuma"] + b["yazma5"] + b["yazma1"] > 100000:
+                return HAIKU_UZUN
+            return f
+    return FIYAT["sonnet-5-5"]
+
+
+def _cagri_usd(model, b):
+    """Tek model çağrısının resmi liste fiyatı (USD)."""
+    f = _fiyat(model, b)
+    return (b["girdi"] * f["girdi"] + b["okuma"] * f["okuma"] + b["yazma5"] * f["yazma5"] + b["yazma1"] * f["yazma1"]
+            + (b["dusunme"] + b["yazi"]) * f["cikti"]) / 1e6
 
 
 def _agirlik(b):
@@ -224,8 +251,8 @@ def olc(sid):
         cur["cagri"] += 1
         cur["son"] = r["ts"]
         cur["w"] += w
-        cur.setdefault("_wm", []).append((r["model"], w))
-        cagri_b.append((r["model"], b))
+        cur.setdefault("_wm", []).append((r["model"], _cagri_usd(r["model"], b)))
+        cagri_b.append((r["model"], b, r["effort"]))
         yz = b["yazma1"] + b["yazma5"]
         if yz > 60000:  # önbellek kaçırma: bağlamın büyük kısmı yeniden yazıldı
             neden = []
@@ -242,18 +269,11 @@ def olc(sid):
             cur["araclar"][_arac_adi(ad)] += 1
             arac_bilgi[tid] = (_arac_adi(ad), _etiket(ad, gir), cur["no"])
 
-    # Model başına kur: Claude Code'un kendi hesapladığı dolar / aynı tokenların ağırlıklı birimi (Opus ile Sonnet fiyat farkı böyle yansır)
-    mu = defaultdict(lambda: {"in": 0, "out": 0, "cr": 0, "cw": 0, "usd": 0.0})
-    for _usd, mods in maliyet.values():
-        for ad, m in mods.items():
-            x = mu[ad]
-            x["in"] += m.get("inputTokens", 0); x["out"] += m.get("outputTokens", 0); x["cr"] += m.get("cacheReadInputTokens", 0)
-            x["cw"] += m.get("cacheCreationInputTokens", 0); x["usd"] += m.get("costUSD", 0)
-    kur = {ad: x["usd"] / max(1, x["in"] + 2 * x["cw"] + 0.1 * x["cr"] + 5 * x["out"]) for ad, x in mu.items() if x["usd"]}
-    varsayilan_kur = (sum(kur.values()) / len(kur)) if kur else 3e-6
-
-    def usd(model, w):
-        return w * kur.get(model, varsayilan_kur)
+    # Dolar: resmi liste fiyatı (kendi hesabımız). Claude Code'un cost-state toplamı çapraz kontrol için ayrıca saklanır.
+    kur = {}
+    for _m, _b, _e in cagri_b:
+        if _m and _m not in kur:
+            kur[_m] = _fiyat(_m)["girdi"]
 
     # Taşıma yükü: bir araç sonucu sonraki her çağrıda (sıkıştırma olana dek) yeniden okunur
     toplam_cagri = cagri_no
@@ -265,26 +285,27 @@ def olc(sid):
     ajanlar = []
     for yol in alt:
         aid = re.sub(r"^agent-", "", os.path.splitext(os.path.basename(yol))[0])
-        ab, aw, an, ilk = {}, 0.0, 0, None
+        ab, aw, an, ilk, au = {}, 0.0, 0, None, 0.0
         for r in _cagrilar([yol]):
             if r["tur"] != "cagri":
                 continue
             b = _birim(r["u"])
             _topla(ab, b)
             aw += _agirlik(b)
+            au += _cagri_usd(r["model"], b)
             an += 1
             ilk = ilk or r
         ilk_b = _birim(ilk["u"]) if ilk else None
         bag = next((s for s in sonuclar if s.get("ajan") == aid), None)
         no = bag["istek"] if bag else None
         ad = bag["hedef"] if bag else aid
-        ajanlar.append({"id": aid, "ad": ad, "istek": no, "cagri": an, "w": round(aw), "usd": round(usd(ilk["model"] if ilk else None, aw), 2), "b": ab,
+        ajanlar.append({"id": aid, "ad": ad, "istek": no, "cagri": an, "w": round(aw), "usd": round(au, 2), "b": ab,
                         "model": ilk["model"] if ilk else None,
                         "ilk_baglam": (ilk_b["girdi"] + ilk_b["okuma"] + ilk_b["yazma1"] + ilk_b["yazma5"]) if ilk_b else 0})
         for i in istekler:
             if i["no"] == no:
                 i["ajan_w"] += aw
-                i["ajan_usd"] = i.get("ajan_usd", 0) + usd(ilk["model"] if ilk else None, aw)
+                i["ajan_usd"] = i.get("ajan_usd", 0) + au
                 i["ajanlar"].append(ad)
 
     tb = {}
@@ -304,9 +325,12 @@ def olc(sid):
         "ana_w": round(ana_w),
         "ajan_w": round(ajan_w),
         "toplam_b": tb,
-        "kategoriler": _kategoriler(cagri_b, usd),
+        "kategoriler": _kategoriler(cagri_b),
+        "model_effort": _model_effort(cagri_b),
+        "usd_cc": round(sum(v[0] for v in maliyet.values()), 2),
+        "fiyat_kaynak": "resmi liste fiyatı, 14.10.2026",
         "usd": round(sum(v[0] for v in maliyet.values()), 2),
-        "ana_usd": round(sum(usd(m, w) for i in istekler for m, w in i.get("_wm", [])), 2),
+        "ana_usd": round(sum(u for i in istekler for m, u in i.get("_wm", [])), 2),
         "ajan_usd": round(sum(a["usd"] for a in ajanlar), 2),
         "kur": {k: round(v * 1e6, 3) for k, v in kur.items()},
         "sabit_yuk": ilk_baglam,
@@ -314,7 +338,7 @@ def olc(sid):
         "baglam": baglam,
         "istekler": [{"no": i["no"], "saat": _saat(i["bas"]), "sure_dk": round(((i["son"] - i["bas"]).total_seconds() if i["son"] and i["bas"] else 0) / 60),
                       "cagri": i["cagri"], "w": round(i["w"]), "ajan_w": round(i["ajan_w"]), "ajanlar": i["ajanlar"],
-                      "usd": round(sum(usd(m, w) for m, w in i.get("_wm", [])), 2), "ajan_usd": round(i.get("ajan_usd", 0), 2),
+                      "usd": round(sum(u for m, u in i.get("_wm", [])), 2), "ajan_usd": round(i.get("ajan_usd", 0), 2),
                       "dusunme": i["b"].get("dusunme", 0), "yazi": i["b"].get("yazi", 0), "okuma": i["b"].get("okuma", 0),
                       "yazma": i["b"].get("yazma1", 0) + i["b"].get("yazma5", 0),
                       "model": i["model"], "effort": i["effort"], "araclar": dict(i["araclar"].most_common(6))} for i in istekler],
@@ -335,16 +359,31 @@ def olc(sid):
     return oz
 
 
-def _kategoriler(cagri_b, usd):
-    """Harcama, dolar karşılığıyla (model fiyatı dahil) beş kalemde."""
+def _kategoriler(cagri_b):
+    """Harcama, resmi fiyatla dolar karşılığı, beş kalemde."""
     k = Counter()
-    for model, b in cagri_b:
-        k["Bağlamı yeniden okuma (önbellek okuma)"] += usd(model, b["okuma"] * W["okuma"])
-        k["Bağlama yeni ekleme (önbellek yazma)"] += usd(model, b["yazma1"] * W["yazma1"] + b["yazma5"] * W["yazma5"])
-        k["Düşünme"] += usd(model, b["dusunme"] * W["cikti"])
-        k["Yazma (metin + araç komutu)"] += usd(model, b["yazi"] * W["cikti"])
-        k["Önbelleksiz girdi"] += usd(model, b["girdi"] * W["girdi"])
+    for model, b, _e in cagri_b:
+        f = _fiyat(model, b)
+        k["Bağlamı yeniden okuma (önbellek okuma)"] += b["okuma"] * f["okuma"] / 1e6
+        k["Bağlama yeni ekleme (önbellek yazma)"] += (b["yazma1"] * f["yazma1"] + b["yazma5"] * f["yazma5"]) / 1e6
+        k["Düşünme"] += b["dusunme"] * f["cikti"] / 1e6
+        k["Yazma (metin + araç komutu)"] += b["yazi"] * f["cikti"] / 1e6
+        k["Önbelleksiz girdi"] += b["girdi"] * f["girdi"] / 1e6
     return {a: round(v, 3) for a, v in k.items()}
+
+
+def _model_effort(cagri_b):
+    """Model + effort başına çağrı sayısı ve dolar; önbellek yazma ve okuma payı ayrı."""
+    m = defaultdict(lambda: {"cagri": 0, "usd": 0.0, "yazma_usd": 0.0, "okuma_usd": 0.0})
+    for model, b, effort in cagri_b:
+        f = _fiyat(model, b)
+        x = m[(model, effort)]
+        x["cagri"] += 1
+        x["usd"] += _cagri_usd(model, b)
+        x["yazma_usd"] += (b["yazma1"] * f["yazma1"] + b["yazma5"] * f["yazma5"]) / 1e6
+        x["okuma_usd"] += b["okuma"] * f["okuma"] / 1e6
+    return [{"model": a, "effort": e, **{k: (round(v, 2) if isinstance(v, float) else v) for k, v in x.items()}}
+            for (a, e), x in sorted(m.items(), key=lambda kv: -kv[1]["usd"])]
 
 
 def _oneriler(oz):
@@ -366,12 +405,15 @@ def _oneriler(oz):
     kk = [x for x in oz["kacirma"] if "değişti" in x["neden"] or "ara" in x["neden"]]
     if kk:
         o.append(f"{len(kk)} kez tüm bağlam yeniden yazıldı (model değişimi ya da 1 saatten uzun ara): ~{sum(x['token'] for x in kk) // 1000}k token. "
-                 "Model/effort değiştireceksen ya da uzun ara verdiysen aynı oturuma değil yeni oturuma 'devam' yaz.")
+                 "Model değiştireceksen ya da uzun ara verdiysen aynı oturuma değil yeni oturuma 'devam' yaz (effort değişimi 5.5 modellerinde önbelleği silmez).")
     opus = [i for i in oz["istekler"] if "opus" in (i["model"] or "")]
     if opus and oz["kur"]:
         ks = sorted(oz["kur"].values())
         if len(ks) > 1:
             o.append(f"Aynı token Opus'ta Sonnet'in ~{ks[-1] / ks[0]:.1f} katı: rutin işler (test, teslim, küçük düzeltme) Sonnet'te; Opus mimari ve zor hatalara.")
+    if oz["son_baglam"] > 250000:
+        o.append(f"Bağlam {oz['son_baglam'] // 1000}k tokena çıktı; otomatik sıkıştırma varsayılan olarak ~967k'da başlar. "
+                 "Proje ayarında autoCompactWindow=200000 ve işler arasında /clear (ya da /compact) kullan.")
     cagri_istek = oz["cagri"] / max(1, oz["istek"])
     if cagri_istek > 15:
         o.append(f"İstek başına ortalama {cagri_istek:.0f} model çağrısı: her araç çağrısı tüm bağlamı yeniden okur; komutları birleştir, paralel çağır.")
@@ -387,6 +429,10 @@ def yaz(oz):
             veri = json.load(f)
     except Exception:
         veri = {"oturumlar": []}
+    # Claude Code, bağlamı sıkıştırınca oturum kaydını kısaltır: daha eksik yeni ölçüm eski ve tam ölçümün üstüne yazılmaz.
+    onceki = next((o for o in veri["oturumlar"] if o.get("oturum") == oz["oturum"]), None)
+    if onceki and onceki.get("cagri", 0) > oz["cagri"]:
+        oz["oturum"] = f"{oz['oturum']}·{oz['olculdu'][-5:]}"
     veri["oturumlar"] = [o for o in veri["oturumlar"] if o.get("oturum") != oz["oturum"]] + [oz]
     veri["oturumlar"].sort(key=lambda o: o.get("olculdu", ""), reverse=True)
     with open(veri_yol, "w", encoding="utf-8") as f:

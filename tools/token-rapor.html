@@ -62,6 +62,8 @@ svg text{fill:var(--ink3);font-size:11px}
   <h2>Bağlam büyümesi (her model çağrısında yeniden okunan boyut)</h2>
   <div class="card"><div id="bag"></div></div>
 
+  <h2>Model ve effort kırılımı</h2>
+  <div class="card scroll"><table id="me"></table></div>
   <h2>Önbellek kaçırmaları (bağlamın baştan yazıldığı anlar)</h2>
   <div class="card scroll"><table id="kac"></table></div>
 
@@ -74,8 +76,8 @@ svg text{fill:var(--ink3);font-size:11px}
 
   <h2>Yöntem</h2>
   <p class="note">Kaynak: Claude Code oturum kaydındaki her model çağrısının gerçek token sayıları (girdi, önbellek okuma/yazma, çıktı, düşünme).
-  Dolar, Claude Code'un kendi hesapladığı model fiyatıyla liste fiyatı karşılığıdır; abonelikte ödenmez, harcamanın göreli ağırlığını gösterir.
-  Ağırlıklar: önbellek okuma 0,1 · önbellek yazma 2 (1 saatlik) · çıktı ve düşünme 5 (girdi = 1). Araç çıktısı tokenları karakter/3,5 ile tahmindir.
+  Dolar, platform.claude.com resmi liste fiyatıyla (14.10.2026) hesaplanır; abonelikte ödenmez, harcamanın göreli ağırlığını gösterir.
+  Her çağrı kendi modelinin gerçek okuma/yazma/çıktı fiyatıyla çarpılır. Araç çıktısı tokenları karakter/3,5 ile tahmindir.
   İstem metinleri gizlilik için yazılmaz; istekleri saatinden tanıyın (İstanbul saati). Üretici: <code>tools/token-rapor.py</code>, her teslimde güncellenir.</p>
 </main>
 <script>
@@ -102,7 +104,7 @@ function ciz(o) {
   ].map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join('');
   $('kat').innerHTML = Object.entries(kat).sort((a, b) => b[1] - a[1]).map(([ad, v]) =>
     `<div class="row" title="${esc(ad)}: ${usd(v)}"><span class="lbl">${esc(ad)}</span><div class="track"><div class="fill" style="width:${(100 * v / kt).toFixed(1)}%"></div></div><span class="val">%${(100 * v / kt).toFixed(1)} · ${usd(v)}</span></div>`).join('');
-  $('katnot').textContent = `En büyük kalem: ${enb[0]}. Model fiyatı dahil (Opus 1 token ≈ Sonnet ${o.kur && Object.keys(o.kur).length > 1 ? (Math.max(...Object.values(o.kur)) / Math.min(...Object.values(o.kur))).toFixed(1) : '?'} token). Alt ajanlar hariç.`;
+  $('katnot').textContent = `En büyük kalem: ${enb[0]}. Resmi liste fiyatıyla (Opus 5.5 = Sonnet 5.5'in 2 katı; önbellek okuma girdinin %5'i). Alt ajanlar hariç.`;
   $('tips').innerHTML = (o.oneriler.length ? o.oneriler : ['Belirgin bir israf bulunmadı.']).map((t) => `<li>${esc(t)}</li>`).join('');
   const mx = Math.max(...o.istekler.map((i) => i.usd + i.ajan_usd), 0.01);
   $('ist').innerHTML = '<tr><th>#</th><th>Saat</th><th>Model · effort</th><th class="n">Çağrı</th><th>Pay</th><th class="n">Tutar</th><th class="n">Düşünme</th><th class="n">Yazma</th><th>En çok araç</th></tr>' +
@@ -112,6 +114,8 @@ function ciz(o) {
       <td class="n">${usd(i.usd + i.ajan_usd)}</td><td class="n">${k(i.dusunme)}</td><td class="n">${k(i.yazi)}</td>
       <td>${Object.entries(i.araclar).map(([a, n]) => `${esc(a)} ×${n}`).join(', ')}</td></tr>`).join('');
   bagCiz(o.baglam);
+  $('me').innerHTML = (o.model_effort && o.model_effort.length) ? '<tr><th>Model</th><th>Effort</th><th class="n">Çağrı</th><th class="n">Tutar</th><th class="n">Önbellek yazma</th><th class="n">Önbellek okuma</th></tr>' +
+    o.model_effort.map((x) => `<tr><td>${kisa(x.model)}</td><td>${esc(x.effort || '?')}</td><td class="n">${x.cagri}</td><td class="n">${usd(x.usd)}</td><td class="n">${usd(x.yazma_usd)}</td><td class="n">${usd(x.okuma_usd)}</td></tr>`).join('') : '<tr><td>Veri yok.</td></tr>';
   $('kac').innerHTML = o.kacirma.length ? '<tr><th>Saat</th><th>İstek</th><th class="n">Yeniden yazılan</th><th>Model</th><th>Neden</th></tr>' +
     o.kacirma.map((x) => `<tr><td>${x.saat}</td><td>#${x.istek}</td><td class="n">${k(x.token)}</td><td>${kisa(x.model)}</td><td>${esc(x.neden)}</td></tr>`).join('') : '<tr><td>Kaçırma yok.</td></tr>';
   $('oku').innerHTML = '<tr><th>Araç</th><th>Hedef</th><th>İstek</th><th class="n">Token</th><th class="n">Taşındı</th><th class="n">Birim</th></tr>' +

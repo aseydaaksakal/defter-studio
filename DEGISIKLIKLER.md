@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- Önbellek mimarisi: resmi doğrulama, bağlam denetimi, token raporu resmi fiyat, kural ve ajan güncellemesi
+
+## 2026-10-14 — teslim
 - 0.8.2: Windows açılışında otomatik başlatma, token ölçüm raporu (docs/token), CLAUDE.md giriş kartı + el kitabı + ajan rolleri + teslim becerisi
 
 ## 2026-10-14 — teslim

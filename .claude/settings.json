@@ -1,0 +1,11 @@
+{
+  "autoCompactWindow": 200000,
+  "permissions": {
+    "deny": [
+      "Read(./js/vendor/**)",
+      "Read(./kur.zip)",
+      "Read(./docs/token/veri.json)",
+      "Read(./server/manifest.json)"
+    ]
+  }
+}

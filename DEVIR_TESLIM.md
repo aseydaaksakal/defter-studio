@@ -9,6 +9,7 @@ Kısa tutulur (her oturum okur). Geçmiş ve kanıtlar: [docs/TAMAMLANANLAR.md](
 - **Kurulum ve güncelleme çözüldü (2026-10-14, kullanıcıda doğrulandı):** `kur.bat` → `%LOCALAPPDATA%\DefterStudio`, Pages ile EŞİT (96 dosya). Sunucu 10 dk'da bir kendini günceller; 0.8.2'den itibaren Windows açılışında kendiliğinden başlar. Kullanıcıdan bir daha zip/bat isteme.
 - Testler: `tests/e2e.py` 142/142, `tests/server_test.py` 164/164.
 - Token ölçümü: https://aseydaaksakal.github.io/defter-studio/docs/token/ (her teslimde güncellenir).
+- **Önbellek mimarisi (resmi belge, 14.10.2026):** `.claude/settings.json`, `tools/baglam-denetim.py` (teslimde), beceri `defter-baglam-bakim`. Effort değişimi önbelleği bozmaz, model değişimi bozar (EL_KITABI §1).
 
 ## 2. Sıradaki iş (öncelik sırasıyla)
 1. **0.8.2 doğrulaması (PC):** bilgisayar yeniden başlayınca localhost:8765 açılıyor mu; Ses stüdyosu › Modeller kartları "indirildi" mi (0.8.1e boyut düzeltmesi); "Motorları sına" çıktısı; podcast'te Karakterlerim ile ses üretimi. Hata varsa yalnız çıktıyı iste.
@@ -26,5 +27,8 @@ Ayrıntı: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
 ## 4. Kullanıcı ortamı
 RTX 5090 dizüstü (24 GB), i9-275HX, 64 GB RAM, Windows + Chrome 155, Ollama `qwen3.8:27b`. Pro plan. Yeni oturumda yalnız **"devam"** yazar.
 
-## 5. Kullanıcı tercihleri
+## 5. Kullanıcıya kalan elle işler (hedef: sıfır)
+kur.bat'ı ilk kez çalıştırmak · API anahtarını Ayarlar'a girmek · GPU ses sonucunu bildirmek. Yeni elle iş çıkarsa yaz, sonra otomatikleştir.
+
+## 6. Kullanıcı tercihleri
 Türkçe; Word üretme (PDF/MD/HTML); yalnız gerekli bağlantı; PC'de sistem ayarını kendin değiştirme (uygulamanın kendi kurduğu otomatik başlatma hariç, kullanıcı istedi); kamuya açık/geri dönülmez işlemden önce sor; API anahtarı sohbette gelirse kullanma, Ayarlar'a girilmesini söyle.
