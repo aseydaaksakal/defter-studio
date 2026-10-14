@@ -196,8 +196,14 @@ def fake_repo(rid, incomplete=False):
     os.makedirs(os.path.join(base, "blobs"), exist_ok=True)
     for f in os.listdir(os.path.join(base, "blobs")):  # yarım indirmenin yerine tamamı geldi
         os.remove(os.path.join(base, "blobs", f))
-    open(os.path.join(base, "snapshots", "abc", "model.safetensors"), "wb").write(b"x" * 10)
-    open(os.path.join(base, "blobs", "h1" + (".incomplete" if incomplete else "")), "wb").write(b"x" * 10)
+    blob = os.path.join(base, "blobs", "h1" + (".incomplete" if incomplete else ""))
+    open(blob, "wb").write(b"x" * 10)
+    snap = os.path.join(base, "snapshots", "abc", "model.safetensors")
+    if os.path.lexists(snap): os.remove(snap)
+    try:
+        os.symlink(blob, snap)  # gerçek düzen: snapshots → blobs (aynı dosya iki kez sayılmaz)
+    except (OSError, NotImplementedError):
+        os.remove(blob) if not incomplete else None; open(snap, "wb").write(b"x" * 10)
 
 
 fake_repo(repos[0])
@@ -745,7 +751,9 @@ def _bekle(j):
         _t.sleep(0.1)
 _flag = os.path.join(tempfile.mkdtemp(), "ilk")
 modeller._dl_cmd = lambda rid: [sys.executable, "-c", f"import os,sys\nf={_flag!r}\nif not os.path.exists(f):\n    open(f,'w').write('x'); print('ConnectionError: ag yok'); sys.exit(1)\nsys.exit(0)"]
+_orig_ready = modeller.is_ready; modeller.is_ready = lambda m: True
 j = modeller.start_download(_mid); _bekle(j)
+modeller.is_ready = _orig_ready
 ok("İndirme: ilk deneme ağ hatası verse de yeniden denenir ve biter", j["state"] == "bitti", str(j))
 modeller._jobs.pop(_mid, None)
 modeller.INDIR_DURGUN_SN = 2; modeller.INDIR_DENEME = 2
@@ -759,6 +767,28 @@ ok("İndirme: 403 gated → Türkçe 'erişim onayı' + ham ayrıntı", j["state
 modeller._jobs.pop(_mid, None)
 modeller.local_size, modeller._dl_cmd, modeller.INDIR_DURGUN_SN, modeller.INDIR_DENEME = _orig_ls, _orig_cmd, _orig_dur, 4
 ok("İndirme alt sürecinde XET kapalı ve zaman aşımı ayarlı", modeller._dl_env(1)["HF_HUB_DISABLE_XET"] == "1" and modeller._dl_env(1)["HF_HUB_DOWNLOAD_TIMEOUT"] == "60")
+
+# ---- Disk boyutu: Windows'ta symlink yok → dosyalar snapshots içinde gerçek dosya (blobs boş). "yarım 1 MB" hatasının kök nedeni.
+import tempfile as _tf2
+_c = _tf2.mkdtemp(); _oc = modeller.cache_dir; modeller.cache_dir = lambda: _c
+_rid = "acme/ses-modeli"
+_snap = os.path.join(_c, "models--acme--ses-modeli", "snapshots", "abc123"); os.makedirs(_snap); os.makedirs(os.path.join(_c, "models--acme--ses-modeli", "blobs"))
+open(os.path.join(_snap, "model.safetensors"), "wb").write(b"x" * 5000)
+open(os.path.join(_snap, "config.json"), "wb").write(b"y" * 100)
+ok("Boyut: symlinksiz (Windows) düzende snapshots içindeki gerçek dosyalar sayılır", modeller._local_size_one(_rid) == 5100, str(modeller._local_size_one(_rid)))
+_bl = os.path.join(_c, "models--acme--ses-modeli", "blobs"); open(os.path.join(_bl, "h1.incomplete"), "wb").write(b"z" * 700)
+ok("Boyut: yarım indirme (.incomplete) eklenir", modeller._local_size_one(_rid) == 5800, str(modeller._local_size_one(_rid)))
+os.remove(os.path.join(_bl, "h1.incomplete"))
+if hasattr(os, "symlink"):
+    _c2 = _tf2.mkdtemp(); modeller.cache_dir = lambda: _c2
+    _b2 = os.path.join(_c2, "models--acme--ses-modeli", "blobs"); _s2 = os.path.join(_c2, "models--acme--ses-modeli", "snapshots", "r1"); os.makedirs(_b2); os.makedirs(_s2)
+    open(os.path.join(_b2, "h2"), "wb").write(b"q" * 3000); os.symlink(os.path.join(_b2, "h2"), os.path.join(_s2, "w.bin"))
+    ok("Boyut: symlinkli düzende aynı dosya iki kez sayılmaz", modeller._local_size_one(_rid) == 3000, str(modeller._local_size_one(_rid)))
+modeller.cache_dir = _oc
+_kb = open(os.path.join(ROOT, "tools", "kur.bat"), encoding="utf-8", newline="").read()
+ok("kur.bat: bekle.ps1 ile 127.0.0.1 /health'i 300 sn bekler, ilk açılışta çifte eşitleme yok (DEFTER_SKIP_SYNC)", "bekle.ps1" in _kb and "127.0.0.1" in _kb and "-Sn 300" in _kb and "DEFTER_SKIP_SYNC=1" in _kb and os.path.exists(os.path.join(ROOT, "tools", "bekle.ps1")))
+import guncelle as _g
+ok("guncelle: DEFTER_SKIP_SYNC=1 iken --sync hiçbir şey yapmaz; pocket pip -U içermez", (os.environ.__setitem__("DEFTER_SKIP_SYNC", "1"), _g.main(["--sync", "--quiet"]))[1] == 0 and (os.environ.pop("DEFTER_SKIP_SYNC"), '"-U", "-r"' not in open(os.path.join(ROOT, "server", "guncelle.py"), encoding="utf-8").read())[1])
 
 srv.shutdown()
 

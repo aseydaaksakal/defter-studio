@@ -327,3 +327,8 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 - **Belirti:** Ses stüdyosu › Modeller: indirme başlamıyor/ilerlemiyor, kartlar "yarım · 4 MB", hata görünmüyor.
 - **Muhtemel kök neden (Windows'ta gerçek hata görülmedi):** `snapshot_download` sunucu iş parçacığında ve hf_xet ile çalışıyordu; takılınca ne öldürülebiliyor ne de hata okunabiliyordu.
 - **Önlem:** indirme alt süreçte (öldürülebilir), XET kapalı, 60 sn ağ zaman aşımı, 120 sn büyüme yoksa öldür + en çok 4 deneme (kaldığı yerden sürer), stderr'den Türkçe hata + ham ayrıntı kartta görünür. Gerçek ağda **denenmedi**; kullanıcıdan kart hata metni istenecek.
+
+## 0.8.1e (2026-10-14) — "yarım 1 MB" gerçek kök neden + kur.bat 120 sn
+- **Kök neden (indirme):** Windows'ta (symlink izni yok) Hugging Face dosyaları `blobs/` değil `snapshots/` içinde GERÇEK dosya olarak saklar. `local_size` yalnız `blobs/`'u saydığı için tam inmiş modeller "yarım 1–4 MB" göründü; OmniVoice de "indirildi · 1 MB" göstermesinin sebebi buydu (0.8.1 boyut eşiği de bu yüzden yanlış sonuç verdi).
+- **Önlem:** boyut = snapshots (gerçek dosya ya da symlink hedefi, tekrarsız) + `.incomplete`; indirme bitince `is_ready` doğrulanır, değilse net hata. Test: symlinksiz/symlinkli düzenler.
+- **kur.bat:** bekleme `tools\bekle.ps1` (127.0.0.1, 300 sn, 15 sn'de bir son günlük satırı). Sunucu açılışı yavaşlatan şeyler kaldırıldı: kur.bat eşitledikten sonra başlatıcı tekrar eşitlemez (`DEFTER_SKIP_SYNC`), edge-tts günlük yükseltmesi sunucu içinde arka planda (60 sn sonra), Pocket gereksinim güncellemesi `-U`suz (torch'u yükseltip CUDA'yı bozmasın).

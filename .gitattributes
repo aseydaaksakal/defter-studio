@@ -4,3 +4,4 @@
 *.cmd -text
 *.sh text eol=lf
 *.vbs -text
+*.ps1 -text

@@ -138,13 +138,13 @@ def uygula(m: dict, root=ROOT, base=None, kabuk=False, log=print, pip=True) -> d
             kurulu = importlib.util.find_spec("pocket_tts_turkish") is not None
         except Exception:
             kurulu = False
-        if kurulu and _pip("-U", "-r", os.path.join(root, "server", "requirements-pocket.txt"), log=log):
+        if kurulu and _pip("-r", os.path.join(root, "server", "requirements-pocket.txt"), log=log):  # -U YOK: torch'u yükseltip CUDA kurulumunu bozmasın
             st.setdefault("pip", {})[ek] = p["files"][ek]
             pip_yapildi = True
         elif not kurulu:
             st.setdefault("pip", {})[ek] = p["files"][ek]
     # edge-tts günde en fazla bir kez (Microsoft eski sürümleri 403 ile reddeder)
-    if pip and time.time() - st.get("edgeAt", 0) > 86400:
+    if pip and os.getenv("DEFTER_LAUNCHER") != "1" and time.time() - st.get("edgeAt", 0) > 86400:
         _pip("-U", "edge-tts", log=log)
         st["edgeAt"] = time.time()
     st["surum"] = m.get("version")
@@ -196,7 +196,17 @@ def dogrula(m: dict, root=ROOT) -> list:
     return fark
 
 
+def edge_gunle(log=print):
+    """edge-tts günde en fazla bir kez (Microsoft eski sürümleri 403 ile reddeder). Sunucu arka planda çağırır; açılışı geciktirmez."""
+    st = _state()
+    if time.time() - st.get("edgeAt", 0) > 86400:
+        _pip("-U", "edge-tts", log=log)
+        st = _state(); st["edgeAt"] = time.time(); _save_state(st)
+
+
 def main(argv):
+    if os.getenv("DEFTER_SKIP_SYNC") == "1" and "--sync" in argv:  # kur.bat az önce eşitledi: ilk açılış beklemesin
+        return 0
     quiet = "--quiet" in argv
     log = (lambda *a, **k: None) if quiet else print
     root, base, kabuk = ROOT, BASE, "--kabuk" in argv

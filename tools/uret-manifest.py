@@ -7,7 +7,7 @@ DISLA = {"server/manifest.json", "server/.guncel.json", "tools/kur.bat"}  # kur.
 
 
 def dosyalar():
-    for klasor, uzantilar in (("server", (".py", ".json", ".txt", ".bat", ".sh", ".vbs")), ("tools", (".bat", ".py", ".sh"))):
+    for klasor, uzantilar in (("server", (".py", ".json", ".txt", ".bat", ".sh", ".vbs")), ("tools", (".bat", ".py", ".sh", ".ps1"))):
         for ad in sorted(os.listdir(os.path.join(KOK, klasor))):
             yol = f"{klasor}/{ad}"
             if ad.endswith(uzantilar) and yol not in DISLA and os.path.isfile(os.path.join(KOK, klasor, ad)):

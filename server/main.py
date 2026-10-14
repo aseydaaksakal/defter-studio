@@ -1540,6 +1540,7 @@ if __name__ == "__main__":
     threading.Thread(target=tts_engines, daemon=True).start()  # motor yüklenebilirlik denetimini ısıt (/health ilk çağrıda beklemesin)
     print(f"Defter Studio {VERSION}: {url}  ·  TTS(kurulu)={','.join(tts_installed()) or 'yok'}  ·  Whisper={WHISPER_MODEL}/{DEVICE}  ·  Ollama={OLLAMA}")
     _probe_status([PROBE_MODS[e] for e in tts_installed() if e in PROBE_MODS])  # motor denetimini arka planda başlat (açılışı geciktirmez)
+    threading.Timer(60, lambda: guncelle.edge_gunle(lambda *a, **k: None)).start()  # edge-tts günlük yükseltme: açılışı geciktirmesin
     threading.Thread(target=update_check, args=(True,), daemon=True).start()  # güncelleme var mı (arka planda; /health bildirir)
     if os.getenv("DEFTER_OPEN", "1") != "0":
         import webbrowser

@@ -98,13 +98,32 @@ def _repos(model_id):
 
 
 def _local_size_one(model_id):
-    blobs = os.path.join(repo_path(model_id), "blobs")
-    total = 0
+    """Diskteki gerçek boyut. Windows'ta (symlink yoksa) dosyalar blobs'ta DEĞİL snapshots içinde gerçek dosya olarak durur;
+    symlink varsa snapshots → blobs'a işaret eder. Her iki düzen de sayılır, aynı dosya iki kez sayılmaz; yarım indirmeler (blobs/*.incomplete) eklenir."""
+    base = repo_path(model_id)
+    seen, total = set(), 0
+    snaps = os.path.join(base, "snapshots")
+    if os.path.isdir(snaps):
+        for dp, _dn, fn in os.walk(snaps):
+            for f in fn:
+                p = os.path.join(dp, f)
+                try:
+                    rp = os.path.realpath(p)
+                    if rp not in seen and os.path.isfile(rp):
+                        seen.add(rp); total += os.path.getsize(rp)
+                except OSError:
+                    pass
+    blobs = os.path.join(base, "blobs")
     if os.path.isdir(blobs):
         for f in os.listdir(blobs):
             p = os.path.join(blobs, f)
-            if os.path.isfile(p) and not os.path.islink(p):
-                total += os.path.getsize(p)
+            try:
+                if f.endswith(".incomplete") and os.path.isfile(p):
+                    total += os.path.getsize(p)
+                elif os.path.isfile(p) and os.path.realpath(p) not in seen:
+                    seen.add(os.path.realpath(p)); total += os.path.getsize(p)
+            except OSError:
+                pass
     return total
 
 
@@ -340,6 +359,8 @@ def start_download(model_id):
             j["state"] = "iniyor"
             for rid in _repos(model_id):
                 _indir_depo(model_id, rid, j)
+            if not is_ready(model_id):
+                raise RuntimeError(f"İndirme bitti ama dosyalar eksik görünüyor (önbellek: {cache_dir()}, diskte {local_size(model_id)} bayt).")
             j.update(state="bitti", received=local_size(model_id), msg="")
         except Exception as e:
             j.update(state="hata", msg=str(e)[:400])

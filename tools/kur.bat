@@ -110,14 +110,16 @@ if errorlevel 1 (
 
 set "ADIM=6/9 sunucuyu baslatma"
 echo [6/9] Sunucu baslatiliyor...
+set "DEFTER_SKIP_SYNC=1"
 start "" wscript.exe "%HEDEF%\server\gizli-baslat.vbs"
+set "DEFTER_SKIP_SYNC="
 
 set "ADIM=7/9 sunucunun acilmasini bekleme (/health)"
-echo [7/9] Sunucunun acilmasi bekleniyor ^(en cok 120 sn^)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; for($i=0;$i -lt 120;$i++){ try{ $r=Invoke-RestMethod -Uri '%YEREL%health' -TimeoutSec 2; if($r.ok){$ok=$true;break} }catch{}; Start-Sleep 1 }; if($ok){exit 0}else{exit 1}"
+echo [7/9] Sunucunun acilmasi bekleniyor ^(en cok 300 sn^)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%HEDEF%\tools\bekle.ps1" -Url "http://127.0.0.1:%PORT%/health" -Log "%HEDEF%\server\sunucu.log" -Sn 300
 if errorlevel 1 (
   echo.
-  echo Sunucu 120 sn icinde acilmadi. Hata ayrintisi:
+  echo Sunucu 300 sn icinde acilmadi. Hata ayrintisi:
   pushd "%HEDEF%\server"
   if exist "%HEDEF%\server\sunucu.log" powershell -NoProfile -Command "Get-Content -Tail 25 '%HEDEF%\server\sunucu.log'"
   "%VPY%" -c "import ctypes; ctypes.windll.kernel32.SetErrorMode(0x8003); import main"
