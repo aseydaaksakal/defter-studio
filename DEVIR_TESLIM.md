@@ -6,16 +6,15 @@ Kısa tutulur (her oturum okur). Geçmiş: [docs/TAMAMLANANLAR.md](docs/TAMAMLAN
 
 ## 1. Durum
 - NotebookLM benzeri Türkçe öğrenme defteri; GitHub Pages + kullanıcının PC'sindeki yardımcı sunucu (`localhost:8765`, RTX 5090). Kurulum ve güncelleme otomatik: kullanıcıdan zip/bat isteme.
-- **PC canlı doğrulama (15.10.2026, Chrome):** sunucu 0.8.1'de takılıydı (diskte 0.8.2) → 0.8.4 eski kodu algılayıp kendini yeniden başlatır. Modeller kartları doğru. Motorlar: pockettr ✓, OmniVoice ✓, VoxCPM ✗ `seed` (düzeltildi), Edge erkek ✗ boş ses (yeniden deneme eklendi).
+- **PC canlı doğrulama (15.10.2026, Chrome):** sunucu 0.8.1'de takılı (o süreçte 10 dk döngüsü yok: 0.8.4 yayından 14 dk sonra 14 dosya hâlâ bekliyordu). Bir kez yeniden başlayınca 0.8.4'e geçer; 0.8.4 bundan sonra eski kodu kendisi algılayıp yeniden başlar. Modeller kartları doğru. Motorlar: pockettr ✓, OmniVoice ✓, VoxCPM ✗ `seed` (düzeltildi), Edge erkek ✗ boş ses (yeniden deneme eklendi).
 - 0.8.4: bulut Claude 400 (temperature) düzeltmesi, Gemini varsayılanları, sohbet önbellek sırası, FSRS-6, `defter-istem` + istem denetimi, `.claude/rules`, ajan ayarları, sessiz testler.
 - Testler: e2e 142/142, sunucu 178/178, FSRS 12/12, sağlayıcı 7/7. Token: https://aseydaaksakal.github.io/defter-studio/docs/token/
 
 ## 2. Sıradaki iş (öncelik sırasıyla)
-1. **PC:** oturum PC'ye bağlıysa (Claude in Chrome) kendin bak: `localhost:8765/health` sürümü 0.8.4 mü (`update.restart`), `/tts/selftest`'te VoxCPM ve Edge erkek ✓ mi, podcast'te Karakterlerim ile ses. Bağlı değilse kullanıcıdan yalnız hata çıktısını iste.
-2. Bilgisayar yeniden başlayınca localhost:8765 kendiliğinden açılıyor mu (kullanıcıya tek soru).
-3. **Sınav planlayıcı v2** (FSRS vadeleri + sınav tarihi → günlük yük).
-4. **qwen3-vl ile OCR** (taranmış PDF, tablo).
-5. İsteğe bağlı: tarayıcıda Kokoro, Pocket TR için HF Space, tek-anahtar bulut tasarımı (ertelendi), Studio araçlarında ortak kaynak öneki.
+1. **PC:** kullanıcı bilgisayarı yeniden başlattı mı? Oturum PC'ye bağlıysa (Claude in Chrome) kendin bak: `localhost:8765/health` sürümü 0.8.4 mü (açılışta otomatik başlama da böylece doğrulanır), `/tts/selftest`'te VoxCPM ve Edge erkek ✓ mi, podcast'te Karakterlerim ile ses. Bağlı değilse kullanıcıdan yalnız hata çıktısını iste.
+2. **Sınav planlayıcı v2** (FSRS vadeleri + sınav tarihi → günlük yük).
+3. **qwen3-vl ile OCR** (taranmış PDF, tablo).
+4. İsteğe bağlı: tarayıcıda Kokoro, Pocket TR için HF Space, tek-anahtar bulut tasarımı (ertelendi), Studio araçlarında ortak kaynak öneki.
 Ayrıntı: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
 
 ## 3. Bilinen eksikler

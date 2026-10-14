@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-15 — teslim
+- Devir: PC sunucusu 0.8.1 süreçte takılı, bir kez yeniden başlatma gerekli (canlı doğrulama)
+
+## 2026-10-15 — teslim
 - 0.8.4: PC canlı doğrulama, eski kodla çalışan sunucunun yeniden başlaması, bulut Claude 400 düzeltmesi, VoxCPM/Edge, FSRS-6, defter-istem + istem denetimi, yola bağlı kurallar, sessiz testler
 
 ## 2026-10-14 — teslim
