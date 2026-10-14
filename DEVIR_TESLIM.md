@@ -91,6 +91,7 @@ Defter Studio, NotebookLM benzeri, Türkçe, açık kaynak bir öğrenme defteri
 
 ## 6. Sıradaki iş (Faz B, öncelik sırasıyla)
 
+000y. ✅ 2026-10-14: kullanıcıda kur.bat ile kurulum + EŞİT (96 dosya) doğrulandı; sunucu artık 10 dk'da bir kendini günceller (elle indirme yok).
 000z. **0.8.1 kullanıcı doğrulaması:** `kur.bat`ı bir kez çalıştır → localhost açılmalı, Ses stüdyosu › Motorları sına; çıktıyı iste. Hata varsa son satırlar.
 000a. **0.8.0 sonrası kullanıcı doğrulaması (PC):** sunucu penceresini kapatıp aç (ya da Ayarlar › Sunucuyu güncelle) → Ses stüdyosu › 'Pocket TR kur' → 6 hazır ses; 'Yeni kadın/erkek sesi üret' (OmniVoice/VoxCPM kurulu olmalı); 'Hazır kadro' ile Ayşe/Fatma/Hasan/Hüseyin → podcast 'Karakterlerim'. Hata olursa Ses stüdyosu › 'Motorları sına' çıktısı iste.
 000b. **Kendi modelini eğitme (isteğe bağlı):** `docs/SES_EGITIMI.md`. Kullanıcı Kokoro ince ayarını denerse ≤100 MB q8 ONNX gelince `js/tts.js`'e tarayıcıda çalışan `kokoro` motoru (ONNX Runtime Web, depoda) eklenecek; o zamana dek Pages'te Piper + RTX sunucusu.

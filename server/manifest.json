@@ -5,7 +5,7 @@
   "server/gorsel.py": "b69b4c2155fd03c7becfc10c589609483395c558585cb9229d882cc93ac4f660",
   "server/guncelle.py": "da7a288f401d315e4a6b5b707e033095b39ad0c127aa0a84cc7e73f68f9dcb1b",
   "server/karsilastir.py": "5515e751976a553fb95ee040f7b3bfa6016797440a005b02202fccf7a5dd3a5b",
-  "server/main.py": "a123a54ab23fe6c3cb5ffd538a2b4254901343afd10fde51a020216a7aa2af5a",
+  "server/main.py": "085689e4d7989a4c72838e5e82fba16bdb2e9be3c13e3524c760f6b52006a675",
   "server/model_katalog.json": "adc14f07beebc9b594c4d5a581715e2097d30a77a2cc6ba7960617c8c25a2ba3",
   "server/modeller.py": "59dd88615a2c39fdbdc2255ec11ff0f1c011b9b9a6f21a7445dbd366549f94eb",
   "server/moss_worker.py": "696e46ca0aea54057c284f36f4ffd31db38a8c442a00819c3541cb12fbea5935",

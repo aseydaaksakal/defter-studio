@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-14 — teslim
+- Sunucu çalışırken 10 dk'da bir kendini günceller (boştaysa yeniden başlar): elle güncelleme yok
+
+## 2026-10-14 — teslim
 - kur.bat kendini günceller (Pages'teki sürümü alır)
 
 ## 2026-10-14 — teslim

@@ -1307,6 +1307,48 @@ def _update_public():
             "launcher": os.getenv("DEFTER_LAUNCHER") == "1", "checkedAt": u.get("at")}
 
 
+OTO_GUNCELLE_SN = int(os.getenv("DEFTER_AUTO_UPDATE_SN", "600"))  # 0 = kapalı
+
+
+def _bosta():
+    """Yeniden başlatmak güvenli mi: GPU üretimi ya da model indirmesi sürmüyor."""
+    if _gpu_lock.locked():
+        return False
+    return not any(j.get("state") in ("kuyrukta", "iniyor") for j in modeller._jobs.values())
+
+
+def oto_guncelle_tur():
+    """Bir tur: site yeni sürüm yayınladıysa dosyaları indirir; Python/paket değiştiyse ve sunucu boştaysa kendini yeniden başlatır.
+    Dönüş: 'yok' | 'yazildi' | 'yeniden' | 'bekliyor' | 'hata'."""
+    if os.path.isdir(os.path.join(APP_DIR, ".git")):
+        return "yok"  # geliştirme kopyası: git pull kullanılır
+    try:
+        m = guncelle.manifest()
+        p = guncelle.plan(m, APP_DIR)
+        if not p["degisen"] and not p["pip"]:
+            return "yok"
+        if (p["py"] or p["pip"]) and not _bosta():
+            return "bekliyor"  # iş bitince bir sonraki turda
+        r = guncelle.uygula(m, APP_DIR, log=lambda *a, **k: None)
+        update_check(True)
+        if r["hatalar"]:
+            return "hata"
+        if (r["py"] or r["pip"]) and os.getenv("DEFTER_LAUNCHER") == "1":
+            print(f"[oto-güncelleme] {len(r['yazilan'])} dosya; sunucu yeniden başlıyor ({m.get('version')})")
+            threading.Timer(1.0, lambda: os._exit(75)).start()
+            return "yeniden"
+        return "yazildi"
+    except Exception as e:
+        print(f"[oto-güncelleme] atlandı: {e}")
+        return "hata"
+
+
+def _oto_guncelle_dongu():
+    while OTO_GUNCELLE_SN > 0:
+        time.sleep(OTO_GUNCELLE_SN)
+        oto_guncelle_tur()
+
+
 @app.get("/update/check")
 async def update_check_ep(force: bool = False):
     await asyncio.to_thread(update_check, force)
@@ -1541,6 +1583,7 @@ if __name__ == "__main__":
     print(f"Defter Studio {VERSION}: {url}  ·  TTS(kurulu)={','.join(tts_installed()) or 'yok'}  ·  Whisper={WHISPER_MODEL}/{DEVICE}  ·  Ollama={OLLAMA}")
     _probe_status([PROBE_MODS[e] for e in tts_installed() if e in PROBE_MODS])  # motor denetimini arka planda başlat (açılışı geciktirmez)
     threading.Timer(60, lambda: guncelle.edge_gunle(lambda *a, **k: None)).start()  # edge-tts günlük yükseltme: açılışı geciktirmesin
+    threading.Thread(target=_oto_guncelle_dongu, daemon=True).start()  # 10 dk'da bir siteyle eşitle; boştaysa yeniden başla
     threading.Thread(target=update_check, args=(True,), daemon=True).start()  # güncelleme var mı (arka planda; /health bildirir)
     if os.getenv("DEFTER_OPEN", "1") != "0":
         import webbrowser

@@ -336,3 +336,9 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en üstte. Yeni kay�
 ## 0.8.1f (2026-10-14) — kullanıcıda eski kur.bat
 - **Belirti:** düzeltmeler yayınlandığı halde ekranda hâlâ "Sunucu 120 sn içinde açılmadı". **Kök neden:** kur.bat kendini güncellemez (manifest dışı) ve eski sürümün sağlık denetimi `localhost` + 2 sn zaman aşımı kullanıyordu; Windows'ta ::1 reddi ~1-2 sn sürüp IPv4'e düşmeyi zaman aşımına uğrattığından sunucu ayakta olsa bile hep "açılmadı" dedi.
 - **Önlem:** kur.bat her çalışmada Pages'teki sürümü alıp farklıysa onu çalıştırır; denetim 127.0.0.1 + 3 sn. Kural: kullanıcıya verilen betik kendini güncellemeli.
+
+## 0.8.1g (2026-10-14) — elle güncelleme kökten bitti (çekme modeli)
+- Kullanıcı kur.bat ile kurduktan sonra EŞİT doğrulandı (96 dosya). Kalan sorun: sunucu yalnız açılışta güncelleniyordu.
+- **Çözüm:** sunucu 10 dk'da bir `manifest.json`'u yoklar (GitOps "pull agent" / Watchtower mantığı); fark varsa indirir, Python/paket değiştiyse ve GPU üretimi/model indirmesi yoksa kendini yeniden başlatır (baslat döngüsü, kod 75). Windows açılışında gizli başlatma zaten var. Sonuç: push → ≤10 dk içinde kullanıcıda, hiçbir eylem gerekmez.
+- **Neden git/GitHub Desktop/Docker değil:** Desktop otomatik pull yapmaz; git kullanıcıya çakışma/yerel değişiklik riski getirir; Docker Windows'ta GPU için WSL2+CUDA katmanı ekler. Manifest+SHA-256 güncelleyici aynı işi kurulumsuz yapar.
+- **Kural:** kullanıcıya bir daha zip/bat indirtme; masaüstündeki zip kopyası kullanılmaz (tek kurulum: %LOCALAPPDATA%\DefterStudio).

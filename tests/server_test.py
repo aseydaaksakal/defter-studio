@@ -791,6 +791,24 @@ ok("kur.bat kendini günceller: Pages'teki kur.bat farklıysa onu --guncel ile �
 import guncelle as _g
 ok("guncelle: DEFTER_SKIP_SYNC=1 iken --sync hiçbir şey yapmaz; pocket pip -U içermez", (os.environ.__setitem__("DEFTER_SKIP_SYNC", "1"), _g.main(["--sync", "--quiet"]))[1] == 0 and (os.environ.pop("DEFTER_SKIP_SYNC"), '"-U", "-r"' not in open(os.path.join(ROOT, "server", "guncelle.py"), encoding="utf-8").read())[1])
 
+# ---- Çalışırken otomatik güncelleme (elle bat/zip yok)
+_om, _op, _ou, _ag = main.guncelle.manifest, main.guncelle.plan, main.guncelle.uygula, main.APP_DIR
+main.APP_DIR = tempfile.mkdtemp()
+main.guncelle.manifest = lambda *a, **k: {"version": "9.9.9", "files": {}}
+main.guncelle.plan = lambda m, root, *a, **k: {"degisen": [], "pip": False, "py": False, "kabuk": []}
+ok("Oto-güncelleme: değişiklik yoksa hiçbir şey yapmaz", main.oto_guncelle_tur() == "yok")
+main.guncelle.plan = lambda m, root, *a, **k: {"degisen": ["server/main.py"], "pip": False, "py": True, "kabuk": []}
+main._gpu_lock.acquire()
+ok("Oto-güncelleme: GPU üretimi sürerken yeniden başlatmaz (bekler)", main.oto_guncelle_tur() == "bekliyor")
+main._gpu_lock.release()
+main.guncelle.plan = lambda m, root, *a, **k: {"degisen": ["js/app.js"], "pip": False, "py": False, "kabuk": []}
+main.guncelle.uygula = lambda *a, **k: {"yazilan": ["js/app.js"], "hatalar": [], "py": False, "pip": False}
+ok("Oto-güncelleme: yalnız uygulama dosyası değiştiyse yazar, sunucuyu yeniden başlatmaz", main.oto_guncelle_tur() == "yazildi")
+os.makedirs(os.path.join(main.APP_DIR, ".git"))
+ok("Oto-güncelleme: git kopyasında devre dışı", main.oto_guncelle_tur() == "yok")
+main.guncelle.manifest, main.guncelle.plan, main.guncelle.uygula, main.APP_DIR = _om, _op, _ou, _ag
+ok("Oto-güncelleme açılışta başlar (10 dk)", "_oto_guncelle_dongu, daemon" in open(os.path.join(SERVER, "main.py"), encoding="utf-8").read() and main.OTO_GUNCELLE_SN == 600)
+
 srv.shutdown()
 
 n = sum(results)
