@@ -11,8 +11,11 @@ if [ -z "$NOT" ]; then echo 'Kullanım: bash tools/teslim.sh "kısa açıklama"'
 TARIH="$(date +%Y-%m-%d)"
 SURUM="$(grep -m1 -oE '— [0-9]+\.[0-9]+\.[0-9]+' DEGISIKLIKLER.md | tr -d '— ' || echo '?')"
 
-# 1) Testler (sahte model; gerçek model ve internet gerekmez)
+# 1) Testler (sahte model; gerçek model ve internet gerekmez). Hiçbir takım sessizce atlanmaz.
 if [ "${TESTSIZ:-0}" != "1" ]; then
+  command -v node >/dev/null || { echo "✗ node yok: FSRS/sağlayıcı testleri çalıştırılamaz"; exit 1; }
+  # Sunucu test ortamı (server/.venv, .gitignore'da) yoksa bir kez kurulur; yarım kalırsa silinir, sonraki teslim yeniden dener
+  [ -x server/.venv/bin/python ] || { python3 -m venv server/.venv && server/.venv/bin/pip install -q --disable-pip-version-check -r server/requirements.txt; } || { rm -rf server/.venv; echo "✗ Sunucu test ortamı kurulamadı (server/requirements.txt)"; exit 1; }
   STATIC=0; MOCK=0
   curl -s -o /dev/null http://localhost:8099/ || { python3 -m http.server 8099 >/dev/null 2>&1 & STATIC=$!; }
   curl -s -o /dev/null http://localhost:8098/health || { python3 tests/mock_llm.py >/dev/null 2>&1 & MOCK=$!; }

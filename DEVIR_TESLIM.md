@@ -8,7 +8,7 @@ Kısa tutulur (her oturum okur). Geçmiş: [docs/TAMAMLANANLAR.md](docs/TAMAMLAN
 - NotebookLM benzeri Türkçe öğrenme defteri: GitHub Pages + kullanıcının PC'sindeki yardımcı sunucu (`localhost:8765`). Kurulum ve güncelleme otomatik; kullanıcıdan zip/bat isteme.
 - **PC (Chrome, 15.10 12:00):** `/health` hâlâ **0.8.1** (`update.latest` 0.8.4, n=14). 0.8.1'de güncelleme döngüsü yok: bir kez "Sunucuyu güncelle" ya da yeniden başlatma gerekir, sonrası otomatik. Onaysız tetiklemedim. Motorlar: pockettr ✓, OmniVoice ✓. qwen3.8:27b: 71,5 tok/sn, 64k bağlam 17,8 GB VRAM.
 - Defter dışı (aynı oturum): **AI Fabrika** kiti (yerel Qwen + ücretsiz havuz + Claude merdiveni) sohbette teslim, PC'de denenmedi; Defter ayarı kitte `ornekler/defter-studio.toml`. CLAUDE.md kural 5'e yerel-önce notu.
-- Testler: e2e 142/142, sunucu 178/178, FSRS 12/12, sağlayıcı 7/7. Token: https://aseydaaksakal.github.io/defter-studio/docs/token/
+- Testler (teslimde dördü zorunlu; `server/.venv` yoksa kendisi kurar): e2e 142/142, sunucu 178/178, FSRS 12/12, sağlayıcı 7/7. Token: https://aseydaaksakal.github.io/defter-studio/docs/token/
 
 ## 2. Sıradaki iş (öncelik sırasıyla)
 1. **PC:** Chrome bağlıysa `localhost:8765/health` 0.8.4 mü bak; öyleyse `/tts/selftest`'te VoxCPM ve Edge erkek ✓ mi, podcast'te Karakterlerim ile ses. Hâlâ 0.8.1 ise kullanıcı onay verdiyse Ayarlar › Lokal sunucu › Sunucuyu güncelle (`POST /update/apply`), vermediyse bir kez sor. Bağlı değilse yalnız hata çıktısını iste.

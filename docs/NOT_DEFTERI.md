@@ -374,3 +374,9 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en altta (grep ile a
 - **Effort/önbellek (doğrulandı):** 5.5'te effort değişimi önbelleği korur, model değişimi bozar (code.claude.com/docs/en/prompt-caching); AI Fabrika merdiveni bu yüzden önce effort'u, sonra modeli yükseltir.
 - **AI Fabrika kitindeki dersler (Defter dışı):** yoğun saat kaynak diliminde yazılır (`Pzt-Cum 05:00-11:00 America/Los_Angeles`), 2 Kasım yaz saati kayması (TR 15-21 → 16-22) kendiliğinden doğru olur; uydurma yol/metin `HALÜSİNASYON` geri bildirimiyle modele döner, aynı hata 2 kez → erken tırmanma; bozuk ayar yüklemede `Hata` olur ve ana `try` yakalar (görev ortasında çökmez); Cloudflare hesapsız hızlı tüneli SSE desteklemez → Cursor için ngrok.
 - **Önlem:** CLAUDE.md kural 5'e yerel-önce notu: fabrika PC'de kuruluysa rutin kod işi orada döner; burada "devam" denirse işi Claude yapar.
+
+## 0.8.4b (2026-10-15) — teslimde sunucu testleri sessizce atlanıyordu
+- **Belirti:** 0.8.4a teslim günlüğünde FSRS, sağlayıcı ve e2e özeti var, sunucu özeti yok; DEVIR_TESLIM'deki "sunucu 178/178" önceki oturumdan kalmaydı.
+- **Kök neden:** `teslim.sh` sunucu testlerini yalnız `server/.venv` ya da genel `fastapi` varsa çalıştırıyordu; yeni kapta ikisi de yok → takım uyarısız atlandı. `node` yoksa FSRS/sağlayıcı da aynı biçimde atlanırdı.
+- **Çözüm:** `teslim.sh` `server/.venv`'i yoksa `server/requirements.txt`'ten bir kez kurar (yarım kalırsa siler) ve sunucu testlerini her teslimde çalıştırır; `node` ya da test ortamı yoksa ✗ ile durur.
+- **Önlem:** hiçbir test takımı sessizce atlanmaz; teslim günlüğünde dört özet (sunucu, FSRS, sağlayıcı, e2e) görülmeden test sayısı yazılmaz.

@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-15 — teslim
+- 0.8.4b: teslim.sh sunucu testlerini atlamıyor (server/.venv kendiliğinden kurulur), NOT_DEFTERI
+
+## 2026-10-15 — teslim
 - 0.8.4a: PC denetimi (sunucu 0.8.1, güncelleme onay bekliyor), CLAUDE.md yerel-önce notu, NOT_DEFTERI
 
 ## 2026-10-15 — teslim
