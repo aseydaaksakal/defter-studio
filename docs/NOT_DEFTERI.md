@@ -378,5 +378,5 @@ Her adım, karşılaşılan her hata ve çözümü. En yeni en altta (grep ile a
 ## 0.8.4b (2026-10-15) — teslimde sunucu testleri sessizce atlanıyordu
 - **Belirti:** 0.8.4a teslim günlüğünde FSRS, sağlayıcı ve e2e özeti var, sunucu özeti yok; DEVIR_TESLIM'deki "sunucu 178/178" önceki oturumdan kalmaydı.
 - **Kök neden:** `teslim.sh` sunucu testlerini yalnız `server/.venv` ya da genel `fastapi` varsa çalıştırıyordu; yeni kapta ikisi de yok → takım uyarısız atlandı. `node` yoksa FSRS/sağlayıcı da aynı biçimde atlanırdı.
-- **Çözüm:** `teslim.sh` `server/.venv`'i yoksa `server/requirements.txt`'ten bir kez kurar (yarım kalırsa siler) ve sunucu testlerini her teslimde çalıştırır; `node` ya da test ortamı yoksa ✗ ile durur.
+- **Çözüm:** `teslim.sh` `server/.venv`'i yoksa `server/requirements.txt`'ten bir kez kurar (yarım kalırsa siler) ve sunucu testlerini her teslimde çalıştırır; `node` ya da test ortamı yoksa ✗ ile durur. 0.8.4c: sunucu ve node testleri e2e sunucuları (8098/8099) açılmadan önce koşar; düşerlerse arka planda süreç kalmaz.
 - **Önlem:** hiçbir test takımı sessizce atlanmaz; teslim günlüğünde dört özet (sunucu, FSRS, sağlayıcı, e2e) görülmeden test sayısı yazılmaz.

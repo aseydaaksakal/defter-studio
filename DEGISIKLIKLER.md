@@ -1,6 +1,9 @@
 # Değişiklikler
 
 ## 2026-10-15 — teslim
+- 0.8.4c: teslim.sh test adımı sadeleşti (ölü dallar kaldırıldı; sunucu/node testi hatasında arka plan süreçleri açık kalmaz)
+
+## 2026-10-15 — teslim
 - 0.8.4b: teslim.sh sunucu testlerini atlamıyor (server/.venv kendiliğinden kurulur), NOT_DEFTERI
 
 ## 2026-10-15 — teslim

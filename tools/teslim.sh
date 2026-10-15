@@ -16,13 +16,14 @@ if [ "${TESTSIZ:-0}" != "1" ]; then
   command -v node >/dev/null || { echo "✗ node yok: FSRS/sağlayıcı testleri çalıştırılamaz"; exit 1; }
   # Sunucu test ortamı (server/.venv, .gitignore'da) yoksa bir kez kurulur; yarım kalırsa silinir, sonraki teslim yeniden dener
   [ -x server/.venv/bin/python ] || { python3 -m venv server/.venv && server/.venv/bin/pip install -q --disable-pip-version-check -r server/requirements.txt; } || { rm -rf server/.venv; echo "✗ Sunucu test ortamı kurulamadı (server/requirements.txt)"; exit 1; }
+  server/.venv/bin/python tests/server_test.py || { echo "✗ Sunucu testleri geçmedi"; exit 1; }
+  node tests/srs_test.mjs && node tests/llm_test.mjs || { echo "✗ FSRS/sağlayıcı testleri geçmedi"; exit 1; }
+  # e2e için uygulama (8099) ve sahte model (8098): çalışmıyorlarsa açılır, sonunda kapatılır
   STATIC=0; MOCK=0
   curl -s -o /dev/null http://localhost:8099/ || { python3 -m http.server 8099 >/dev/null 2>&1 & STATIC=$!; }
   curl -s -o /dev/null http://localhost:8098/health || { python3 tests/mock_llm.py >/dev/null 2>&1 & MOCK=$!; }
   sleep 1.5
   KLASOR="$(mktemp -d)"
-  if [ -x server/.venv/bin/python ]; then server/.venv/bin/python tests/server_test.py || { echo "✗ Sunucu testleri geçmedi"; exit 1; }; elif python3 -c "import fastapi" 2>/dev/null; then python3 tests/server_test.py || { echo "✗ Sunucu testleri geçmedi"; exit 1; }; fi
-  if command -v node >/dev/null 2>&1; then node tests/srs_test.mjs && node tests/llm_test.mjs || { echo "✗ FSRS/sağlayıcı testleri geçmedi"; exit 1; }; fi
   if ! python3 tests/e2e.py "$KLASOR"; then
     echo "✗ Testler geçmedi; teslim durduruldu. Ekran görüntüleri: $KLASOR"
     [ "$STATIC" != 0 ] && kill "$STATIC"; [ "$MOCK" != 0 ] && kill "$MOCK"; exit 1
